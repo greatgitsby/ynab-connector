@@ -99,14 +99,30 @@ const nextGoalDate = (c: Category, refMonth: string): string | null => {
   return `${y}-${String(mo).padStart(2, "0")}-${anchorDay}`;
 };
 
+// Human-readable cadence label so `$67` doesn't get misread as a monthly
+// target when it's actually weekly. Cadence codes per YNAB API:
+//   0 = single goal (no cadence); 1 = monthly × freq; 2 = weekly × freq;
+//   3..12 = every (cadence - 1) months; 13 = yearly × freq; 14 = every 2 years.
+// MF goals always represent a monthly funding amount regardless of cadence.
+const cadenceLabel = (c: Category): string => {
+  if (c.goal_type === "MF") return "/month";
+  const cadence = c.goal_cadence ?? 0;
+  const freq = c.goal_cadence_frequency ?? 1;
+  if (cadence === 1) return freq === 1 ? "/month" : ` every ${freq} months`;
+  if (cadence === 2) return freq === 1 ? "/week" : ` every ${freq} weeks`;
+  if (cadence === 13) return freq === 1 ? "/year" : ` every ${freq} years`;
+  if (cadence === 14) return " every 2 years";
+  if (cadence >= 3 && cadence <= 12) return ` every ${cadence - 1} months`;
+  return "";
+};
+
 const fmtGoal = (c: Category, refMonth: string): string => {
   if (!c.goal_type || c.goal_target == null) return "";
-  const suffix = c.goal_type === "MF" ? "/month" : "";
-  const parts = [`${fmtMoney(c.goal_target)}${suffix}`];
+  const parts = [`${fmtMoney(c.goal_target)}${cadenceLabel(c)}`];
   const date = nextGoalDate(c, refMonth);
   if (date) parts.push(`by ${date}`);
   if (c.goal_under_funded && c.goal_under_funded > 0)
-    parts.push(`underfunded ${fmtMoney(c.goal_under_funded)}`);
+    parts.push(`needs ${fmtMoney(c.goal_under_funded)} more this month`);
   return ` — goal: ${parts.join(", ")}`;
 };
 
@@ -497,10 +513,9 @@ export class YnabMcp extends McpAgent<Env, Record<string, never>, Props> {
             max_per_section,
             (cat) => {
               const idSuffix = include_ids ? ` — id ${cat.id}` : "";
-              const suffix = cat.goal_type === "MF" ? "/month" : "";
               const next = nextGoalDate(cat, month.month);
               const date = next ? ` by ${next}` : "";
-              return `- ${cat.name}: underfunded ${fmtMoney(cat.goal_under_funded ?? 0)} (goal ${fmtMoney(cat.goal_target ?? 0)}${suffix}${date})${idSuffix}`;
+              return `- ${cat.name}: needs ${fmtMoney(cat.goal_under_funded ?? 0)} more this month (goal ${fmtMoney(cat.goal_target ?? 0)}${cadenceLabel(cat)}${date})${idSuffix}`;
             },
           );
 

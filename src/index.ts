@@ -27,16 +27,6 @@ const fmtMoney = (milli: number, iso = "USD") =>
     fromMilli(milli),
   );
 
-// YNAB goal_type codes: TB=target balance, TBD=target balance by date,
-// MF=monthly funding, NEED=plan your spending, DEBT=debt payoff.
-const GOAL_LABEL: Record<string, string> = {
-  TB: "target balance",
-  TBD: "target balance by date",
-  MF: "monthly target",
-  NEED: "needed for spending",
-  DEBT: "debt payoff",
-};
-
 function pushSection<T>(
   out: string[],
   title: string,
@@ -57,24 +47,25 @@ function pushSection<T>(
   out.push("");
 }
 
+// MF (monthly funding) targets are per-month; all other types are total targets.
 const fmtGoal = (c: Category): string => {
   if (!c.goal_type || c.goal_target == null) return "";
-  const label = GOAL_LABEL[c.goal_type] ?? c.goal_type;
-  const parts = [`${label} ${fmtMoney(c.goal_target)}`];
+  const suffix = c.goal_type === "MF" ? "/month" : "";
+  const parts = [`${fmtMoney(c.goal_target)}${suffix}`];
   if (c.goal_target_date) parts.push(`by ${c.goal_target_date}`);
   if (c.goal_under_funded && c.goal_under_funded > 0)
     parts.push(`underfunded ${fmtMoney(c.goal_under_funded)}`);
-  if (c.goal_percentage_complete != null)
-    parts.push(`${c.goal_percentage_complete}% funded`);
   return ` — goal: ${parts.join(", ")}`;
 };
 
-const fmtCategoryLine = (c: Category): string =>
-  `- ${c.name}: budgeted ${fmtMoney(c.budgeted)}, activity ${fmtMoney(c.activity)}, balance ${fmtMoney(c.balance)}${fmtGoal(c)} — id ${c.id}`;
+const fmtCategoryLine = (c: Category, includeIds = false): string => {
+  const idSuffix = includeIds ? ` — id ${c.id}` : "";
+  return `- ${c.name}: budgeted ${fmtMoney(c.budgeted)}, activity ${fmtMoney(c.activity)}, balance ${fmtMoney(c.balance)}${fmtGoal(c)}${idSuffix}`;
+};
 
 const fmtTxLine = (
   t: Transaction,
-  opts: { showCategory?: boolean } = {},
+  opts: { showCategory?: boolean; includeIds?: boolean } = {},
 ): string => {
   const showCategory = opts.showCategory ?? true;
   const payee = t.payee_name ?? "(no payee)";
@@ -82,7 +73,63 @@ const fmtTxLine = (
     ? ` → ${t.category_name ?? "(uncategorized)"}`
     : "";
   const approval = t.approved ? "" : " (unapproved)";
-  return `- ${t.date} ${fmtMoney(t.amount)} ${payee}${cat} [${t.account_name}]${approval} — id ${t.id}`;
+  const idSuffix = opts.includeIds ? ` — id ${t.id}` : "";
+  return `- ${t.date} ${fmtMoney(t.amount)} ${payee}${cat} [${t.account_name}]${approval}${idSuffix}`;
+};
+
+type CategoryActivity = {
+  date: string;
+  amount: number;
+  payee_name: string | null;
+  account_name: string;
+  approved: boolean;
+  parent_id: string;
+  sub_id?: string;
+  note?: string;
+};
+
+const expandForCategory = (
+  txs: Transaction[],
+  categoryId: string,
+): CategoryActivity[] => {
+  const out: CategoryActivity[] = [];
+  for (const t of txs) {
+    if (t.subtransactions && t.subtransactions.length) {
+      for (const s of t.subtransactions) {
+        if (s.category_id !== categoryId) continue;
+        out.push({
+          date: t.date,
+          amount: s.amount,
+          payee_name: s.payee_name ?? t.payee_name,
+          account_name: t.account_name,
+          approved: t.approved,
+          parent_id: t.id,
+          sub_id: s.id,
+          note: `split from "${t.payee_name ?? "(no payee)"}"`,
+        });
+      }
+    } else if (t.category_id === categoryId) {
+      out.push({
+        date: t.date,
+        amount: t.amount,
+        payee_name: t.payee_name,
+        account_name: t.account_name,
+        approved: t.approved,
+        parent_id: t.id,
+      });
+    }
+  }
+  return out;
+};
+
+const fmtActivityLine = (a: CategoryActivity, includeIds = false): string => {
+  const payee = a.payee_name ?? "(no payee)";
+  const approval = a.approved ? "" : " (unapproved)";
+  const note = a.note ? ` (${a.note})` : "";
+  const idSuffix = includeIds
+    ? ` — id ${a.sub_id ?? a.parent_id}`
+    : "";
+  return `- ${a.date} ${fmtMoney(a.amount)} ${payee}${note} [${a.account_name}]${approval}${idSuffix}`;
 };
 
 export class YnabMcp extends McpAgent<Env> {
@@ -100,14 +147,19 @@ export class YnabMcp extends McpAgent<Env> {
       "list_budgets",
       {
         description:
-          "List all YNAB budgets accessible with the configured token. Returns id, name, currency, and last-modified date.",
-        inputSchema: {},
+          "List YNAB budgets accessible with the configured token. Returns id, name, currency, and last-modified date. Archived budgets (name contains '(Archived') are hidden by default.",
+        inputSchema: {
+          include_archived: z.boolean().optional().default(false),
+        },
       },
-      async () => {
+      async ({ include_archived }) => {
         try {
           const { data } = await this.client().listBudgets();
-          if (!data.budgets.length) return text("No budgets found.");
-          const lines = data.budgets.map(
+          const budgets = data.budgets.filter(
+            (b) => include_archived || !/\(Archived/.test(b.name),
+          );
+          if (!budgets.length) return text("No budgets found.");
+          const lines = budgets.map(
             (b) =>
               `- ${b.name} (id: ${b.id}) — ${b.currency_format?.iso_code ?? "USD"}, last modified ${b.last_modified_on}`,
           );
@@ -122,43 +174,49 @@ export class YnabMcp extends McpAgent<Env> {
       "get_budget_summary",
       {
         description:
-          "Get a high-level snapshot of a budget: on-budget accounts with balances, and the current month's income/budgeted/activity/to-be-budgeted totals.",
+          "High-level snapshot of a budget: account counts, ready-to-assign, and the current month's income/budgeted/activity totals.",
         inputSchema: { budget_id: z.string() },
       },
       async ({ budget_id }) => {
         try {
           const c = this.client();
-          const [budgetRes, accountsRes, monthsRes] = await Promise.all([
+          const [budgetRes, accountsRes, monthRes] = await Promise.all([
             c.getBudget(budget_id),
             c.listAccounts(budget_id),
-            c.listMonths(budget_id),
+            c.getMonth(budget_id, "current"),
           ]);
           const iso =
             budgetRes.data.budget.currency_format?.iso_code ?? "USD";
-          const accounts = accountsRes.data.accounts
-            .filter((a) => !a.closed && a.on_budget)
-            .map(
-              (a) =>
-                `  - ${a.name} (${a.type}): ${fmtMoney(a.balance, iso)}`,
-            );
-          const current = monthsRes.data.months[0];
+          const openAccounts = accountsRes.data.accounts.filter(
+            (a) => !a.closed,
+          );
+          const onBudget = openAccounts.filter((a) => a.on_budget).length;
+          const offBudget = openAccounts.length - onBudget;
+          const month = monthRes.data.month;
+          const rta = month.categories.find(
+            (cat) => cat.name === "Inflow: Ready to Assign",
+          );
+
           const out: string[] = [];
           out.push(`Budget: ${budgetRes.data.budget.name}`);
-          out.push("");
-          out.push("On-budget accounts:");
-          out.push(...accounts);
-          out.push("");
-          if (current) {
-            out.push(`Current month (${current.month}):`);
-            out.push(`  Income:          ${fmtMoney(current.income, iso)}`);
-            out.push(`  Budgeted:        ${fmtMoney(current.budgeted, iso)}`);
-            out.push(`  Activity:        ${fmtMoney(current.activity, iso)}`);
-            out.push(
-              `  To be budgeted:  ${fmtMoney(current.to_be_budgeted, iso)}`,
-            );
-            if (current.age_of_money !== null)
-              out.push(`  Age of money:    ${current.age_of_money} days`);
+          out.push(
+            `Accounts: ${onBudget} on-budget, ${offBudget} off-budget`,
+          );
+          if (rta) {
+            out.push(`Ready to assign: ${fmtMoney(rta.balance, iso)}`);
           }
+          out.push("");
+          out.push(`Current month (${month.month}):`);
+          out.push(`  Income:    ${fmtMoney(month.income, iso)}`);
+          out.push(`  Budgeted:  ${fmtMoney(month.budgeted, iso)}`);
+          out.push(`  Activity:  ${fmtMoney(month.activity, iso)}`);
+          if (month.to_be_budgeted !== 0) {
+            out.push(
+              `  To be budgeted: ${fmtMoney(month.to_be_budgeted, iso)}`,
+            );
+          }
+          if (month.age_of_money !== null)
+            out.push(`  Age of money: ${month.age_of_money} days`);
           return text(out.join("\n"));
         } catch (e) {
           return handleError(e);
@@ -173,18 +231,19 @@ export class YnabMcp extends McpAgent<Env> {
         inputSchema: {
           budget_id: z.string(),
           include_closed: z.boolean().optional().default(false),
+          include_ids: z.boolean().optional().default(false),
         },
       },
-      async ({ budget_id, include_closed }) => {
+      async ({ budget_id, include_closed, include_ids }) => {
         try {
           const { data } = await this.client().listAccounts(budget_id);
           const accounts = data.accounts.filter(
             (a) => include_closed || !a.closed,
           );
-          const lines = accounts.map(
-            (a) =>
-              `- ${a.name} [${a.type}] ${a.on_budget ? "(on-budget)" : "(off-budget)"}${a.closed ? " (closed)" : ""}: balance ${fmtMoney(a.balance)}, cleared ${fmtMoney(a.cleared_balance)}, uncleared ${fmtMoney(a.uncleared_balance)} — id ${a.id}`,
-          );
+          const lines = accounts.map((a) => {
+            const idSuffix = include_ids ? ` — id ${a.id}` : "";
+            return `- ${a.name} [${a.type}] ${a.on_budget ? "(on-budget)" : "(off-budget)"}${a.closed ? " (closed)" : ""}: balance ${fmtMoney(a.balance)}, cleared ${fmtMoney(a.cleared_balance)}, uncleared ${fmtMoney(a.uncleared_balance)}${idSuffix}`;
+          });
           return text(lines.join("\n") || "No accounts.");
         } catch (e) {
           return handleError(e);
@@ -205,9 +264,10 @@ export class YnabMcp extends McpAgent<Env> {
             .default("current")
             .describe("YYYY-MM-01 or 'current'"),
           include_hidden: z.boolean().optional().default(false),
+          include_ids: z.boolean().optional().default(false),
         },
       },
-      async ({ budget_id, month, include_hidden }) => {
+      async ({ budget_id, month, include_hidden, include_ids }) => {
         try {
           const c = this.client();
           const [monthRes, catsRes] = await Promise.all([
@@ -234,7 +294,7 @@ export class YnabMcp extends McpAgent<Env> {
               if (groupCat.hidden && !include_hidden) continue;
               const monthCat = byId.get(groupCat.id);
               if (!monthCat) continue;
-              lines.push(fmtCategoryLine(monthCat));
+              lines.push(fmtCategoryLine(monthCat, include_ids));
             }
             if (!lines.length) continue;
             out.push(`## ${g.name}`);
@@ -258,9 +318,10 @@ export class YnabMcp extends McpAgent<Env> {
           since_date: z.string().optional(),
           type: z.enum(["uncategorized", "unapproved"]).optional(),
           limit: z.number().int().positive().max(500).optional().default(100),
+          include_ids: z.boolean().optional().default(false),
         },
       },
-      async ({ budget_id, since_date, type, limit }) => {
+      async ({ budget_id, since_date, type, limit, include_ids }) => {
         try {
           const { data } = await this.client().listTransactions(budget_id, {
             sinceDate: since_date,
@@ -268,27 +329,9 @@ export class YnabMcp extends McpAgent<Env> {
           });
           const txs = data.transactions.slice(-limit).reverse();
           if (!txs.length) return text("No transactions match.");
-          return text(txs.map((t) => fmtTxLine(t)).join("\n"));
-        } catch (e) {
-          return handleError(e);
-        }
-      },
-    );
-
-    s.registerTool(
-      "list_payees",
-      {
-        description: "List payees in a budget.",
-        inputSchema: { budget_id: z.string() },
-      },
-      async ({ budget_id }) => {
-        try {
-          const { data } = await this.client().listPayees(budget_id);
-          const lines = data.payees.map(
-            (p) =>
-              `- ${p.name}${p.transfer_account_id ? " (transfer)" : ""} — id ${p.id}`,
+          return text(
+            txs.map((t) => fmtTxLine(t, { includeIds: include_ids })).join("\n"),
           );
-          return text(lines.join("\n") || "No payees.");
         } catch (e) {
           return handleError(e);
         }
@@ -299,7 +342,7 @@ export class YnabMcp extends McpAgent<Env> {
       "triage_inbox",
       {
         description:
-          "Day-to-day triage view: uncategorized transactions, unapproved transactions, overspent categories (current month), and underfunded goals (current month) — all in one call. Transactions appearing in both 'uncategorized' and 'unapproved' are shown only under 'uncategorized'.",
+          "Day-to-day triage view: ready-to-assign, uncategorized transactions, auto-categorized transactions awaiting review, overspent categories (current month), and underfunded goals (current month) — all in one call. The 'auto-categorized' section is YNAB's guess at a category; it often needs correction before being approved. A transaction appearing in both 'uncategorized' and 'unapproved' is shown only under 'uncategorized'.",
         inputSchema: {
           budget_id: z.string(),
           max_per_section: z
@@ -309,9 +352,10 @@ export class YnabMcp extends McpAgent<Env> {
             .max(200)
             .optional()
             .default(25),
+          include_ids: z.boolean().optional().default(false),
         },
       },
-      async ({ budget_id, max_per_section }) => {
+      async ({ budget_id, max_per_section, include_ids }) => {
         try {
           const c = this.client();
           const [uncatRes, unapprovedRes, monthRes] = await Promise.all([
@@ -328,8 +372,10 @@ export class YnabMcp extends McpAgent<Env> {
             .filter((t) => !uncatIds.has(t.id))
             .sort((a, b) => b.date.localeCompare(a.date));
 
-          const monthCats = monthRes.data.month.categories.filter(
-            (cat) => !cat.hidden,
+          const month = monthRes.data.month;
+          const monthCats = month.categories.filter((cat) => !cat.hidden);
+          const rta = monthCats.find(
+            (cat) => cat.name === "Inflow: Ready to Assign",
           );
           const overspent = monthCats
             .filter((cat) => cat.balance < 0)
@@ -342,7 +388,10 @@ export class YnabMcp extends McpAgent<Env> {
             );
 
           const out: string[] = [];
-          out.push(`Triage inbox for month ${monthRes.data.month.month}`);
+          out.push(`Triage inbox for month ${month.month}`);
+          if (rta) {
+            out.push(`Ready to assign: ${fmtMoney(rta.balance)}`);
+          }
           out.push("");
 
           pushSection(
@@ -350,29 +399,33 @@ export class YnabMcp extends McpAgent<Env> {
             "Uncategorized transactions",
             uncat,
             max_per_section,
-            (t) => fmtTxLine(t, { showCategory: false }),
+            (t) => fmtTxLine(t, { showCategory: false, includeIds: include_ids }),
           );
           pushSection(
             out,
-            "Unapproved transactions",
+            "Auto-categorized (verify category before approving)",
             unapproved,
             max_per_section,
-            (t) => fmtTxLine(t),
+            (t) => fmtTxLine(t, { includeIds: include_ids }),
           );
           pushSection(
             out,
             "Overspent categories (current month)",
             overspent,
             max_per_section,
-            fmtCategoryLine,
+            (cat) => fmtCategoryLine(cat, include_ids),
           );
           pushSection(
             out,
             "Underfunded goals (current month)",
             underfunded,
             max_per_section,
-            (cat) =>
-              `- ${cat.name}: underfunded ${fmtMoney(cat.goal_under_funded ?? 0)}${fmtGoal(cat)} — id ${cat.id}`,
+            (cat) => {
+              const idSuffix = include_ids ? ` — id ${cat.id}` : "";
+              const suffix = cat.goal_type === "MF" ? "/month" : "";
+              const date = cat.goal_target_date ? ` by ${cat.goal_target_date}` : "";
+              return `- ${cat.name}: underfunded ${fmtMoney(cat.goal_under_funded ?? 0)} (goal ${fmtMoney(cat.goal_target ?? 0)}${suffix}${date})${idSuffix}`;
+            },
           );
 
           return text(out.join("\n").trimEnd());
@@ -386,7 +439,7 @@ export class YnabMcp extends McpAgent<Env> {
       "get_category_details",
       {
         description:
-          "Drilldown for one category: its month aggregates (budgeted/activity/balance/goal) plus every transaction in that category for the given month (default 'current'). Note: split transactions are not yet broken out — values reflect non-split transactions only.",
+          "Drilldown for one category: its month aggregates (budgeted/activity/balance/goal) plus every transaction in that category for the given month (default 'current'). Split transactions are expanded: only the subtransactions allocated to this category appear, and each is labelled with its parent payee.",
         inputSchema: {
           budget_id: z.string(),
           category_id: z.string(),
@@ -395,9 +448,10 @@ export class YnabMcp extends McpAgent<Env> {
             .optional()
             .default("current")
             .describe("YYYY-MM-01 or 'current'"),
+          include_ids: z.boolean().optional().default(false),
         },
       },
-      async ({ budget_id, category_id, month }) => {
+      async ({ budget_id, category_id, month, include_ids }) => {
         try {
           const c = this.client();
           const monthRes = await c.getMonth(budget_id, month);
@@ -421,10 +475,11 @@ export class YnabMcp extends McpAgent<Env> {
             }
           }
 
-          const txs = txRes.data.transactions
-            .filter((t) => t.category_id === category_id)
-            .sort((a, b) => b.date.localeCompare(a.date));
-          const sum = txs.reduce((acc, t) => acc + t.amount, 0);
+          const activity = expandForCategory(
+            txRes.data.transactions,
+            category_id,
+          ).sort((a, b) => b.date.localeCompare(a.date));
+          const sum = activity.reduce((acc, a) => acc + a.amount, 0);
 
           const out: string[] = [];
           out.push(`${groupName} → ${cat.name}`);
@@ -434,11 +489,11 @@ export class YnabMcp extends McpAgent<Env> {
           );
           out.push("");
           out.push(
-            `Transactions this month (${txs.length}, sum ${fmtMoney(sum)}):`,
+            `Transactions this month (${activity.length}, sum ${fmtMoney(sum)}):`,
           );
-          if (!txs.length) out.push("(none)");
-          for (const t of txs) {
-            out.push(fmtTxLine(t, { showCategory: false }));
+          if (!activity.length) out.push("(none)");
+          for (const a of activity) {
+            out.push(fmtActivityLine(a, include_ids));
           }
           return text(out.join("\n"));
         } catch (e) {

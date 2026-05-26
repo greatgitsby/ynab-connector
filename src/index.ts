@@ -268,28 +268,23 @@ export class YnabMcp extends McpAgent<Env, Record<string, never>, Props> {
           const onBudget = openAccounts.filter((a) => a.on_budget).length;
           const offBudget = openAccounts.length - onBudget;
           const month = monthRes.data.month;
-          const rta = month.categories.find(
-            (cat) => cat.name === "Inflow: Ready to Assign",
-          );
 
           const out: string[] = [];
           out.push(`Budget: ${budgetRes.data.budget.name}`);
           out.push(
             `Accounts: ${onBudget} on-budget, ${offBudget} off-budget`,
           );
-          if (rta) {
-            out.push(`Ready to assign: ${fmtMoney(rta.balance, iso)}`);
-          }
+          // `month.to_be_budgeted` is the live "Ready to Assign" amount the
+          // YNAB app shows. The Inflow:RTA category's `balance` is a
+          // lifetime-cumulative figure that looks like a huge unassigned pot
+          // when it's really just sum-of-inflows minus sum-of-assigned over
+          // the budget's history — not user-actionable.
+          out.push(`Ready to assign: ${fmtMoney(month.to_be_budgeted, iso)}`);
           out.push("");
           out.push(`Current month (${month.month}):`);
           out.push(`  Income:    ${fmtMoney(month.income, iso)}`);
           out.push(`  Budgeted:  ${fmtMoney(month.budgeted, iso)}`);
           out.push(`  Activity:  ${fmtMoney(month.activity, iso)}`);
-          if (month.to_be_budgeted !== 0) {
-            out.push(
-              `  To be budgeted: ${fmtMoney(month.to_be_budgeted, iso)}`,
-            );
-          }
           if (month.age_of_money !== null)
             out.push(`  Age of money: ${month.age_of_money} days`);
           return text(out.join("\n"));
@@ -459,9 +454,6 @@ export class YnabMcp extends McpAgent<Env, Record<string, never>, Props> {
           const monthCats = month.categories.filter(
             (cat) => !cat.hidden && !cat.internal,
           );
-          const rta = month.categories.find(
-            (cat) => cat.name === "Inflow: Ready to Assign",
-          );
           const overspent = monthCats
             .filter((cat) => cat.balance < 0)
             .sort((a, b) => a.balance - b.balance);
@@ -474,9 +466,7 @@ export class YnabMcp extends McpAgent<Env, Record<string, never>, Props> {
 
           const out: string[] = [];
           out.push(`Triage inbox for month ${month.month}`);
-          if (rta) {
-            out.push(`Ready to assign: ${fmtMoney(rta.balance)}`);
-          }
+          out.push(`Ready to assign: ${fmtMoney(month.to_be_budgeted)}`);
           out.push("");
 
           pushSection(

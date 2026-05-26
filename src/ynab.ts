@@ -85,13 +85,6 @@ export class YnabClient {
       `/budgets/${budgetId}/transactions${qs}`,
     );
   }
-  // Payees
-  listPayees(budgetId: string) {
-    return this.request<{ data: { payees: Payee[] } }>(
-      "GET",
-      `/budgets/${budgetId}/payees`,
-    );
-  }
 }
 
 // Convert milliunits (YNAB internal format) to dollars.
@@ -177,10 +170,16 @@ export interface Transaction {
   category_id: string | null;
   category_name: string | null;
   flag_color: string | null;
+  subtransactions?: SubTransaction[];
 }
 
-export interface Payee {
+export interface SubTransaction {
   id: string;
-  name: string;
-  transfer_account_id: string | null;
+  transaction_id: string;
+  amount: number;
+  memo: string | null;
+  payee_id: string | null;
+  payee_name: string | null;
+  category_id: string | null;
+  category_name: string | null;
 }

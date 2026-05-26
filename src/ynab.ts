@@ -137,6 +137,7 @@ export interface Category {
   goal_target_date?: string | null;
   goal_cadence?: number | null;
   goal_cadence_frequency?: number | null;
+  goal_months_to_budget?: number | null;
   goal_percentage_complete?: number | null;
   goal_under_funded?: number | null;
   goal_overall_funded?: number | null;

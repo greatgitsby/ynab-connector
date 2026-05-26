@@ -12,10 +12,11 @@ Tools the connector exposes:
 | `list_budgets` | List all budgets visible to the token |
 | `get_budget_summary` | Snapshot: accounts + current-month totals |
 | `list_accounts` | All accounts with balances |
-| `list_categories` | Categories grouped, with budgeted / activity / balance |
-| `get_month` | Full month breakdown for a specific (or current) month |
+| `get_month` | Full month breakdown grouped by category group; defaults to the current month |
 | `list_transactions` | Transactions, optionally filtered to `uncategorized` / `unapproved` |
 | `list_payees` | List payees |
+| `triage_inbox` | Uncategorized + unapproved txs, overspent categories, underfunded goals — one call |
+| `get_category_details` | Drilldown for one category: month aggregates + every transaction this month |
 
 ## How auth works
 

@@ -48,19 +48,43 @@ function pushSection<T>(
 }
 
 // MF (monthly funding) targets are per-month; all other types are total targets.
-const fmtGoal = (c: Category): string => {
+// For recurring goals, YNAB keeps goal_target_date pinned to the original
+// anchor (often years in the past) and tracks the next occurrence via
+// goal_months_to_budget — months remaining in the current goal period,
+// counting the reference month. Roll the anchor's day-of-month forward to
+// the next occurrence so displayed dates reflect "next due," not "first set."
+const nextGoalDate = (c: Category, refMonth: string): string | null => {
+  if (!c.goal_target_date) return null;
+  const recurring = (c.goal_cadence ?? 0) > 0;
+  const m2b = c.goal_months_to_budget;
+  if (!recurring || m2b == null || m2b < 1) return c.goal_target_date;
+  const [refY, refM] = refMonth.split("-").map(Number);
+  const anchorDay = c.goal_target_date.slice(8, 10);
+  // refMonth + (m2b - 1) months
+  const t = new Date(Date.UTC(refY, refM - 1 + (m2b - 1), 1));
+  const y = t.getUTCFullYear();
+  const mo = String(t.getUTCMonth() + 1).padStart(2, "0");
+  return `${y}-${mo}-${anchorDay}`;
+};
+
+const fmtGoal = (c: Category, refMonth: string): string => {
   if (!c.goal_type || c.goal_target == null) return "";
   const suffix = c.goal_type === "MF" ? "/month" : "";
   const parts = [`${fmtMoney(c.goal_target)}${suffix}`];
-  if (c.goal_target_date) parts.push(`by ${c.goal_target_date}`);
+  const date = nextGoalDate(c, refMonth);
+  if (date) parts.push(`by ${date}`);
   if (c.goal_under_funded && c.goal_under_funded > 0)
     parts.push(`underfunded ${fmtMoney(c.goal_under_funded)}`);
   return ` — goal: ${parts.join(", ")}`;
 };
 
-const fmtCategoryLine = (c: Category, includeIds = false): string => {
+const fmtCategoryLine = (
+  c: Category,
+  refMonth: string,
+  includeIds = false,
+): string => {
   const idSuffix = includeIds ? ` — id ${c.id}` : "";
-  return `- ${c.name}: budgeted ${fmtMoney(c.budgeted)}, activity ${fmtMoney(c.activity)}, balance ${fmtMoney(c.balance)}${fmtGoal(c)}${idSuffix}`;
+  return `- ${c.name}: budgeted ${fmtMoney(c.budgeted)}, activity ${fmtMoney(c.activity)}, balance ${fmtMoney(c.balance)}${fmtGoal(c, refMonth)}${idSuffix}`;
 };
 
 const fmtTxLine = (
@@ -294,7 +318,7 @@ export class YnabMcp extends McpAgent<Env> {
               if (groupCat.hidden && !include_hidden) continue;
               const monthCat = byId.get(groupCat.id);
               if (!monthCat) continue;
-              lines.push(fmtCategoryLine(monthCat, include_ids));
+              lines.push(fmtCategoryLine(monthCat, m.month, include_ids));
             }
             if (!lines.length) continue;
             out.push(`## ${g.name}`);
@@ -413,7 +437,7 @@ export class YnabMcp extends McpAgent<Env> {
             "Overspent categories (current month)",
             overspent,
             max_per_section,
-            (cat) => fmtCategoryLine(cat, include_ids),
+            (cat) => fmtCategoryLine(cat, month.month, include_ids),
           );
           pushSection(
             out,
@@ -423,7 +447,8 @@ export class YnabMcp extends McpAgent<Env> {
             (cat) => {
               const idSuffix = include_ids ? ` — id ${cat.id}` : "";
               const suffix = cat.goal_type === "MF" ? "/month" : "";
-              const date = cat.goal_target_date ? ` by ${cat.goal_target_date}` : "";
+              const next = nextGoalDate(cat, month.month);
+              const date = next ? ` by ${next}` : "";
               return `- ${cat.name}: underfunded ${fmtMoney(cat.goal_under_funded ?? 0)} (goal ${fmtMoney(cat.goal_target ?? 0)}${suffix}${date})${idSuffix}`;
             },
           );
@@ -485,7 +510,7 @@ export class YnabMcp extends McpAgent<Env> {
           out.push(`${groupName} → ${cat.name}`);
           out.push(`Month: ${m.month}`);
           out.push(
-            `Budgeted: ${fmtMoney(cat.budgeted)}, activity ${fmtMoney(cat.activity)}, balance ${fmtMoney(cat.balance)}${fmtGoal(cat)}`,
+            `Budgeted: ${fmtMoney(cat.budgeted)}, activity ${fmtMoney(cat.activity)}, balance ${fmtMoney(cat.balance)}${fmtGoal(cat, m.month)}`,
           );
           out.push("");
           out.push(

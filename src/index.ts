@@ -1,3 +1,4 @@
+import OAuthProvider from "@cloudflare/workers-oauth-provider";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { McpAgent } from "agents/mcp";
 import { z } from "zod";
@@ -5,13 +6,16 @@ import {
   YnabClient,
   YnabError,
   fromMilli,
+  refreshYnabToken,
   type Category,
   type Transaction,
 } from "./ynab";
+import { ynabAuthHandler, type Props } from "./ynab-auth";
 
 interface Env {
-  YNAB_API_TOKEN: string;
-  CONNECTOR_AUTH_TOKEN: string;
+  YNAB_CLIENT_ID: string;
+  YNAB_CLIENT_SECRET: string;
+  OAUTH_KV: KVNamespace;
   MCP_OBJECT: DurableObjectNamespace<YnabMcp>;
 }
 
@@ -184,12 +188,31 @@ const fmtActivityLine = (a: CategoryActivity, includeIds = false): string => {
   return `- ${a.date} ${fmtMoney(a.amount)} ${payee}${note} [${a.account_name}]${approval}${idSuffix}`;
 };
 
-export class YnabMcp extends McpAgent<Env> {
+export class YnabMcp extends McpAgent<Env, Record<string, never>, Props> {
   server = new McpServer({ name: "YNAB", version: "0.1.0" });
-  private _client?: YnabClient;
 
+  // The YNAB access token lives in this.props. Build a fresh client per
+  // request so token rotation (on 401) is naturally visible to subsequent
+  // tool calls within the same MCP session.
   private client() {
-    return (this._client ??= new YnabClient(this.env.YNAB_API_TOKEN));
+    // Tool handlers only fire after OAuth completes, so props is always set.
+    const props = this.props!;
+    return new YnabClient(props.ynabAccessToken, async () => {
+      const next = await refreshYnabToken({
+        client_id: this.env.YNAB_CLIENT_ID,
+        client_secret: this.env.YNAB_CLIENT_SECRET,
+        refresh_token: props.ynabRefreshToken,
+      });
+      // Mutate the in-memory props so the next tool call sees the new token.
+      // The provider's encrypted bearer still holds the old token until the
+      // Claude.ai-side access token refreshes (tokenExchangeCallback re-runs
+      // and re-stores); that's fine — the YnabClient's 401 retry will refresh
+      // again if needed.
+      props.ynabAccessToken = next.access_token;
+      props.ynabRefreshToken = next.refresh_token;
+      props.ynabExpiresAt = Math.floor(Date.now() / 1000) + next.expires_in;
+      return next.access_token;
+    });
   }
 
   async init() {
@@ -557,36 +580,19 @@ export class YnabMcp extends McpAgent<Env> {
   }
 }
 
-function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let mismatch = 0;
-  for (let i = 0; i < a.length; i++) mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return mismatch === 0;
-}
-
-// Treat the URL path itself as the secret: requests must hit /mcp/<CONNECTOR_AUTH_TOKEN>.
-// claude.ai's connector UI doesn't let you set custom headers, so a secret URL is the
-// only practical way to gate the endpoint without full OAuth.
-export default {
-  fetch(request: Request, env: Env, ctx: ExecutionContext) {
-    const url = new URL(request.url);
-    const expected = env.CONNECTOR_AUTH_TOKEN;
-    if (!expected) {
-      return new Response("Server missing CONNECTOR_AUTH_TOKEN", { status: 500 });
-    }
-    const prefix = `/mcp/${expected}`;
-    if (url.pathname === prefix || url.pathname.startsWith(`${prefix}/`)) {
-      const supplied = url.pathname.slice("/mcp/".length).split("/")[0];
-      if (!timingSafeEqual(supplied, expected)) {
-        return new Response("Not found", { status: 404 });
-      }
-      return YnabMcp.serve(prefix).fetch(request, env, ctx);
-    }
-    if (url.pathname === "/") {
-      return new Response("YNAB MCP connector. Endpoint is at /mcp/<secret>.", {
-        headers: { "content-type": "text/plain" },
-      });
-    }
-    return new Response("Not found", { status: 404 });
-  },
-};
+// Claude.ai discovers this server's authorization endpoints via RFC 9728
+// protected-resource metadata (served automatically by OAuthProvider) and
+// walks the user through YNAB OAuth via /authorize → YNAB → /callback.
+// completeAuthorization() then issues an MCP bearer to Claude.ai with the
+// per-user YNAB tokens encrypted into `props`.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export default new OAuthProvider({
+  apiHandler: YnabMcp.serve("/mcp") as any,
+  apiRoute: "/mcp",
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  defaultHandler: ynabAuthHandler as any,
+  authorizeEndpoint: "/authorize",
+  tokenEndpoint: "/token",
+  clientRegistrationEndpoint: "/register",
+  scopesSupported: ["read-only"],
+});

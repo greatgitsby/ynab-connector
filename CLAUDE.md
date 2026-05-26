@@ -87,6 +87,37 @@ When adding a new read tool to `src/index.ts`:
 - Append `— id <uuid>` to each line so Claude can reference items in follow-up
   tool calls.
 
+## Getting YNAB tokens via CLI (no browser)
+
+When a browser isn't available (e.g., SSH from phone), drive the OAuth flow by hand instead of via MCP Inspector:
+
+1. Open the authorize URL on any device with a browser (substitute the client id from `.dev.vars`):
+   ```
+   https://app.ynab.com/oauth/authorize?client_id=$YNAB_CLIENT_ID&redirect_uri=http%3A%2F%2Flocalhost%3A8787%2Fcallback&response_type=code&scope=read-only
+   ```
+2. Approve. The browser will redirect to `http://localhost:8787/callback?code=…` — the page won't load, but the `code` param is what we need.
+3. Exchange it for tokens (run from the dev box, secrets sourced from `.dev.vars`):
+   ```bash
+   curl -s -X POST https://app.ynab.com/oauth/token \
+     -H "Content-Type: application/x-www-form-urlencoded" \
+     -d "client_id=$YNAB_CLIENT_ID" \
+     -d "client_secret=$YNAB_CLIENT_SECRET" \
+     -d "redirect_uri=http://localhost:8787/callback" \
+     -d "grant_type=authorization_code" \
+     -d "code=$CODE"
+   ```
+   Response is `{ access_token, refresh_token, expires_in (7200), ... }`.
+4. Stash the tokens in `.dev.vars.tokens` (covered by the `.dev.vars.*` gitignore rule). Format:
+   ```
+   YNAB_ACCESS_TOKEN=...
+   YNAB_REFRESH_TOKEN=...
+   YNAB_USER_ID=...
+   YNAB_EXPIRES_AT=...   # unix seconds
+   ```
+5. Use the access token directly: `curl -H "Authorization: Bearer $YNAB_ACCESS_TOKEN" https://api.ynab.com/v1/budgets`.
+
+This bypasses the MCP layer entirely — useful for ad-hoc API calls or scripts. Access tokens last 2 hours; refresh via `grant_type=refresh_token` against the same `/oauth/token` endpoint.
+
 ## Read-only
 
 The connector is intentionally read-only right now. The YNAB client has no

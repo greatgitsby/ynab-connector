@@ -1,0 +1,2 @@
+YNAB_API_TOKEN=ynab_personal_access_token_here
+CONNECTOR_AUTH_TOKEN=long_random_string_you_generate

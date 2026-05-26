@@ -221,6 +221,7 @@ export interface Category {
   category_group_id: string;
   name: string;
   hidden: boolean;
+  internal?: boolean;
   budgeted: number;
   activity: number;
   balance: number;
@@ -263,6 +264,7 @@ export interface Transaction {
   category_id: string | null;
   category_name: string | null;
   flag_color: string | null;
+  transfer_account_id: string | null;
   subtransactions?: SubTransaction[];
 }
 

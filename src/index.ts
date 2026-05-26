@@ -48,11 +48,32 @@ function pushSection<T>(
 }
 
 // MF (monthly funding) targets are per-month; all other types are total targets.
+// Cadence-to-months conversion per YNAB API:
+//   1 = monthly (× frequency), 2 = weekly (no monthly equivalent — caller falls
+//   back to months_to_budget), 3..12 = every (cadence - 1) months,
+//   13 = yearly (× frequency, so 12 × freq months), 14 = every 2 years.
+const cadenceMonths = (c: Category): number | null => {
+  const cadence = c.goal_cadence ?? 0;
+  const freq = c.goal_cadence_frequency ?? 1;
+  if (cadence === 1) return freq;
+  if (cadence === 13) return 12 * freq;
+  if (cadence === 14) return 24;
+  if (cadence >= 3 && cadence <= 12) return cadence - 1;
+  return null;
+};
+
+const addMonths = (year: number, month1: number, delta: number) => {
+  const t = new Date(Date.UTC(year, month1 - 1 + delta, 1));
+  return [t.getUTCFullYear(), t.getUTCMonth() + 1] as const;
+};
+
 // For recurring goals, YNAB keeps goal_target_date pinned to the original
 // anchor (often years in the past) and tracks the next occurrence via
 // goal_months_to_budget — months remaining in the current goal period,
-// counting the reference month. Roll the anchor's day-of-month forward to
-// the next occurrence so displayed dates reflect "next due," not "first set."
+// counting the reference month. Project to the next occurrence and then keep
+// adding the cadence interval until the date is strictly in the future (YNAB
+// can still report a current-month deadline for a goal that's already met,
+// which renders as a past date for any day after the 1st).
 const nextGoalDate = (c: Category, refMonth: string): string | null => {
   if (!c.goal_target_date) return null;
   const recurring = (c.goal_cadence ?? 0) > 0;
@@ -60,11 +81,18 @@ const nextGoalDate = (c: Category, refMonth: string): string | null => {
   if (!recurring || m2b == null || m2b < 1) return c.goal_target_date;
   const [refY, refM] = refMonth.split("-").map(Number);
   const anchorDay = c.goal_target_date.slice(8, 10);
-  // refMonth + (m2b - 1) months
-  const t = new Date(Date.UTC(refY, refM - 1 + (m2b - 1), 1));
-  const y = t.getUTCFullYear();
-  const mo = String(t.getUTCMonth() + 1).padStart(2, "0");
-  return `${y}-${mo}-${anchorDay}`;
+  let [y, mo] = addMonths(refY, refM, m2b - 1);
+  const step = cadenceMonths(c);
+  if (step != null && step > 0) {
+    const today = new Date();
+    const todayIso = `${today.getUTCFullYear()}-${String(today.getUTCMonth() + 1).padStart(2, "0")}-${String(today.getUTCDate()).padStart(2, "0")}`;
+    while (
+      `${y}-${String(mo).padStart(2, "0")}-${anchorDay}` <= todayIso
+    ) {
+      [y, mo] = addMonths(y, mo, step);
+    }
+  }
+  return `${y}-${String(mo).padStart(2, "0")}-${anchorDay}`;
 };
 
 const fmtGoal = (c: Category, refMonth: string): string => {

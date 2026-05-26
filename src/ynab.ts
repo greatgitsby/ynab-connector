@@ -1,4 +1,6 @@
 const BASE_URL = "https://api.ynab.com/v1";
+const TOKEN_URL = "https://app.ynab.com/oauth/token";
+const AUTHORIZE_URL = "https://app.ynab.com/oauth/authorize";
 
 export class YnabError extends Error {
   constructor(public status: number, public body: string) {
@@ -6,20 +8,110 @@ export class YnabError extends Error {
   }
 }
 
+export interface YnabTokenResponse {
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+  expires_in: number;
+}
+
+export const ynabAuthorizeUrl = (params: {
+  client_id: string;
+  redirect_uri: string;
+  state: string;
+  scope?: string;
+}): string => {
+  const qs = new URLSearchParams({
+    client_id: params.client_id,
+    redirect_uri: params.redirect_uri,
+    response_type: "code",
+    state: params.state,
+  });
+  if (params.scope) qs.set("scope", params.scope);
+  return `${AUTHORIZE_URL}?${qs.toString()}`;
+};
+
+const postToken = async (
+  body: URLSearchParams,
+): Promise<YnabTokenResponse> => {
+  const res = await fetch(TOKEN_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Accept: "application/json",
+    },
+    body,
+  });
+  const text = await res.text();
+  if (!res.ok) throw new YnabError(res.status, text);
+  return JSON.parse(text) as YnabTokenResponse;
+};
+
+export const exchangeYnabCode = (params: {
+  client_id: string;
+  client_secret: string;
+  code: string;
+  redirect_uri: string;
+}) =>
+  postToken(
+    new URLSearchParams({
+      client_id: params.client_id,
+      client_secret: params.client_secret,
+      redirect_uri: params.redirect_uri,
+      grant_type: "authorization_code",
+      code: params.code,
+    }),
+  );
+
+export const refreshYnabToken = (params: {
+  client_id: string;
+  client_secret: string;
+  refresh_token: string;
+}) =>
+  postToken(
+    new URLSearchParams({
+      client_id: params.client_id,
+      client_secret: params.client_secret,
+      grant_type: "refresh_token",
+      refresh_token: params.refresh_token,
+    }),
+  );
+
+// Refresh callback: returns a fresh access token. The caller (YnabMcp) is
+// responsible for persisting the new tokens somewhere durable; this client
+// just uses whatever it's handed.
+export type RefreshFn = () => Promise<string>;
+
 export class YnabClient {
-  constructor(private token: string) {}
+  constructor(
+    private token: string,
+    private refresh?: RefreshFn,
+  ) {}
 
   private async request<T>(method: string, path: string): Promise<T> {
-    const res = await fetch(`${BASE_URL}${path}`, {
-      method,
-      headers: {
-        Authorization: `Bearer ${this.token}`,
-        Accept: "application/json",
-      },
-    });
+    const send = (token: string) =>
+      fetch(`${BASE_URL}${path}`, {
+        method,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json",
+        },
+      });
+
+    let res = await send(this.token);
+    if (res.status === 401 && this.refresh) {
+      this.token = await this.refresh();
+      res = await send(this.token);
+    }
     const text = await res.text();
     if (!res.ok) throw new YnabError(res.status, text);
     return text ? (JSON.parse(text) as T) : ({} as T);
+  }
+
+  // YNAB /user — returns just `{ data: { user: { id } } }`. The id is the
+  // stable per-account identifier we hand to `completeAuthorization` as userId.
+  getUser() {
+    return this.request<{ data: { user: { id: string } } }>("GET", "/user");
   }
 
   // Budgets

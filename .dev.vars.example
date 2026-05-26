@@ -1,2 +1,2 @@
-YNAB_API_TOKEN=ynab_personal_access_token_here
-CONNECTOR_AUTH_TOKEN=long_random_string_you_generate
+YNAB_CLIENT_ID=your_ynab_oauth_client_id
+YNAB_CLIENT_SECRET=your_ynab_oauth_client_secret

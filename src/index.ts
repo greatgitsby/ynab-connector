@@ -439,17 +439,27 @@ export class YnabMcp extends McpAgent<Env, Record<string, never>, Props> {
             c.getMonth(budget_id, "current"),
           ]);
 
-          const uncat = [...uncatRes.data.transactions].sort((a, b) =>
-            b.date.localeCompare(a.date),
-          );
+          // Already-approved transfers between on-budget accounts have no
+          // category by design — keep them out of the inbox. Unapproved
+          // transfers still surface (the user hasn't OK'd them yet).
+          const isInboxItem = (t: Transaction) =>
+            t.transfer_account_id == null || !t.approved;
+          const uncat = uncatRes.data.transactions
+            .filter(isInboxItem)
+            .sort((a, b) => b.date.localeCompare(a.date));
           const uncatIds = new Set(uncat.map((t) => t.id));
           const unapproved = unapprovedRes.data.transactions
-            .filter((t) => !uncatIds.has(t.id))
+            .filter((t) => isInboxItem(t) && !uncatIds.has(t.id))
             .sort((a, b) => b.date.localeCompare(a.date));
 
           const month = monthRes.data.month;
-          const monthCats = month.categories.filter((cat) => !cat.hidden);
-          const rta = monthCats.find(
+          // Drop YNAB's internal pseudo-categories ("Inflow: Ready to Assign"
+          // and "Uncategorized"); the latter aggregates all uncategorized
+          // activity and would otherwise show up as a spurious overspent row.
+          const monthCats = month.categories.filter(
+            (cat) => !cat.hidden && !cat.internal,
+          );
+          const rta = month.categories.find(
             (cat) => cat.name === "Inflow: Ready to Assign",
           );
           const overspent = monthCats

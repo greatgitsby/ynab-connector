@@ -195,7 +195,7 @@ export interface BudgetDetail extends Budget {
   accounts?: Account[];
   category_groups?: CategoryGroup[];
   categories?: Category[];
-  months?: MonthSummary[];
+  months?: MonthDetail[];
 }
 
 export interface Account {
@@ -204,6 +204,7 @@ export interface Account {
   type: string;
   on_budget: boolean;
   closed: boolean;
+  deleted?: boolean;
   balance: number;
   cleared_balance: number;
   uncleared_balance: number;
@@ -219,9 +220,11 @@ export interface CategoryGroup {
 export interface Category {
   id: string;
   category_group_id: string;
+  category_group_name?: string;
   name: string;
   hidden: boolean;
   internal?: boolean;
+  deleted?: boolean;
   budgeted: number;
   activity: number;
   balance: number;

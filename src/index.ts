@@ -31,6 +31,12 @@ const fmtMoney = (milli: number, iso = "USD") =>
     fromMilli(milli),
   );
 
+const fmtPercent = (num: number, total: number): string =>
+  total === 0 ? "0.0%" : `${((num / total) * 100).toFixed(1)}%`;
+
+const padMoney = (milli: number, width: number, iso = "USD"): string =>
+  fmtMoney(milli, iso).padStart(width);
+
 function pushSection<T>(
   out: string[],
   title: string,
@@ -69,6 +75,24 @@ const cadenceMonths = (c: Category): number | null => {
 const addMonths = (year: number, month1: number, delta: number) => {
   const t = new Date(Date.UTC(year, month1 - 1 + delta, 1));
   return [t.getUTCFullYear(), t.getUTCMonth() + 1] as const;
+};
+
+// Builds an array of YYYY-MM-01 strings ending at the current calendar month,
+// length monthsBack, clamped to >= firstMonth. End is the current month (not
+// +1) because YNAB returns the current month with zeroed activity for
+// forward-looking budget rows we don't want to render.
+const windowMonths = (monthsBack: number, firstMonth: string): string[] => {
+  const today = new Date();
+  const endY = today.getUTCFullYear();
+  const endM = today.getUTCMonth() + 1;
+  const out: string[] = [];
+  for (let i = monthsBack - 1; i >= 0; i--) {
+    const [y, m] = addMonths(endY, endM, -i);
+    const iso = `${y}-${String(m).padStart(2, "0")}-01`;
+    if (iso < firstMonth) continue;
+    out.push(iso);
+  }
+  return out;
 };
 
 // For recurring goals, YNAB keeps goal_target_date pinned to the original
@@ -518,6 +542,262 @@ export class YnabMcp extends McpAgent<Env, Record<string, never>, Props> {
               return `- ${cat.name}: needs ${fmtMoney(cat.goal_under_funded ?? 0)} more this month (goal ${fmtMoney(cat.goal_target ?? 0)}${cadenceLabel(cat)}${date})${idSuffix}`;
             },
           );
+
+          return text(out.join("\n").trimEnd());
+        } catch (e) {
+          return handleError(e);
+        }
+      },
+    );
+
+    s.registerTool(
+      "reflect",
+      {
+        description:
+          "Retrospective overview of a budget over the last N months (default 12): top spending categories, monthly trends, current net worth, income vs expense, and age of money — all in one call. Mirrors YNAB's in-app 'Reflect' feature. Backed by a single GET /budgets/{id} call which returns the full month + account snapshot.",
+        inputSchema: {
+          budget_id: z.string(),
+          months_back: z
+            .number()
+            .int()
+            .min(1)
+            .max(24)
+            .optional()
+            .default(12),
+          include_ids: z.boolean().optional().default(false),
+        },
+      },
+      async ({ budget_id, months_back, include_ids }) => {
+        try {
+          const TOP_SPEND = 10;
+          const TOP_TREND = 5;
+          const MAX_ACCOUNTS = 20;
+
+          const { data } = await this.client().getBudget(budget_id);
+          const budget = data.budget;
+          const iso = budget.currency_format?.iso_code ?? "USD";
+          const allMonths = budget.months ?? [];
+          const accounts = budget.accounts ?? [];
+          const firstMonth = budget.first_month;
+
+          const requested = windowMonths(months_back, firstMonth);
+          const monthsByKey = new Map(allMonths.map((m) => [m.month, m]));
+          const window = requested.filter((k) => monthsByKey.has(k));
+          const monthsInWindow = window.map((k) => monthsByKey.get(k)!);
+
+          const out: string[] = [];
+          const winStart = window[0] ?? "(none)";
+          const winEnd = window[window.length - 1] ?? "(none)";
+          out.push(
+            `Reflect: ${budget.name} — last ${window.length} months (${winStart.slice(0, 7)} to ${winEnd.slice(0, 7)})`,
+          );
+          if (window.length < months_back) {
+            out.push(
+              `(Budget starts ${firstMonth}; window truncated to ${window.length} of ${months_back} requested months.)`,
+            );
+          }
+          out.push("");
+
+          // --- Aggregator (sections 1 & 2) ---
+          type CatAgg = {
+            id: string;
+            name: string;
+            group: string;
+            total: number; // milliunits, positive = spending magnitude
+            monthly: Map<string, number>; // month → spending magnitude
+          };
+          const agg = new Map<string, CatAgg>();
+          const monthlySpend = new Map<string, number>(); // month → total spending
+          for (const m of monthsInWindow) {
+            let monthTotal = 0;
+            for (const c of m.categories ?? []) {
+              if (c.hidden || c.internal || c.deleted) continue;
+              const spend = c.activity < 0 ? -c.activity : 0;
+              if (spend === 0) continue;
+              monthTotal += spend;
+              let entry = agg.get(c.id);
+              if (!entry) {
+                entry = {
+                  id: c.id,
+                  name: c.name,
+                  group: c.category_group_name ?? "",
+                  total: 0,
+                  monthly: new Map(),
+                };
+                agg.set(c.id, entry);
+              }
+              entry.total += spend;
+              entry.monthly.set(m.month, (entry.monthly.get(m.month) ?? 0) + spend);
+            }
+            monthlySpend.set(m.month, monthTotal);
+          }
+          const totalSpend = [...agg.values()].reduce((s, c) => s + c.total, 0);
+          const ranked = [...agg.values()].sort((a, b) => b.total - a.total);
+
+          // --- Section 1: Spending breakdown ---
+          pushSection(
+            out,
+            `Top spending categories — last ${window.length} months`,
+            ranked,
+            TOP_SPEND,
+            (c) => {
+              const idSuffix = include_ids ? ` — id ${c.id}` : "";
+              return `- ${c.name}: ${fmtMoney(c.total, iso)} (${fmtPercent(c.total, totalSpend)})${idSuffix}`;
+            },
+          );
+          out.push(`Total spending across window: ${fmtMoney(totalSpend, iso)}`);
+          out.push("");
+
+          // --- Section 2: Trends ---
+          out.push("## Monthly spending trend");
+          if (!monthsInWindow.length) {
+            out.push("(none)");
+          } else {
+            for (const m of monthsInWindow) {
+              out.push(
+                `- ${m.month.slice(0, 7)}: ${fmtMoney(monthlySpend.get(m.month) ?? 0, iso)}`,
+              );
+            }
+          }
+          out.push("");
+
+          const topTrend = ranked.slice(0, TOP_TREND);
+          const trendHeader =
+            ranked.length <= TOP_TREND
+              ? `## Top categories month-over-month (${ranked.length})`
+              : `## Top categories month-over-month (showing ${TOP_TREND} of ${ranked.length})`;
+          out.push(trendHeader);
+          if (!topTrend.length) {
+            out.push("(none)");
+          } else if (window.length === 1) {
+            for (const c of topTrend) {
+              const only = c.monthly.get(window[0]) ?? 0;
+              out.push(`- ${c.name}: ${fmtMoney(only, iso)} (${window[0].slice(0, 7)})`);
+            }
+          } else {
+            for (const c of topTrend) {
+              const monthValues = window.map((k) => ({
+                month: k,
+                v: c.monthly.get(k) ?? 0,
+              }));
+              const present = monthValues.filter((x) => x.v > 0);
+              if (!present.length) {
+                out.push(`- ${c.name}: avg ${fmtMoney(0, iso)} (no spending)`);
+                continue;
+              }
+              // Average over months where the category actually had spending,
+              // not over the whole window — otherwise one-off purchases get
+              // diluted to nonsense like "avg $696, min $4,180, max $4,180".
+              const avg = c.total / present.length;
+              const min = present.reduce((a, b) => (b.v < a.v ? b : a));
+              const max = present.reduce((a, b) => (b.v > a.v ? b : a));
+              const cadence =
+                present.length === window.length
+                  ? ""
+                  : ` (${present.length}/${window.length} months)`;
+              out.push(
+                `- ${c.name}: avg ${fmtMoney(avg, iso)}${cadence}, min ${fmtMoney(min.v, iso)} (${min.month.slice(0, 7)}), max ${fmtMoney(max.v, iso)} (${max.month.slice(0, 7)})`,
+              );
+            }
+          }
+          out.push("");
+
+          // --- Section 3: Net worth (current snapshot) ---
+          const openAccounts = accounts.filter((a) => !a.closed && !a.deleted);
+          const assets = openAccounts
+            .filter((a) => a.balance > 0)
+            .reduce((s, a) => s + a.balance, 0);
+          const liabilities = openAccounts
+            .filter((a) => a.balance < 0)
+            .reduce((s, a) => s + a.balance, 0);
+          out.push("## Net worth (current snapshot)");
+          out.push(`Assets:      ${fmtMoney(assets, iso)}`);
+          out.push(`Liabilities: ${fmtMoney(liabilities, iso)}`);
+          out.push(`Net worth:   ${fmtMoney(assets + liabilities, iso)}`);
+          out.push("");
+          const sortedAccounts = [...openAccounts].sort(
+            (a, b) => b.balance - a.balance,
+          );
+          pushSection(
+            out,
+            "By account",
+            sortedAccounts,
+            MAX_ACCOUNTS,
+            (a) => {
+              const idSuffix = include_ids ? ` — id ${a.id}` : "";
+              return `- ${a.name} [${a.type}] ${a.on_budget ? "(on-budget)" : "(off-budget)"}: ${fmtMoney(a.balance, iso)}${idSuffix}`;
+            },
+          );
+          out.push(
+            "Note: YNAB's API only exposes current account balances, not historical snapshots — a true month-over-month net-worth trend isn't available. The income vs expense section below is the closest proxy.",
+          );
+          out.push("");
+
+          // --- Section 4: Income vs Expense ---
+          out.push(`## Income vs expense — last ${window.length} months`);
+          const colW = 13;
+          out.push(
+            `${"".padEnd(12)}${"Income".padStart(colW)}${"Expense".padStart(colW)}${"Net".padStart(colW)}`,
+          );
+          let incomeSum = 0;
+          let expenseSum = 0;
+          let netSum = 0;
+          let present = 0;
+          for (const k of requested) {
+            const m = monthsByKey.get(k);
+            if (!m) {
+              out.push(`- ${k.slice(0, 7)}  (no data)`);
+              continue;
+            }
+            const income = m.income;
+            const expense = m.activity - m.income; // negative
+            const net = m.activity;
+            incomeSum += income;
+            expenseSum += expense;
+            netSum += net;
+            present++;
+            out.push(
+              `- ${k.slice(0, 7)}  ${padMoney(income, colW, iso)}${padMoney(expense, colW, iso)}${padMoney(net, colW, iso)}`,
+            );
+          }
+          if (present > 0) {
+            out.push(
+              `- Average   ${padMoney(incomeSum / present, colW, iso)}${padMoney(expenseSum / present, colW, iso)}${padMoney(netSum / present, colW, iso)}`,
+            );
+          }
+          out.push("");
+
+          // --- Section 5: Age of Money ---
+          out.push(`## Age of money — last ${window.length} months`);
+          const aomVals: number[] = [];
+          for (const k of requested) {
+            const m = monthsByKey.get(k);
+            if (!m) {
+              out.push(`- ${k.slice(0, 7)}: (no data)`);
+              continue;
+            }
+            if (m.age_of_money == null) {
+              out.push(`- ${k.slice(0, 7)}: (n/a)`);
+              continue;
+            }
+            aomVals.push(m.age_of_money);
+            out.push(`- ${k.slice(0, 7)}: ${m.age_of_money} days`);
+          }
+          if (!aomVals.length) {
+            out.push("(age of money not yet available)");
+          } else {
+            const avg = aomVals.reduce((s, v) => s + v, 0) / aomVals.length;
+            out.push(`Average: ${Math.round(avg)} days`);
+            if (window.length === 1 || aomVals.length < 2) {
+              out.push("Trend: n/a (single data point)");
+            } else {
+              const delta = aomVals[aomVals.length - 1] - aomVals[0];
+              const sign = delta >= 0 ? "+" : "";
+              out.push(
+                `Trend: ${sign}${delta} days vs ${window.length} months ago`,
+              );
+            }
+          }
 
           return text(out.join("\n").trimEnd());
         } catch (e) {

@@ -20,6 +20,7 @@ Tools the connector exposes:
 | `get_month` | Full month breakdown grouped by category group; defaults to the current month |
 | `list_transactions` | Transactions, optionally filtered to `uncategorized` / `unapproved` |
 | `triage_inbox` | Uncategorized + unapproved txs, overspent categories, underfunded goals — one call |
+| `reflect` | Retrospective overview (default last 12 months): top spending, monthly trends, net worth, income vs expense, age of money |
 | `get_category_details` | Drilldown for one category: month aggregates + every transaction this month |
 
 ## How auth works

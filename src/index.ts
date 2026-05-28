@@ -16,6 +16,7 @@ import { registerReflectIncomeExpense } from "./tools/reflect-income-expense";
 import { registerReflectAgeOfMoney } from "./tools/reflect-age-of-money";
 import { registerGetCategoryDetails } from "./tools/get-category-details";
 import { registerSearchPayees } from "./tools/search-payees";
+import { registerAssignToCategories } from "./tools/assign-to-categories";
 
 interface Env {
   YNAB_CLIENT_ID: string;
@@ -67,6 +68,7 @@ export class YnabMcp extends McpAgent<Env, Record<string, never>, Props> {
   async init() {
     const s = this.server;
     const getClient = () => this.client();
+    const getProps = () => this.props!;
 
     registerListBudgets(s, getClient);
     registerGetBudgetSummary(s, getClient);
@@ -81,6 +83,7 @@ export class YnabMcp extends McpAgent<Env, Record<string, never>, Props> {
     registerReflectAgeOfMoney(s, getClient);
     registerGetCategoryDetails(s, getClient);
     registerSearchPayees(s, getClient);
+    registerAssignToCategories(s, getClient, getProps);
   }
 }
 

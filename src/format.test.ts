@@ -10,6 +10,8 @@ import {
   fmtCategoryLine,
   fmtTxLine,
   fmtActivityLine,
+  result,
+  scopeDeniedError,
 } from "./format";
 
 describe("text", () => {
@@ -17,6 +19,25 @@ describe("text", () => {
     expect(text("hello")).toEqual({
       content: [{ type: "text", text: "hello" }],
     });
+  });
+});
+
+describe("result", () => {
+  test("attaches structuredContent alongside the text block", () => {
+    const out = result("ok", { count: 3, ids: ["a", "b", "c"] });
+    expect(out).toEqual({
+      content: [{ type: "text", text: "ok" }],
+      structuredContent: { count: 3, ids: ["a", "b", "c"] },
+    });
+  });
+});
+
+describe("scopeDeniedError", () => {
+  test("returns isError: true with a reconnect-style message", () => {
+    const out = scopeDeniedError();
+    expect(out.isError).toBe(true);
+    expect(out.content[0].text).toMatch(/read-only/i);
+    expect(out.content[0].text).toMatch(/reconnect/i);
   });
 });
 

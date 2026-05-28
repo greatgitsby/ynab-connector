@@ -3,10 +3,13 @@
 # you can compare raw API responses against what a tool returns.
 #
 # Subcommands:
-#   ./scripts/ynab.sh url             Print the YNAB OAuth authorize URL
-#   ./scripts/ynab.sh exchange CODE   Trade an authorization code for tokens
-#   ./scripts/ynab.sh refresh         Refresh the saved access token
-#   ./scripts/ynab.sh api PATH [...]  GET api.ynab.com/v1$PATH (extra args go to curl)
+#   ./scripts/ynab.sh url               Print the YNAB OAuth authorize URL (full scope)
+#   ./scripts/ynab.sh exchange CODE     Trade an authorization code for tokens
+#   ./scripts/ynab.sh refresh           Refresh the saved access token
+#   ./scripts/ynab.sh api PATH [...]    GET api.ynab.com/v1$PATH (extra args go to curl)
+#   ./scripts/ynab.sh patch PATH BODY   PATCH with a JSON body (- to read body from stdin)
+#   ./scripts/ynab.sh put   PATH BODY   PUT with a JSON body
+#   ./scripts/ynab.sh post  PATH BODY   POST with a JSON body
 #
 # Files:
 #   .dev.vars          Source of YNAB_CLIENT_ID / YNAB_CLIENT_SECRET (you create this)
@@ -57,7 +60,7 @@ cmd_url() {
   need_dotenv
   local enc
   enc=$(jq -rn --arg s "$REDIRECT" '$s|@uri')
-  echo "https://app.ynab.com/oauth/authorize?client_id=$YNAB_CLIENT_ID&redirect_uri=$enc&response_type=code&scope=read-only"
+  echo "https://app.ynab.com/oauth/authorize?client_id=$YNAB_CLIENT_ID&redirect_uri=$enc&response_type=code"
 }
 
 cmd_exchange() {
@@ -123,11 +126,26 @@ cmd_api() {
   fi
 }
 
+# Shared mutator: $1 = HTTP method, $2 = path, $3 = JSON body (or `-` for stdin).
+# Sets Content-Type and forwards to cmd_api so we get token refresh for free.
+cmd_write() {
+  local method=${1:-} path=${2:-} body=${3:-}
+  [[ -n $method && -n $path && -n $body ]] || {
+    echo "usage: $0 ${method,,} PATH BODY   (BODY may be '-' for stdin)" >&2
+    exit 1
+  }
+  if [[ $body == "-" ]]; then body=$(cat); fi
+  cmd_api "$path" -X "$method" -H "Content-Type: application/json" --data "$body"
+}
+
 case "${1:-help}" in
   url) shift; cmd_url "$@" ;;
   exchange) shift; cmd_exchange "$@" ;;
   refresh) shift; cmd_refresh "$@" ;;
   api) shift; cmd_api "$@" ;;
+  patch) shift; cmd_write PATCH "$@" ;;
+  put) shift; cmd_write PUT "$@" ;;
+  post) shift; cmd_write POST "$@" ;;
   *)
     sed -n '2,/^$/p' "$0" >&2
     exit 1

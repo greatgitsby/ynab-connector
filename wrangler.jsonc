@@ -28,6 +28,12 @@
 			"id": "e8aa9cdf03b34b1b9e79de520afa4b99"
 		}
 	],
+	"routes": [
+		{
+			"pattern": "claude-for-ynab.moen.ai",
+			"custom_domain": true
+		}
+	],
 	"observability": {
 		"enabled": true
 	}

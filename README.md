@@ -10,11 +10,13 @@ itself holds no long-lived per-user state.
 
 ## Install
 
-**[→ Add Claude for YNAB to Claude.ai](https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=Claude%20for%20YNAB&connectorUrl=https%3A%2F%2Fclaude-for-ynab.moen.ai%2Fmcp)**
-
-Opens Claude.ai's "Add custom connector" dialog with the name and URL prefilled
-against the hosted deployment at `claude-for-ynab.moen.ai`. After you confirm,
-Claude walks you through authorizing the connector against your YNAB account.
+> [!TIP]
+> ### [→ Add Claude for YNAB to Claude.ai](https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=Claude%20for%20YNAB&connectorUrl=https%3A%2F%2Fclaude-for-ynab.moen.ai%2Fmcp)
+>
+> One click opens Claude.ai's "Add custom connector" dialog with the name and
+> URL prefilled against the hosted deployment at `claude-for-ynab.moen.ai`.
+> After you confirm, Claude walks you through authorizing the connector against
+> your YNAB account.
 
 Prefer to self-host instead? See [One-time setup](#one-time-setup) below.
 

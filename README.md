@@ -20,7 +20,11 @@ Tools the connector exposes:
 | `get_month` | Full month breakdown grouped by category group; defaults to the current month |
 | `list_transactions` | Transactions, optionally filtered to `uncategorized` / `unapproved` |
 | `triage_inbox` | Uncategorized + unapproved txs, overspent categories, underfunded goals — one call |
-| `reflect` | Retrospective overview (default last 12 months): top spending, monthly trends, net worth, income vs expense, age of money |
+| `reflect_spending_breakdown` | Spending over a date range (defaults to previous calendar month): total, average monthly & daily, most frequent category, largest outflow, per-category share, positive-inflow categories |
+| `reflect_spending_trends` | Net activity over last N months (default 6) with deltas from window average, plus top categories month-over-month |
+| `reflect_net_worth` | Current snapshot + historical month-by-month net worth (reconstructed from transactions), plus per-account balances |
+| `reflect_income_expense` | Income (by payee) vs expense (by category, grouped) pivot over last N months (default 3), with Average and Total columns |
+| `reflect_age_of_money` | Current age of money plus monthly history, average, and trend |
 | `get_category_details` | Drilldown for one category: month aggregates + every transaction this month |
 
 ## How auth works

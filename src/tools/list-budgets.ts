@@ -48,7 +48,9 @@ export const registerListBudgets = (
   server.registerTool(
     "list_budgets",
     {
+      title: "List Budgets",
       description: DESCRIPTION,
+      annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
         include_archived: z.boolean().optional().default(false),
       },

@@ -162,7 +162,9 @@ export const registerTriageInbox = (
   server.registerTool(
     "triage_inbox",
     {
+      title: "Triage Inbox",
       description: DESCRIPTION,
+      annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
         budget_id: z.string(),
         max_per_section: z

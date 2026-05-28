@@ -279,7 +279,9 @@ export const registerReflectSpendingBreakdown = (
   server.registerTool(
     "reflect_spending_breakdown",
     {
+      title: "Reflect: Spending Breakdown",
       description: DESCRIPTION,
+      annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
         budget_id: z.string(),
         start_month: z

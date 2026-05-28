@@ -337,7 +337,9 @@ export const registerReflectIncomeExpense = (
   server.registerTool(
     "reflect_income_expense",
     {
+      title: "Reflect: Income vs Expense",
       description: DESCRIPTION,
+      annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
         budget_id: z.string(),
         months_back: z

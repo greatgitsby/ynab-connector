@@ -51,7 +51,9 @@ export const registerListTransactions = (
   server.registerTool(
     "list_transactions",
     {
+      title: "List Transactions",
       description: DESCRIPTION,
+      annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
         budget_id: z.string(),
         since_date: z.string().optional(),

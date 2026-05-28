@@ -218,7 +218,9 @@ export const registerReflectNetWorth = (
   server.registerTool(
     "reflect_net_worth",
     {
+      title: "Reflect: Net Worth",
       description: DESCRIPTION,
+      annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
         budget_id: z.string(),
         months_back: z

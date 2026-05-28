@@ -85,7 +85,9 @@ export const registerGetBudgetSummary = (
   server.registerTool(
     "get_budget_summary",
     {
+      title: "Get Budget Summary",
       description: DESCRIPTION,
+      annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: { budget_id: z.string() },
     },
     async ({ budget_id }) => {

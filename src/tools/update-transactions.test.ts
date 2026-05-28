@@ -38,6 +38,15 @@ describe("buildBulkRow", () => {
     ).toEqual({ id: "tx-1", approved: true });
   });
 
+  test("forwards approved: false (un-approve)", () => {
+    expect(
+      buildBulkRow({
+        transaction_id: "tx-1",
+        approved: false,
+      }),
+    ).toEqual({ id: "tx-1", approved: false });
+  });
+
   test("preserves explicit nulls (e.g., clearing a category)", () => {
     expect(
       buildBulkRow({

@@ -1,26 +1,35 @@
 # Privacy Policy — Claude for YNAB
 
-**Last Updated:** 2026-05-25
+**Last Updated:** 2026-05-28
 
 This privacy policy describes how the "Claude for YNAB" connector (the
 "Connector") handles data accessed through the YNAB API. The Connector is a
 personal-use OAuth application that lets the Claude.ai assistant
-(<https://claude.ai>) read your YNAB data on your behalf.
+(<https://claude.ai>) read and edit your YNAB data on your behalf.
 
 ## What the Connector accesses
 
-When you authorize the Connector against your YNAB account, it requests the
-`read-only` OAuth scope. This grants the Connector read access to:
+When you authorize the Connector against your YNAB account, it requests
+full access (read + write). This grants the Connector access to:
 
-- Your budgets (names, IDs, currency)
-- Accounts and balances
-- Categories, category groups, and goal data
-- Transactions and split transactions
-- Monthly summaries
+- Your budgets (names, IDs, currency) — read
+- Accounts and balances — read
+- Categories, category groups, and goal data — read
+- Transactions and split transactions — read; edit (categorize, approve,
+  memo, flag, mark cleared/reconciled, set payee, split across categories)
+- Monthly summaries — read
+- Per-month category budgeted amounts — read; edit (reassign money between
+  categories, fund from Ready to Assign)
 - Your YNAB user ID (used as an internal identifier — see below)
 
-The Connector never requests write scope and cannot create, modify, or
-delete data in your YNAB account.
+The Connector deliberately does **not** create new transactions, delete
+anything, manage scheduled transactions, or rename/merge payees or
+categories. YNAB's OAuth model is binary (full access or none); if you want
+read-only access, do not authorize the Connector, or revoke its access in
+YNAB at any time (see "Revoking access" below). Connections authorized
+before write support shipped remain effectively read-only on the
+Connector's side — write tools refuse to act on those tokens and surface a
+"reconnect to grant write access" message.
 
 ## How data is handled
 

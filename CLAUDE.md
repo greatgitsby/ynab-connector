@@ -54,8 +54,11 @@ flat modules at `src/`.
 
 ### Shared modules (`src/`)
 
-- `format.ts` — text/handleError MCP helpers, fmtMoney/padMoney/fmtPercent/pushSection,
-  and the line formatters (fmtCategoryLine, fmtTxLine, fmtActivityLine).
+- `format.ts` — text/handleError MCP helpers, `result(text, structured)` for
+  write tools that return text + `structuredContent`, `scopeDeniedError()`
+  for the canonical "this token doesn't have write scope" tool execution
+  error, plus fmtMoney/padMoney/fmtPercent/pushSection and the line
+  formatters (fmtCategoryLine, fmtTxLine, fmtActivityLine).
 - `goals.ts` — `interpretGoal(c, refMonth) → GoalView`. (Concept: CONTEXT.md.)
 - `predicates.ts` — domain predicates. (Concept: CONTEXT.md.)
 - `month-window.ts` — `resolveMonthWindow(budget, monthsBack) → MonthWindow`;
@@ -68,6 +71,12 @@ One file per tool, following the Compute/Render split (defined in CONTEXT.md).
 Tool-local helpers (like `expandForCategory` in `get-category-details.ts`,
 `historicalNetWorth` in `reflect-net-worth.ts`) live inside the tool file,
 not in `src/`.
+
+Write tools (`assign-to-categories.ts`, `update-transactions.ts`) follow the
+same convention with two adaptations: (a) Compute splits into a pure
+`buildBody`/`interpretResponse` pair plus an effectful `apply*` orchestrator,
+and (b) the `register*` function takes a third `getProps()` closure so the
+handler can check `props.canWrite` before any YNAB call.
 
 ### Secrets and tokens
 
@@ -104,12 +113,16 @@ When adding a new read tool, create `src/tools/<tool-name>.ts`:
 - Append `— id <uuid>` to each line so Claude can reference items in follow-up
   tool calls.
 - Wire the tool by adding `registerYourTool(s, getClient)` to `YnabMcp.init()`.
+- Set MCP `annotations: { readOnlyHint: true, openWorldHint: true }` on read tools.
 - Write a `.test.ts` alongside it. Compute is pure — fixtures + assertions on
   the result type. Render tests can be sparser (assert on key substrings).
 - Filter through the predicates in `src/predicates.ts` rather than inlining
   boolean expressions on the YNAB shape.
 
-See `src/tools/reflect-income-expense.ts` for the canonical example.
+See `src/tools/reflect-income-expense.ts` for the canonical read-tool
+example, and `src/tools/assign-to-categories.ts` for the canonical write-tool
+example (note the `getProps()` parameter, the `props.canWrite` gate at the
+top of the handler, and the `result(text, structured)` return shape).
 
 ## Local dev / e2e testing
 
@@ -160,13 +173,44 @@ For end-to-end MCP testing, prefer the deployed Worker plus a real client
 (Claude.ai connector, Claude Code, MCP Inspector) — `npx wrangler tail`
 streams the live request log so you can watch tool calls in real time.
 
-## Read-only
+### Smoke-testing write endpoints
 
-The connector is intentionally read-only right now. The YNAB client has no
-write methods, and `NewTransaction` / `toMilli()` were deliberately removed.
-YNAB OAuth scope is `read-only` to match. Re-adding mutation needs an
-explicit ask — don't sneak it in alongside a read-tool change, and the
-scope on the YNAB authorize URL would need to change too.
+`scripts/smoke-writes.sh` round-trips a budgeted-amount change and an
+approval toggle against a dedicated YNAB test budget — exits non-zero on any
+mismatch. Setup:
+
+1. Create a "Claude Connector Test" budget in your YNAB account (separate
+   from your real one) with a few categories and a few transactions.
+2. Add `YNAB_TEST_BUDGET_ID=<that-budget-id>` to `.dev.vars.smoke`
+   (gitignored via `.dev.vars.*`).
+3. Run the recipe:
+
+   ```bash
+   ./scripts/smoke-writes.sh
+   ```
+
+Run it before any deploy that touches the write tools.
+
+## Writes
+
+The connector supports a narrow set of write tools (categorize/approve/split
+existing transactions, reassign category budgets, search payees). Scope and
+rationale: `docs/adr/0001-add-write-tools.md`. Implementation roadmap:
+`docs/plans/0001-write-tools-implementation.md`.
+
+Wire-level conventions for new write tools:
+
+- The YNAB authorize URL no longer pins `scope=read-only`. Tokens issued under
+  this flow carry full read+write access. Tokens issued before this change
+  remain effectively read-only — `Props.canWrite` deserializes to `undefined`
+  for them, which write tools must treat as `false`.
+- Every write handler **MUST** check `this.props.canWrite` before any YNAB
+  call. If false, return a tool execution error (`isError: true`) telling the
+  user to disconnect and reconnect the connector in Claude.ai to grant write
+  access. Don't propagate raw 403s from YNAB; we own the error message.
+- v1 explicitly excludes: creating manual transactions, deletes, scheduled
+  transactions, payee rename/merge, category rename/move, goal edits. Adding
+  any of these requires an ADR update.
 
 ## YNAB API gotchas
 

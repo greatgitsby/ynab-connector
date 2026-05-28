@@ -8,6 +8,9 @@ OAuth 2.0 Authorization Code Grant. Per-user YNAB access + refresh tokens are
 encrypted into the bearer token issued back to Claude.ai — the connector
 itself holds no long-lived per-user state.
 
+> [!NOTE]
+> ### [→ Project page: greatgitsby.github.io/ynab-connector](https://greatgitsby.github.io/ynab-connector/)
+
 ## Install
 
 > [!TIP]

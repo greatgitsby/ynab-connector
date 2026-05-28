@@ -88,14 +88,24 @@ export class YnabClient {
     private refresh?: RefreshFn,
   ) {}
 
-  private async request<T>(method: string, path: string): Promise<T> {
+  private async request<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+  ): Promise<T> {
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+    };
+    let payload: string | undefined;
+    if (body !== undefined) {
+      headers["Content-Type"] = "application/json";
+      payload = JSON.stringify(body);
+    }
     const send = (token: string) =>
       fetch(`${BASE_URL}${path}`, {
         method,
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: "application/json",
-        },
+        headers: { ...headers, Authorization: `Bearer ${token}` },
+        body: payload,
       });
 
     let res = await send(this.token);
@@ -163,6 +173,19 @@ export class YnabClient {
     );
   }
 
+  updateCategoryMonth(
+    budgetId: string,
+    month: string,
+    categoryId: string,
+    body: { budgeted: number },
+  ) {
+    return this.request<{ data: { category: Category } }>(
+      "PATCH",
+      `/budgets/${budgetId}/months/${month}/categories/${categoryId}`,
+      { category: body },
+    );
+  }
+
   // Transactions
   listTransactions(
     budgetId: string,
@@ -175,6 +198,36 @@ export class YnabClient {
     return this.request<{ data: { transactions: Transaction[] } }>(
       "GET",
       `/budgets/${budgetId}/transactions${qs}`,
+    );
+  }
+  updateTransaction(
+    budgetId: string,
+    transactionId: string,
+    body: SaveTransactionFields,
+  ) {
+    return this.request<{ data: { transaction: Transaction } }>(
+      "PUT",
+      `/budgets/${budgetId}/transactions/${transactionId}`,
+      { transaction: body },
+    );
+  }
+  updateTransactionsBulk(
+    budgetId: string,
+    body: { transactions: SaveTransactionWithId[] },
+  ) {
+    return this.request<{
+      data: {
+        transactions: Transaction[];
+        transaction_ids: string[];
+      };
+    }>("PATCH", `/budgets/${budgetId}/transactions`, body);
+  }
+
+  // Payees
+  listPayees(budgetId: string) {
+    return this.request<{ data: { payees: Payee[] } }>(
+      "GET",
+      `/budgets/${budgetId}/payees`,
     );
   }
 }
@@ -281,4 +334,43 @@ export interface SubTransaction {
   payee_name: string | null;
   category_id: string | null;
   category_name: string | null;
+}
+
+export interface Payee {
+  id: string;
+  name: string;
+  transfer_account_id: string | null;
+  deleted?: boolean;
+}
+
+// A single subtransaction in a write payload. Only the fields the connector's
+// tools are willing to set are listed — YNAB tolerates extras but we don't
+// expose them. `amount` is the only field YNAB requires.
+export interface SaveSubTransaction {
+  amount: number;
+  payee_id?: string | null;
+  payee_name?: string | null;
+  category_id?: string | null;
+  memo?: string | null;
+}
+
+// Subset of `SaveTransactionWithOptionalFields` from YNAB's OpenAPI spec — the
+// fields the connector's update tool can set. Notably excludes `date`,
+// `amount`, and `account_id`, which the connector deliberately doesn't expose
+// for editing bank-imported rows.
+export interface SaveTransactionFields {
+  category_id?: string | null;
+  payee_id?: string | null;
+  payee_name?: string | null;
+  memo?: string | null;
+  approved?: boolean;
+  cleared?: "cleared" | "uncleared" | "reconciled";
+  flag_color?: "red" | "orange" | "yellow" | "green" | "blue" | "purple" | null;
+  subtransactions?: SaveSubTransaction[];
+}
+
+// Bulk-update row: identifies the transaction by `id` and carries any of the
+// settable fields. YNAB requires `id` (or `import_id`); we always pass `id`.
+export interface SaveTransactionWithId extends SaveTransactionFields {
+  id: string;
 }

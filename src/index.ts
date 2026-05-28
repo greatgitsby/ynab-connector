@@ -15,6 +15,7 @@ import { registerReflectNetWorth } from "./tools/reflect-net-worth";
 import { registerReflectIncomeExpense } from "./tools/reflect-income-expense";
 import { registerReflectAgeOfMoney } from "./tools/reflect-age-of-money";
 import { registerGetCategoryDetails } from "./tools/get-category-details";
+import { registerSearchPayees } from "./tools/search-payees";
 
 interface Env {
   YNAB_CLIENT_ID: string;
@@ -79,6 +80,7 @@ export class YnabMcp extends McpAgent<Env, Record<string, never>, Props> {
     registerReflectIncomeExpense(s, getClient);
     registerReflectAgeOfMoney(s, getClient);
     registerGetCategoryDetails(s, getClient);
+    registerSearchPayees(s, getClient);
   }
 }
 

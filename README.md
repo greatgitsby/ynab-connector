@@ -1,12 +1,12 @@
 # YNAB Connector for Claude
 
-A remote MCP server, hosted on Cloudflare Workers, that lets a Claude.ai connector
-read your YNAB (You Need A Budget) data. Read-only. Multi-user, OAuth-protected
-on both sides: Claude.ai authenticates via OAuth 2.1 (dynamic client
-registration + PKCE), and each user authorizes the connector against YNAB via
-OAuth 2.0 Authorization Code Grant. Per-user YNAB access + refresh tokens are
-encrypted into the bearer token issued back to Claude.ai — the connector
-itself holds no long-lived per-user state.
+A remote MCP server, hosted on Cloudflare Workers, that lets a Claude.ai
+connector read and edit your YNAB (You Need A Budget) data. Multi-user,
+OAuth-protected on both sides: Claude.ai authenticates via OAuth 2.1 (dynamic
+client registration + PKCE), and each user authorizes the connector against
+YNAB via OAuth 2.0 Authorization Code Grant. Per-user YNAB access + refresh
+tokens are encrypted into the bearer token issued back to Claude.ai — the
+connector itself holds no long-lived per-user state.
 
 > [!NOTE]
 > ### [→ Project page: greatgitsby.github.io/ynab-connector](https://greatgitsby.github.io/ynab-connector/)
@@ -25,7 +25,7 @@ Prefer to self-host instead? See [One-time setup](#one-time-setup) below.
 
 ## What Claude can do with it
 
-Tools the connector exposes:
+Read tools:
 
 | Tool | What it does |
 | --- | --- |
@@ -41,6 +41,16 @@ Tools the connector exposes:
 | `reflect_income_expense` | Income (by payee) vs expense (by category, grouped) pivot over last N months (default 3), with Average and Total columns |
 | `reflect_age_of_money` | Current age of money plus monthly history, average, and trend |
 | `get_category_details` | Drilldown for one category: month aggregates + every transaction this month |
+| `search_payees` | Substring-match payees in a budget — use to canonicalize a payee `id` before passing it to `update_transactions` |
+
+Write tools (require write access — see "Permissions"):
+
+| Tool | What it does |
+| --- | --- |
+| `assign_to_categories` | Set per-month `budgeted` amounts on one or more categories (absolute milliunits). Reassign money between categories or fund from Ready to Assign. |
+| `update_transactions` | Edit existing transactions in bulk: categorize, approve, memo, flag, set cleared, set payee, or split across categories. |
+
+Out of scope by design: creating manual transactions, deleting anything, scheduled transactions, payee rename/merge, category rename/move, goal edits. See `docs/adr/0001-add-write-tools.md` for the rationale.
 
 ## How auth works
 
@@ -144,8 +154,22 @@ return authenticated.
 - YNAB stores money as **milliunits** (1 USD = 1000). The tools translate to
   normal currency in their output.
 - For `get_month`, pass the calendar `month` as `YYYY-MM-01` or `current`.
-- YNAB OAuth scope is `read-only`, matching the connector's read-only
-  surface.
+
+## Permissions
+
+The connector requests full read+write access from YNAB. Reads work for any
+connection; write tools additionally check that the token was issued under
+the current (write-capable) flow.
+
+**Connections established before write support shipped remain effectively
+read-only** — those tokens predate the write-capable scope and write tools
+respond with a "reconnect to grant write access" error message. To opt in to
+writes, disconnect the connector in Claude.ai's settings and add it again;
+the YNAB authorization page will request the broader scope.
+
+YNAB itself does not split scope into separate read and write grants — a
+single connection either has full access or none. If you prefer to keep
+reads only, simply don't reconnect; existing read-only tokens stay valid.
 
 ## Files
 
@@ -154,6 +178,10 @@ src/
   index.ts       # Worker entry: OAuthProvider + YnabMcp (McpAgent)
   ynab-auth.ts   # /authorize + /callback handlers (YNAB upstream OAuth)
   ynab.ts        # YNAB API client + OAuth helpers
+  tools/         # One file per MCP tool
+docs/
+  adr/           # Architecture decision records (start with 0001-add-write-tools.md)
+  plans/         # Implementation plans for in-flight work
 wrangler.jsonc
 ```
 

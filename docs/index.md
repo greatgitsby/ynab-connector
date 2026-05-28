@@ -4,8 +4,10 @@ title: Claude for YNAB
 
 # Claude for YNAB
 
-A remote MCP server that lets the Claude.ai assistant read your YNAB
-(You Need A Budget) data. Read-only.
+A remote MCP server that lets the Claude.ai assistant read and edit your
+YNAB (You Need A Budget) data — categorize transactions, approve pending
+imports, split receipts across categories, reassign money between
+categories, and run analytical reflections.
 
 **[→ Add to Claude.ai](https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=Claude%20for%20YNAB&connectorUrl=https%3A%2F%2Fclaude-for-ynab.moen.ai%2Fmcp)**
 

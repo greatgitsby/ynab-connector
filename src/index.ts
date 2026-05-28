@@ -33,12 +33,12 @@ export class YnabMcp extends McpAgent<Env, Record<string, never>, Props> {
       title: "YNAB",
       version: "0.1.0",
       description:
-        "Read-only access to your YNAB (You Need A Budget) budgets, accounts, categories, and transactions.",
+        "Read and edit your YNAB (You Need A Budget) budgets, accounts, categories, and transactions.",
       websiteUrl: "https://github.com/greatgitsby/ynab-connector",
     },
     {
       instructions:
-        'Read-only YNAB (You Need A Budget) connector. Money values in responses are already converted from YNAB milliunits to dollars. Each line ends with "— id <uuid>" so you can reference items in follow-up calls. Month parameters accept "YYYY-MM-01" or the literal string "current". Start with triage_inbox or get_budget_summary for an overview; the reflect_* tools give multi-month analyses; get_category_details drills into a single category.',
+        'YNAB (You Need A Budget) connector. Read tools surface budgets, accounts, categories, transactions, and analytics; write tools (assign_to_categories, update_transactions) edit categories and existing transactions. Money values in responses are already converted from YNAB milliunits to dollars; write tools take amounts in milliunits. Each line ends with "— id <uuid>" so you can reference items in follow-up calls. Month parameters accept "YYYY-MM-01" or the literal string "current". Start with triage_inbox or get_budget_summary for an overview; the reflect_* tools give multi-month analyses; get_category_details drills into a single category. Use search_payees to canonicalize a payee before passing it into update_transactions. Write tools require a connection issued with write scope — if you get a "read-only" error, ask the user to disconnect and reconnect the connector in Claude.ai\'s settings.',
     },
   );
 

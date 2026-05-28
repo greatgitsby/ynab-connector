@@ -133,7 +133,9 @@ export const registerReflectAgeOfMoney = (
   server.registerTool(
     "reflect_age_of_money",
     {
+      title: "Reflect: Age of Money",
       description: DESCRIPTION,
+      annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
         budget_id: z.string(),
         months_back: z

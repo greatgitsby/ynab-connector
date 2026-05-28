@@ -113,7 +113,9 @@ export const registerGetMonth = (
   server.registerTool(
     "get_month",
     {
+      title: "Get Month",
       description: DESCRIPTION,
+      annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
         budget_id: z.string(),
         month: z

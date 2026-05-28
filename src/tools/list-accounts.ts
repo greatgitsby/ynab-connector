@@ -56,7 +56,9 @@ export const registerListAccounts = (
   server.registerTool(
     "list_accounts",
     {
+      title: "List Accounts",
       description: DESCRIPTION,
+      annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
         budget_id: z.string(),
         include_closed: z.boolean().optional().default(false),

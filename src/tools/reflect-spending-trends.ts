@@ -227,7 +227,9 @@ export const registerReflectSpendingTrends = (
   server.registerTool(
     "reflect_spending_trends",
     {
+      title: "Reflect: Spending Trends",
       description: DESCRIPTION,
+      annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
         budget_id: z.string(),
         months_back: z

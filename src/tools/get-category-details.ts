@@ -144,7 +144,9 @@ export const registerGetCategoryDetails = (
   server.registerTool(
     "get_category_details",
     {
+      title: "Get Category Details",
       description: DESCRIPTION,
+      annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
         budget_id: z.string(),
         category_id: z.string(),

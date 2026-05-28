@@ -27,11 +27,20 @@ Secrets (`YNAB_CLIENT_ID`, `YNAB_CLIENT_SECRET`) are set with
 The `OAUTH_KV` namespace must exist (`npx wrangler kv namespace create OAUTH_KV`)
 and its id pasted into `wrangler.jsonc`.
 
-There are no tests.
+Tests run with `npm test` (Vitest, plain Node — no Workers pool).
 
 ## Architecture
 
-Three source files:
+The Worker entry, OAuth handler, and YNAB REST client are three files. Every
+MCP tool is its own file under `src/tools/`. Cross-cutting concerns live in
+flat modules at `src/`.
+
+### Worker entry & auth
+
+- `src/index.ts` — Worker entry. Defines `YnabMcp` (a typed
+  `McpAgent<Env, Record<string, never>, Props>` Durable Object) whose
+  `init()` calls each tool's `register*(server, getClient)` in order. The
+  default export is `new OAuthProvider({ apiHandler: YnabMcp.serve("/mcp"), defaultHandler: ynabAuthHandler, ... })`.
 
 - `src/ynab.ts` — `YnabClient` wraps the YNAB REST API at
   `https://api.ynab.com/v1`. The constructor takes an access token and an
@@ -49,12 +58,39 @@ Three source files:
   `env.OAUTH_PROVIDER.completeAuthorization` with the YNAB tokens as `props`).
   Also defines the `Props` type that flows into `YnabMcp.props`.
 
-- `src/index.ts` — Worker entry. Defines `YnabMcp` (a typed
-  `McpAgent<Env, Record<string, never>, Props>` Durable Object) whose
-  `init()` registers all tools on `this.server`. The default export is
-  `new OAuthProvider({ apiHandler: YnabMcp.serve("/mcp"), defaultHandler: ynabAuthHandler, ... })`.
+### Shared modules (`src/`)
 
-The two secrets:
+- `format.ts` — text/handleError MCP helpers, fmtMoney/padMoney/fmtPercent/pushSection,
+  and the line formatters (fmtCategoryLine, fmtTxLine, fmtActivityLine).
+- `goals.ts` — `interpretGoal(c, refMonth) → GoalView` hides YNAB's
+  goal_type / goal_cadence / goal_target_date matrix from callers.
+- `predicates.ts` — domain predicates (`isSpendingCategory`, `isInflowRta`,
+  `isUncategorizedInternal`, `isInboxableTx`, `isTransferTx`). Every tool's
+  filtering goes through these, not inline boolean expressions on YNAB shape.
+- `month-window.ts` — `resolveMonthWindow(budget, monthsBack) → MonthWindow`
+  intersects requested months with what the Budget has and pre-formats the
+  truncation note; also exports `resolveMonthSpec` / `monthEndDate` /
+  `daysInMonth`.
+
+### Tools (`src/tools/`)
+
+Each tool is one file with a typed result, a compute function, a render
+function, and a `register*` export. Pattern:
+
+```ts
+export interface ToolResult { /* fields */ }
+export const computeTool = (raw, opts) => ToolResult;
+export const renderTool = (result, renderOpts) => string;
+export const registerTool = (server, getClient) => { ... };
+```
+
+`compute*` is pure (takes YNAB API responses, returns the typed result).
+`render*` is pure (takes the typed result, returns text). The handler does
+fetch → compute → render → error-wrap and nothing else. Tool-local helpers
+(like `expandForCategory` in `get-category-details.ts`, `historicalNetWorth`
+in `reflect-net-worth.ts`) live inside the tool file, not in `src/`.
+
+### Secrets and tokens
 
 - `YNAB_CLIENT_ID` / `YNAB_CLIENT_SECRET` — for the connector's OAuth client
   registration with YNAB. Held by the Worker only.
@@ -73,19 +109,26 @@ state. Don't rename the class without a new migration tag.
 
 ## Tool conventions
 
-When adding a new read tool to `src/index.ts`:
+When adding a new read tool, create `src/tools/<tool-name>.ts`:
 
-- Wrap the handler body in `try`/`catch` and return `handleError(e)` — that
-  surfaces `YnabError`s as readable text instead of crashing the session.
-- Use `this.client()` to get a `YnabClient` bound to the current user's
-  token; it carries the refresh-on-401 callback automatically.
+- Define the typed result interface first; that's the test surface.
+- Compute and render are pure functions. Handler wires them: fetch, compute,
+  render, error-wrap with `handleError(e)`.
+- Use the passed `getClient()` closure to get a `YnabClient` for the current
+  user's token — it carries the refresh-on-401 callback automatically.
 - Return text via the `text()` helper: `{ content: [{ type: "text", text: ... }] }`.
 - Format money with `fmtMoney(milliunits)`. Always pass the raw milliunit value
   from the API, not pre-converted dollars.
-- For categories that carry goals, append `fmtGoal(c)` to the line so monthly
-  targets / underfunded amounts surface alongside budgeted/activity.
+- For categories that carry goals, append `fmtGoalSuffix(c, refMonth)` to the
+  line — or read `interpretGoal(c, refMonth)` if you need the structured
+  GoalView (cadence label, due date, underfunded amount) for custom formatting.
 - Append `— id <uuid>` to each line so Claude can reference items in follow-up
   tool calls.
+- Wire the tool by adding `registerYourTool(s, getClient)` to `YnabMcp.init()`.
+- Write a `.test.ts` alongside it. Compute is pure — fixtures + assertions on
+  the result type. Render tests can be sparser (assert on key substrings).
+
+See `src/tools/reflect-income-expense.ts` for the canonical example.
 
 ## Local dev / e2e testing
 

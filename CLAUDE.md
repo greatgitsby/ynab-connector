@@ -163,3 +163,17 @@ scope on the YNAB authorize URL would need to change too.
   group name, build an id→name lookup from `budget.category_groups[]` and
   resolve through each category's `category_group_id`. See the
   `reflect_income_expense` tool for the pattern.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues for `greatgitsby/ynab-connector` via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default canonical names (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context — `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.

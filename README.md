@@ -8,6 +8,16 @@ OAuth 2.0 Authorization Code Grant. Per-user YNAB access + refresh tokens are
 encrypted into the bearer token issued back to Claude.ai — the connector
 itself holds no long-lived per-user state.
 
+## Install
+
+**[→ Add Claude for YNAB to Claude.ai](https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=Claude%20for%20YNAB&connectorUrl=https%3A%2F%2Fclaude-for-ynab.moen.ai%2Fmcp)**
+
+Opens Claude.ai's "Add custom connector" dialog with the name and URL prefilled
+against the hosted deployment at `claude-for-ynab.moen.ai`. After you confirm,
+Claude walks you through authorizing the connector against your YNAB account.
+
+Prefer to self-host instead? See [One-time setup](#one-time-setup) below.
+
 ## What Claude can do with it
 
 Tools the connector exposes:
@@ -84,6 +94,15 @@ Wrangler will print the deployed URL — something like
 `https://ynab-connector.<your-account>.workers.dev`.
 
 ## Wire it up in Claude
+
+For your self-hosted deployment you can share a one-click install link with
+the same format as the hosted one above — just swap in your worker's URL:
+
+```
+https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=YOUR_NAME&connectorUrl=https%3A%2F%2Fynab-connector.YOUR_ACCOUNT.workers.dev%2Fmcp
+```
+
+Or manually:
 
 1. Go to claude.ai → Settings → Connectors → **Add custom connector**.
 2. Set the URL to `https://ynab-connector.<your-account>.workers.dev/mcp`

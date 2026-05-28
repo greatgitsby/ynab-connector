@@ -24,7 +24,20 @@ interface Env {
 }
 
 export class YnabMcp extends McpAgent<Env, Record<string, never>, Props> {
-  server = new McpServer({ name: "YNAB", version: "0.1.0" });
+  server = new McpServer(
+    {
+      name: "YNAB",
+      title: "YNAB",
+      version: "0.1.0",
+      description:
+        "Read-only access to your YNAB (You Need A Budget) budgets, accounts, categories, and transactions.",
+      websiteUrl: "https://github.com/greatgitsby/ynab-connector",
+    },
+    {
+      instructions:
+        'Read-only YNAB (You Need A Budget) connector. Money values in responses are already converted from YNAB milliunits to dollars. Each line ends with "— id <uuid>" so you can reference items in follow-up calls. Month parameters accept "YYYY-MM-01" or the literal string "current". Start with triage_inbox or get_budget_summary for an overview; the reflect_* tools give multi-month analyses; get_category_details drills into a single category.',
+    },
+  );
 
   // The YNAB access token lives in this.props. Build a fresh client per
   // request so token rotation (on 401) is naturally visible to subsequent

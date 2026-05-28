@@ -87,36 +87,55 @@ When adding a new read tool to `src/index.ts`:
 - Append `— id <uuid>` to each line so Claude can reference items in follow-up
   tool calls.
 
-## Getting YNAB tokens via CLI (no browser)
+## Local dev / e2e testing
 
-When a browser isn't available (e.g., SSH from phone), drive the OAuth flow by hand instead of via MCP Inspector:
+For ad-hoc API probing or verifying a tool's behaviour against raw YNAB data,
+bypass the MCP layer and hit `api.ynab.com/v1` directly with a user OAuth
+token. `scripts/ynab.sh` automates the dance.
 
-1. Open the authorize URL on any device with a browser (substitute the client id from `.dev.vars`):
-   ```
-   https://app.ynab.com/oauth/authorize?client_id=$YNAB_CLIENT_ID&redirect_uri=http%3A%2F%2Flocalhost%3A8787%2Fcallback&response_type=code&scope=read-only
-   ```
-2. Approve. The browser will redirect to `http://localhost:8787/callback?code=…` — the page won't load, but the `code` param is what we need.
-3. Exchange it for tokens (run from the dev box, secrets sourced from `.dev.vars`):
-   ```bash
-   curl -s -X POST https://app.ynab.com/oauth/token \
-     -H "Content-Type: application/x-www-form-urlencoded" \
-     -d "client_id=$YNAB_CLIENT_ID" \
-     -d "client_secret=$YNAB_CLIENT_SECRET" \
-     -d "redirect_uri=http://localhost:8787/callback" \
-     -d "grant_type=authorization_code" \
-     -d "code=$CODE"
-   ```
-   Response is `{ access_token, refresh_token, expires_in (7200), ... }`.
-4. Stash the tokens in `.dev.vars.tokens` (covered by the `.dev.vars.*` gitignore rule). Format:
-   ```
-   YNAB_ACCESS_TOKEN=...
-   YNAB_REFRESH_TOKEN=...
-   YNAB_USER_ID=...
-   YNAB_EXPIRES_AT=...   # unix seconds
-   ```
-5. Use the access token directly: `curl -H "Authorization: Bearer $YNAB_ACCESS_TOKEN" https://api.ynab.com/v1/budgets`.
+### One-time setup
 
-This bypasses the MCP layer entirely — useful for ad-hoc API calls or scripts. Access tokens last 2 hours; refresh via `grant_type=refresh_token` against the same `/oauth/token` endpoint.
+1. `cp .dev.vars.example .dev.vars` and fill in `YNAB_CLIENT_ID` /
+   `YNAB_CLIENT_SECRET` (same values that are set as Worker secrets in prod).
+
+### Get a YNAB user token
+
+```bash
+./scripts/ynab.sh url                 # print the authorize URL
+# Visit it. The browser redirects to http://localhost:8787/callback?code=…
+# which won't load — that's fine, just copy the `code` value out of the URL.
+./scripts/ynab.sh exchange <CODE>     # saves tokens to .dev.vars.tokens
+```
+
+`.dev.vars.tokens` is gitignored. Access tokens last 2 hours; refresh
+tokens are long-lived.
+
+### Run API calls
+
+```bash
+./scripts/ynab.sh api /budgets
+./scripts/ynab.sh api /budgets/$BUDGET_ID | jq '.data.budget.category_groups | length'
+./scripts/ynab.sh api "/budgets/$BUDGET_ID/transactions?since_date=2026-01-01"
+```
+
+The helper injects `Authorization: Bearer …`, auto-refreshes when the
+saved expiry has passed, and retries once on a 401. Extra arguments after
+the path are forwarded to `curl` verbatim, so you can `-X POST` etc. if a
+write scope is ever added.
+
+### Local worker + MCP
+
+`npm run dev` runs the Worker at `localhost:8787`. The OAuth flow above
+uses `localhost:8787/callback` as its redirect URI even though the
+helper-driven flow doesn't actually need the worker to be running — the
+browser just lands on a connection-refused page where the `code` is still
+in the URL.
+
+Driving the MCP layer end-to-end locally is harder: it requires Claude.ai-side
+OAuth 2.1 with PKCE (dynamic client registration), which is awkward to script.
+For end-to-end MCP testing, prefer the deployed Worker plus a real client
+(Claude.ai connector, Claude Code, MCP Inspector) — `npx wrangler tail`
+streams the live request log so you can watch tool calls in real time.
 
 ## Read-only
 
@@ -138,3 +157,9 @@ scope on the YNAB authorize URL would need to change too.
   long-lived. The `YnabClient` refresh-on-401 handles rotation transparently.
 - New YNAB OAuth apps start in "Restricted Mode" with a 25-token cap; submit
   the YNAB review form to lift it before sharing the connector widely.
+- `GET /budgets/{id}` does **not** populate `category_group_name` on
+  Category rows (top-level or nested under `months[].categories[]`), and
+  `category_groups[].categories` comes back as `null`. To get a category's
+  group name, build an id→name lookup from `budget.category_groups[]` and
+  resolve through each category's `category_group_id`. See the
+  `reflect_income_expense` tool for the pattern.

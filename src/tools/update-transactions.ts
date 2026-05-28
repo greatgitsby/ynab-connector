@@ -175,8 +175,9 @@ const renderTxSummary = (t: Transaction): string => {
 
 const DESCRIPTION =
   "Edit one or more existing transactions in a single bulk call. Use this " +
-  "to categorize, approve, memo, flag, mark cleared/reconciled, set a " +
-  "payee, or split a transaction across multiple categories. Provide only " +
+  "to categorize, approve or un-approve, memo, flag, mark " +
+  "cleared/reconciled, set a payee, or split a transaction across multiple " +
+  "categories. Provide only " +
   "the fields you want to change — omitted fields are left unchanged. " +
   "Splits: when `subtransactions` is set, the parent's `category_id` must " +
   "be null/omitted, each sub requires `amount_milliunits`, and sub-amounts " +

@@ -5,10 +5,36 @@ export const text = (s: string) => ({
   content: [{ type: "text" as const, text: s }],
 });
 
+// Attaches a `structuredContent` field alongside the text content. Per MCP
+// 2025-11-25, write tools return both human-readable text (for the model to
+// quote to the user) and machine-readable JSON (for the model to keep
+// working in the same conversation without re-reading).
+export const result = <S>(s: string, structured: S) => ({
+  content: [{ type: "text" as const, text: s }],
+  structuredContent: structured as S,
+});
+
 export const handleError = (e: unknown) => {
   if (e instanceof YnabError) return text(`YNAB error ${e.status}: ${e.body}`);
   return text(`Error: ${e instanceof Error ? e.message : String(e)}`);
 };
+
+// Returned by write tools when the active token wasn't issued with write
+// scope. Spec-compliant tool execution error (isError: true) — the model can
+// paraphrase the message to ask the user to reconnect.
+export const scopeDeniedError = () => ({
+  content: [
+    {
+      type: "text" as const,
+      text:
+        "Write access denied: this YNAB connection was granted read-only " +
+        "access. To enable budget edits, disconnect and reconnect the YNAB " +
+        "connector in Claude.ai's settings — accept the broader permission " +
+        "scope on the YNAB authorization page.",
+    },
+  ],
+  isError: true as const,
+});
 
 export const fmtMoney = (milli: number, iso = "USD"): string =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: iso }).format(

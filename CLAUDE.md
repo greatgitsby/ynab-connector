@@ -1,21 +1,17 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Operational guide for Claude Code working in this repo. For overlapping info, follow the pointer:
 
-## What this is
-
-A remote MCP server, hosted on Cloudflare Workers, that exposes read-only YNAB
-data as tools for a Claude.ai custom connector. Multi-user via dual OAuth:
-Claude.ai authenticates to the connector via OAuth 2.1 (dynamic client
-registration + PKCE); each user authorizes the connector against YNAB via
-OAuth 2.0 Authorization Code Grant. Deployed at
-`https://ynab-connector.moen-cca.workers.dev`.
+- **What this project is, how auth works, deployment** → `README.md`
+- **Domain vocabulary (Budget, Category, Goal, GoalView, Milliunit, Reflect, Month Window), Compute/Render split, domain predicates** → `CONTEXT.md`
+- **Agent-skill wiring (issue tracker, triage labels, how to consume domain docs)** → `docs/agents/`
 
 ## Commands
 
 ```bash
 npm run dev            # wrangler dev on localhost:8787
 npm run type-check     # tsc --noEmit
+npm test               # vitest, plain Node (no Workers pool)
 npm run deploy         # wrangler deploy
 npx wrangler tail      # stream live logs from the deployed Worker
 npx wrangler types     # regenerate worker-configuration.d.ts after wrangler.jsonc changes
@@ -27,9 +23,7 @@ Secrets (`YNAB_CLIENT_ID`, `YNAB_CLIENT_SECRET`) are set with
 The `OAUTH_KV` namespace must exist (`npx wrangler kv namespace create OAUTH_KV`)
 and its id pasted into `wrangler.jsonc`.
 
-Tests run with `npm test` (Vitest, plain Node — no Workers pool).
-
-## Architecture
+## File-level architecture
 
 The Worker entry, OAuth handler, and YNAB REST client are three files. Every
 MCP tool is its own file under `src/tools/`. Cross-cutting concerns live in
@@ -47,8 +41,8 @@ flat modules at `src/`.
   optional refresh callback; on a 401 the client invokes the callback for a
   fresh token and retries once. Also exports `ynabAuthorizeUrl`,
   `exchangeYnabCode`, and `refreshYnabToken` used by the auth handler.
-  Errors throw `YnabError(status, body)`. All amounts are **milliunits**
-  (1 USD = 1000); `fromMilli()` converts for display.
+  Errors throw `YnabError(status, body)`. `fromMilli()` converts milliunits
+  for display (see CONTEXT.md for what a milliunit is).
 
 - `src/ynab-auth.ts` — exports `ynabAuthHandler`, the OAuthProvider's
   `defaultHandler`. Owns `GET /authorize` (parses Claude.ai's authorize
@@ -62,33 +56,18 @@ flat modules at `src/`.
 
 - `format.ts` — text/handleError MCP helpers, fmtMoney/padMoney/fmtPercent/pushSection,
   and the line formatters (fmtCategoryLine, fmtTxLine, fmtActivityLine).
-- `goals.ts` — `interpretGoal(c, refMonth) → GoalView` hides YNAB's
-  goal_type / goal_cadence / goal_target_date matrix from callers.
-- `predicates.ts` — domain predicates (`isSpendingCategory`, `isInflowRta`,
-  `isUncategorizedInternal`, `isInboxableTx`, `isTransferTx`). Every tool's
-  filtering goes through these, not inline boolean expressions on YNAB shape.
-- `month-window.ts` — `resolveMonthWindow(budget, monthsBack) → MonthWindow`
-  intersects requested months with what the Budget has and pre-formats the
-  truncation note; also exports `resolveMonthSpec` / `monthEndDate` /
-  `daysInMonth`.
+- `goals.ts` — `interpretGoal(c, refMonth) → GoalView`. (Concept: CONTEXT.md.)
+- `predicates.ts` — domain predicates. (Concept: CONTEXT.md.)
+- `month-window.ts` — `resolveMonthWindow(budget, monthsBack) → MonthWindow`;
+  also exports `resolveMonthSpec` / `monthEndDate` / `daysInMonth`.
+  (Concept: CONTEXT.md.)
 
 ### Tools (`src/tools/`)
 
-Each tool is one file with a typed result, a compute function, a render
-function, and a `register*` export. Pattern:
-
-```ts
-export interface ToolResult { /* fields */ }
-export const computeTool = (raw, opts) => ToolResult;
-export const renderTool = (result, renderOpts) => string;
-export const registerTool = (server, getClient) => { ... };
-```
-
-`compute*` is pure (takes YNAB API responses, returns the typed result).
-`render*` is pure (takes the typed result, returns text). The handler does
-fetch → compute → render → error-wrap and nothing else. Tool-local helpers
-(like `expandForCategory` in `get-category-details.ts`, `historicalNetWorth`
-in `reflect-net-worth.ts`) live inside the tool file, not in `src/`.
+One file per tool, following the Compute/Render split (defined in CONTEXT.md).
+Tool-local helpers (like `expandForCategory` in `get-category-details.ts`,
+`historicalNetWorth` in `reflect-net-worth.ts`) live inside the tool file,
+not in `src/`.
 
 ### Secrets and tokens
 
@@ -121,12 +100,14 @@ When adding a new read tool, create `src/tools/<tool-name>.ts`:
   from the API, not pre-converted dollars.
 - For categories that carry goals, append `fmtGoalSuffix(c, refMonth)` to the
   line — or read `interpretGoal(c, refMonth)` if you need the structured
-  GoalView (cadence label, due date, underfunded amount) for custom formatting.
+  GoalView for custom formatting.
 - Append `— id <uuid>` to each line so Claude can reference items in follow-up
   tool calls.
 - Wire the tool by adding `registerYourTool(s, getClient)` to `YnabMcp.init()`.
 - Write a `.test.ts` alongside it. Compute is pure — fixtures + assertions on
   the result type. Render tests can be sparser (assert on key substrings).
+- Filter through the predicates in `src/predicates.ts` rather than inlining
+  boolean expressions on the YNAB shape.
 
 See `src/tools/reflect-income-expense.ts` for the canonical example.
 
@@ -163,8 +144,7 @@ tokens are long-lived.
 
 The helper injects `Authorization: Bearer …`, auto-refreshes when the
 saved expiry has passed, and retries once on a 401. Extra arguments after
-the path are forwarded to `curl` verbatim, so you can `-X POST` etc. if a
-write scope is ever added.
+the path are forwarded to `curl` verbatim.
 
 ### Local worker + MCP
 
@@ -190,12 +170,14 @@ scope on the YNAB authorize URL would need to change too.
 
 ## YNAB API gotchas
 
+Domain-level YNAB vocabulary (Budget vs Plan, milliunits, Goal matrix,
+to_be_budgeted vs Ready to Assign, the two meanings of "Uncategorized")
+is in `CONTEXT.md`. The gotchas below are wire-level only.
+
 - `month` parameters accept either `YYYY-MM-01` or the literal string `current`.
-- `goal_type` codes mean: `TB`=target balance, `TBD`=target balance by date,
-  `MF`=monthly funding (this is the "monthly target"), `NEED`=plan your
-  spending, `DEBT`=debt payoff. Mapped in `GOAL_LABEL`.
-- `/budgets` and `/plans` are both live aliases. The OpenAPI spec uses `/plans`
-  but this client uses `/budgets` because that's what users still call them.
+- `goal_type` codes (`TB`, `TBD`, `MF`, `NEED`, `DEBT`) are mapped in
+  `GOAL_LABEL` — but call sites should go through `interpretGoal` /
+  `GoalView` rather than reading `goal_type` directly. See CONTEXT.md.
 - YNAB OAuth access tokens expire after 2 hours; refresh tokens are
   long-lived. The `YnabClient` refresh-on-401 handles rotation transparently.
 - New YNAB OAuth apps start in "Restricted Mode" with a 25-token cap; submit
@@ -209,14 +191,11 @@ scope on the YNAB authorize URL would need to change too.
 
 ## Agent skills
 
-### Issue tracker
+Issue tracker, triage labels, and how to consume `CONTEXT.md` + ADRs are
+documented under `docs/agents/`:
 
-Issues live in GitHub Issues for `greatgitsby/ynab-connector` via the `gh` CLI. See `docs/agents/issue-tracker.md`.
-
-### Triage labels
-
-Default canonical names (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
-
-### Domain docs
-
-Single-context — `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+- `docs/agents/issue-tracker.md` — issues live in GitHub Issues for
+  `greatgitsby/ynab-connector` via the `gh` CLI.
+- `docs/agents/triage-labels.md` — canonical label names.
+- `docs/agents/domain.md` — single-context repo; read `CONTEXT.md` (and
+  `docs/adr/` once it exists) before exploring.

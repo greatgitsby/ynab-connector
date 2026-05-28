@@ -25,6 +25,9 @@ export interface Props {
   ynabRefreshToken: string;
   // unix seconds; tools refresh proactively or reactively on 401.
   ynabExpiresAt: number;
+  // True when the YNAB token was issued with write scope. Absent on tokens
+  // issued before write support shipped — treated as false by write tools.
+  canWrite?: boolean;
   [key: string]: unknown;
 }
 
@@ -146,7 +149,6 @@ const handleAuthorize = async (
     client_id: env.YNAB_CLIENT_ID,
     redirect_uri: redirectUri,
     state,
-    scope: "read-only",
   });
 
   return new Response(null, {
@@ -203,6 +205,7 @@ const handleCallback = async (
     ynabAccessToken: tokens.access_token,
     ynabRefreshToken: tokens.refresh_token,
     ynabExpiresAt,
+    canWrite: true,
   };
 
   const { redirectTo } = await env.OAUTH_PROVIDER.completeAuthorization({

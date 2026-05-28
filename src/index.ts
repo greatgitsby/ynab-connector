@@ -96,5 +96,5 @@ export default new OAuthProvider({
   authorizeEndpoint: "/authorize",
   tokenEndpoint: "/token",
   clientRegistrationEndpoint: "/register",
-  scopesSupported: ["read-only"],
+  scopesSupported: [],
 });

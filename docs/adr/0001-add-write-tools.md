@@ -174,3 +174,36 @@ This keeps the Compute/Render split intact for writes: `compute*` becomes "build
 - `outputSchema` declarations on the structured content.
 - Automated integration tests in CI against the test budget.
 - Real fuzzy matching in `search_payees` (v1 is substring).
+
+## Addendum (2026-05-29): `reconcile_account`
+
+Added a fourth tool, `reconcile_account`, that performs YNAB's account
+reconciliation in "lock-only" form. It does **not** expand the write surface
+established above — it composes the existing "set `cleared`" capability of
+`update_transactions`:
+
+- Inputs: `budget_id`, `account_id`, `statement_balance_milliunits`.
+- It refuses to write (and reports what's wrong) unless **every** active
+  transaction in the account is approved AND categorized — reconciliation should
+  lock in verified reality, not paper over an un-triaged inbox.
+- When verified and the statement balance equals the account's `cleared_balance`,
+  it bulk-PATCHes every `cleared` (not-yet-`reconciled`) transaction to
+  `cleared: "reconciled"`. When the balances differ, it writes nothing and
+  reports the discrepancy plus the uncleared transactions.
+- It deliberately does **not** create YNAB's "Reconciliation Balance Adjustment"
+  transaction when balances differ — that requires manual-transaction creation,
+  which remains out of scope (deferred above). The user makes the adjustment in
+  the YNAB app, then re-runs.
+- Why this needs no new ADR decision: the only YNAB mutation it performs is
+  setting `cleared` on existing rows, already sanctioned by D3 and gated by the
+  same `canWrite` check (D5), best-effort per-item result model (D7), and
+  text+`structuredContent` return (D8).
+
+Also noted during this work: YNAB's public API does **not** expose a linked
+account's bank-reported balance (confirmed against the OpenAPI `Account` schema —
+only `balance` / `cleared_balance` / `uncleared_balance`, plus the
+`direct_import_linked` / `direct_import_in_error` / `last_reconciled_at` health
+fields). So the in-app "your linked balance matches" indicator can't be
+replicated; the statement balance must be supplied by the caller. The
+link-health fields are now surfaced in `list_accounts` and `reconcile_account`
+output.

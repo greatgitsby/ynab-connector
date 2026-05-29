@@ -145,6 +145,18 @@ export class YnabClient {
       `/budgets/${budgetId}/accounts`,
     );
   }
+  getAccount(budgetId: string, accountId: string) {
+    return this.request<{ data: { account: Account } }>(
+      "GET",
+      `/budgets/${budgetId}/accounts/${accountId}`,
+    );
+  }
+  listAccountTransactions(budgetId: string, accountId: string) {
+    return this.request<{ data: { transactions: Transaction[] } }>(
+      "GET",
+      `/budgets/${budgetId}/accounts/${accountId}/transactions`,
+    );
+  }
 
   // Categories
   listCategories(budgetId: string) {
@@ -261,6 +273,12 @@ export interface Account {
   balance: number;
   cleared_balance: number;
   uncleared_balance: number;
+  // Direct-import (linked-bank) status. Absent on accounts that predate the
+  // field or were never linked. Note: YNAB's API does NOT expose the bank's
+  // reported balance — only these health flags and the last-reconciled time.
+  direct_import_linked?: boolean;
+  direct_import_in_error?: boolean;
+  last_reconciled_at?: string | null;
 }
 
 export interface CategoryGroup {
@@ -322,6 +340,7 @@ export interface Transaction {
   category_name: string | null;
   flag_color: string | null;
   transfer_account_id: string | null;
+  deleted?: boolean;
   subtransactions?: SubTransaction[];
 }
 

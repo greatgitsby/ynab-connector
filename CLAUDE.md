@@ -194,9 +194,17 @@ Run it before any deploy that touches the write tools.
 ## Writes
 
 The connector supports a narrow set of write tools (categorize/approve/split
-existing transactions, reassign category budgets, search payees). Scope and
-rationale: `docs/adr/0001-add-write-tools.md`. Implementation roadmap:
+existing transactions, reassign category budgets, reconcile an account against a
+bank statement, search payees). Scope and rationale:
+`docs/adr/0001-add-write-tools.md`. Implementation roadmap:
 `docs/plans/0001-write-tools-implementation.md`.
+
+`reconcile_account` composes the existing "set `cleared`" capability: it only
+locks already-existing transactions as `reconciled` (no new write surface). It
+refuses to write unless every active transaction is approved + categorized and
+the supplied statement balance equals the account's `cleared_balance`. It
+deliberately does **not** create the YNAB balance-adjustment transaction — that
+needs manual-transaction creation, still excluded below.
 
 Wire-level conventions for new write tools:
 

@@ -63,4 +63,36 @@ describe("renderAccountList", () => {
     expect(out).toContain("- Brokerage [otherAsset] (off-budget)");
     expect(out).toContain("— id checking");
   });
+
+  test("surfaces link health and last-reconciled date when present", () => {
+    const r = computeAccountList(
+      [
+        account({
+          id: "linked",
+          name: "Checking",
+          direct_import_linked: true,
+          last_reconciled_at: "2026-04-30T12:00:00+00:00",
+        }),
+        account({
+          id: "broken",
+          name: "Savings",
+          direct_import_linked: true,
+          direct_import_in_error: true,
+        }),
+      ],
+      { includeClosed: false },
+    );
+    const out = renderAccountList(r, { includeIds: false });
+    expect(out).toContain("linked ✓, last reconciled 2026-04-30");
+    expect(out).toContain("linked ⚠ (connection error)");
+  });
+
+  test("omits link info for unlinked accounts", () => {
+    const r = computeAccountList([account({ name: "Cash" })], {
+      includeClosed: false,
+    });
+    const out = renderAccountList(r, { includeIds: false });
+    expect(out).not.toContain("linked");
+    expect(out).not.toContain("last reconciled");
+  });
 });

@@ -32,7 +32,17 @@ export interface RenderOpts {
 
 const fmtAccountLine = (a: Account, includeIds: boolean): string => {
   const idSuffix = includeIds ? ` — id ${a.id}` : "";
-  return `- ${a.name} [${a.type}] ${a.on_budget ? "(on-budget)" : "(off-budget)"}${a.closed ? " (closed)" : ""}: balance ${fmtMoney(a.balance)}, cleared ${fmtMoney(a.cleared_balance)}, uncleared ${fmtMoney(a.uncleared_balance)}${idSuffix}`;
+  // Link health: YNAB exposes whether an account is linked for direct import
+  // and whether that link is broken (it does NOT expose the bank's balance).
+  const link = a.direct_import_in_error
+    ? ", linked ⚠ (connection error)"
+    : a.direct_import_linked
+      ? ", linked ✓"
+      : "";
+  const lastRecon = a.last_reconciled_at
+    ? `, last reconciled ${a.last_reconciled_at.slice(0, 10)}`
+    : "";
+  return `- ${a.name} [${a.type}] ${a.on_budget ? "(on-budget)" : "(off-budget)"}${a.closed ? " (closed)" : ""}: balance ${fmtMoney(a.balance)}, cleared ${fmtMoney(a.cleared_balance)}, uncleared ${fmtMoney(a.uncleared_balance)}${link}${lastRecon}${idSuffix}`;
 };
 
 export const renderAccountList = (

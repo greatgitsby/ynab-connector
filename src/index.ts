@@ -18,6 +18,7 @@ import { registerGetCategoryDetails } from "./tools/get-category-details";
 import { registerSearchPayees } from "./tools/search-payees";
 import { registerAssignToCategories } from "./tools/assign-to-categories";
 import { registerUpdateTransactions } from "./tools/update-transactions";
+import { registerReconcileAccount } from "./tools/reconcile-account";
 
 interface Env {
   YNAB_CLIENT_ID: string;
@@ -38,7 +39,7 @@ export class YnabMcp extends McpAgent<Env, Record<string, never>, Props> {
     },
     {
       instructions:
-        'YNAB (You Need A Budget) connector. Read tools surface budgets, accounts, categories, transactions, and analytics; write tools (assign_to_categories, update_transactions) edit categories and existing transactions. Money values in responses are already converted from YNAB milliunits to dollars; write tools take amounts in milliunits. Each line ends with "— id <uuid>" so you can reference items in follow-up calls. Month parameters accept "YYYY-MM-01" or the literal string "current". Start with triage_inbox or get_budget_summary for an overview; the reflect_* tools give multi-month analyses; get_category_details drills into a single category. Use search_payees to canonicalize a payee before passing it into update_transactions. Write tools require a connection issued with write scope — if you get a "read-only" error, ask the user to disconnect and reconnect the connector in Claude.ai\'s settings.',
+        'YNAB (You Need A Budget) connector. Read tools surface budgets, accounts, categories, transactions, and analytics; write tools (assign_to_categories, update_transactions, reconcile_account) edit categories and existing transactions, and reconcile an account against a bank statement. Money values in responses are already converted from YNAB milliunits to dollars; write tools take amounts in milliunits. Each line ends with "— id <uuid>" so you can reference items in follow-up calls. Month parameters accept "YYYY-MM-01" or the literal string "current". Start with triage_inbox or get_budget_summary for an overview; the reflect_* tools give multi-month analyses; get_category_details drills into a single category. Use search_payees to canonicalize a payee before passing it into update_transactions. Write tools require a connection issued with write scope — if you get a "read-only" error, ask the user to disconnect and reconnect the connector in Claude.ai\'s settings.',
     },
   );
 
@@ -86,6 +87,7 @@ export class YnabMcp extends McpAgent<Env, Record<string, never>, Props> {
     registerSearchPayees(s, getClient);
     registerAssignToCategories(s, getClient, getProps);
     registerUpdateTransactions(s, getClient, getProps);
+    registerReconcileAccount(s, getClient, getProps);
   }
 }
 

@@ -1,21 +1,25 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Payee, YnabClient } from "../ynab";
-import { text, handleError } from "../format";
+import { result, handleError } from "../format";
 
-// ---- Result type
+// ---- Result types (zod is the single source of truth; the TS types are
+// inferred and the schema doubles as the tool's outputSchema — see ADR 0002).
+// Payees carry no money amounts, so there is no currency code on this payload.
 
-export interface PayeeMatch {
-  id: string;
-  name: string;
-  transfer_account_id: string | null;
-}
+const PayeeMatchSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  transfer_account_id: z.string().nullable(),
+});
+export type PayeeMatch = z.infer<typeof PayeeMatchSchema>;
 
-export interface PayeeSearchResult {
-  matches: PayeeMatch[];
-  totalMatched: number;
-  cap: number;
-}
+export const PayeeSearchResultSchema = z.object({
+  matches: z.array(PayeeMatchSchema),
+  totalMatched: z.number().int(),
+  cap: z.number().int(),
+});
+export type PayeeSearchResult = z.infer<typeof PayeeSearchResultSchema>;
 
 // ---- Compute (pure)
 
@@ -87,12 +91,13 @@ export const registerSearchPayees = (
         query: z.string(),
         limit: z.number().int().min(1).max(50).optional().default(20),
       },
+      outputSchema: PayeeSearchResultSchema.shape,
     },
     async ({ budget_id, query, limit }) => {
       try {
         const { data } = await getClient().listPayees(budget_id);
-        const result = computePayeeSearch(data.payees, query, limit);
-        return text(renderPayeeSearch(result, query));
+        const searchResult = computePayeeSearch(data.payees, query, limit);
+        return result(renderPayeeSearch(searchResult, query), searchResult);
       } catch (e) {
         return handleError(e);
       }

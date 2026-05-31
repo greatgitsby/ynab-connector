@@ -6,24 +6,30 @@ import type {
   MonthDetail,
   YnabClient,
 } from "../ynab";
-import { text, handleError, fmtMoney } from "../format";
+import { result, handleError, fmtMoney } from "../format";
 
-// ---- Result type
+// ---- Result type (zod is the single source of truth; the TS type is
+// inferred and the schema doubles as the tool's outputSchema — see ADR 0002).
+// Money is in milliunits; counts are integers.
 
-export interface BudgetSummary {
-  budgetName: string;
-  iso: string;
-  accountCounts: { onBudget: number; offBudget: number };
+export const BudgetSummarySchema = z.object({
+  budgetName: z.string(),
+  iso: z.string(),
+  accountCounts: z.object({
+    onBudget: z.number().int(),
+    offBudget: z.number().int(),
+  }),
   // Live Ready-to-Assign for the current month.
-  readyToAssign: number;
-  currentMonth: {
-    month: string;
-    income: number;
-    budgeted: number;
-    activity: number;
-    ageOfMoney: number | null;
-  };
-}
+  readyToAssign: z.number(),
+  currentMonth: z.object({
+    month: z.string(),
+    income: z.number(),
+    budgeted: z.number(),
+    activity: z.number(),
+    ageOfMoney: z.number().nullable(),
+  }),
+});
+export type BudgetSummary = z.infer<typeof BudgetSummarySchema>;
 
 // ---- Compute (pure)
 
@@ -89,6 +95,7 @@ export const registerGetBudgetSummary = (
       description: DESCRIPTION,
       annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: { budget_id: z.string() },
+      outputSchema: BudgetSummarySchema.shape,
     },
     async ({ budget_id }) => {
       try {
@@ -103,7 +110,7 @@ export const registerGetBudgetSummary = (
           accountsRes.data.accounts,
           monthRes.data.month,
         );
-        return text(renderBudgetSummary(summary));
+        return result(renderBudgetSummary(summary), summary);
       } catch (e) {
         return handleError(e);
       }

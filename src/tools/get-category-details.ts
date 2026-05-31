@@ -9,6 +9,7 @@ import type {
 } from "../ynab";
 import {
   text,
+  result,
   handleError,
   fmtMoney,
   fmtActivityLine,
@@ -16,16 +17,60 @@ import {
 } from "../format";
 import { fmtGoalSuffix } from "../goals";
 
-// ---- Result types
+// ---- Result types (zod is the single source of truth; the TS types are
+// inferred and the schema doubles as the tool's outputSchema — see ADR 0002).
+// Money is in milliunits; goal cadence/percentage are non-money numbers.
 
-export interface CategoryDetails {
-  groupName: string;
-  category: Category;
-  monthKey: string;
-  activity: ActivityLineData[];
+// One expanded activity row (parent tx or split sub allocated to the
+// category). Mirrors ActivityLineData from src/format.ts.
+const ActivityLineDataSchema = z.object({
+  date: z.string(),
+  // Activity amount in milliunits.
+  amount: z.number(),
+  payee_name: z.string().nullable(),
+  account_name: z.string(),
+  approved: z.boolean(),
+  parent_id: z.string(),
+  sub_id: z.string().optional(),
+  note: z.string().optional(),
+});
+
+// The YNAB Category shape (mirrors the Category interface in src/ynab.ts).
+// Money fields (budgeted/activity/balance, goal_* amounts) are milliunits.
+const CategorySchema = z.object({
+  id: z.string(),
+  category_group_id: z.string(),
+  category_group_name: z.string().optional(),
+  name: z.string(),
+  hidden: z.boolean(),
+  internal: z.boolean().optional(),
+  deleted: z.boolean().optional(),
+  budgeted: z.number(),
+  activity: z.number(),
+  balance: z.number(),
+  goal_type: z.string().nullable().optional(),
+  goal_target: z.number().nullable().optional(),
+  goal_target_date: z.string().nullable().optional(),
+  goal_cadence: z.number().nullable().optional(),
+  goal_cadence_frequency: z.number().nullable().optional(),
+  goal_months_to_budget: z.number().nullable().optional(),
+  goal_percentage_complete: z.number().nullable().optional(),
+  goal_under_funded: z.number().nullable().optional(),
+  goal_overall_funded: z.number().nullable().optional(),
+  goal_overall_left: z.number().nullable().optional(),
+});
+
+export const CategoryDetailsSchema = z.object({
+  // Currency code (e.g. "USD") for formatting the milliunit amounts below.
+  iso: z.string(),
+  groupName: z.string(),
+  category: CategorySchema,
+  monthKey: z.string(),
+  activity: z.array(ActivityLineDataSchema),
   // Sum of activity amounts (parents and matching subs both contribute).
-  sum: number;
-}
+  sum: z.number(),
+});
+export type CategoryDetails = z.infer<typeof CategoryDetailsSchema>;
 
 // ---- Tool-local helper
 
@@ -70,6 +115,9 @@ const expandForCategory = (
 
 export interface ComputeOpts {
   categoryId: string;
+  // Currency code for the structured payload. Optional for callers (tests)
+  // that don't care; the handler always passes the budget's real code.
+  iso?: string;
 }
 
 // Returns null when the category is not present in the given month.
@@ -96,6 +144,7 @@ export const computeCategoryDetails = (
   const sum = activity.reduce((acc, a) => acc + a.amount, 0);
 
   return {
+    iso: opts.iso ?? "USD",
     groupName,
     category,
     monthKey: monthDetail.month,
@@ -114,16 +163,16 @@ export const renderCategoryDetails = (
   details: CategoryDetails,
   opts: RenderOpts,
 ): string => {
-  const { groupName, category, monthKey, activity, sum } = details;
+  const { iso, groupName, category, monthKey, activity, sum } = details;
   const out: string[] = [];
   out.push(`${groupName} → ${category.name}`);
   out.push(`Month: ${monthKey}`);
   out.push(
-    `Budgeted: ${fmtMoney(category.budgeted)}, activity ${fmtMoney(category.activity)}, balance ${fmtMoney(category.balance)}${fmtGoalSuffix(category, monthKey)}`,
+    `Budgeted: ${fmtMoney(category.budgeted, iso)}, activity ${fmtMoney(category.activity, iso)}, balance ${fmtMoney(category.balance, iso)}${fmtGoalSuffix(category, monthKey)}`,
   );
   out.push("");
   out.push(
-    `Transactions this month (${activity.length}, sum ${fmtMoney(sum)}):`,
+    `Transactions this month (${activity.length}, sum ${fmtMoney(sum, iso)}):`,
   );
   if (!activity.length) out.push("(none)");
   for (const a of activity) {
@@ -157,6 +206,7 @@ export const registerGetCategoryDetails = (
           .describe("YYYY-MM-01 or 'current'"),
         include_ids: z.boolean().optional().default(false),
       },
+      outputSchema: CategoryDetailsSchema.shape,
     },
     async ({ budget_id, category_id, month, include_ids }) => {
       try {
@@ -166,21 +216,25 @@ export const registerGetCategoryDetails = (
         if (!m.categories.some((x) => x.id === category_id)) {
           return text(`Category ${category_id} not found in month ${m.month}.`);
         }
-        const [catsRes, txRes] = await Promise.all([
+        const [settingsRes, catsRes, txRes] = await Promise.all([
+          c.getBudgetSettings(budget_id),
           c.listCategories(budget_id),
           c.listTransactions(budget_id, { sinceDate: m.month }),
         ]);
+        const iso =
+          settingsRes.data.settings.currency_format?.iso_code ?? "USD";
         const details = computeCategoryDetails(
           m,
           catsRes.data.category_groups,
           txRes.data.transactions,
-          { categoryId: category_id },
+          { categoryId: category_id, iso },
         );
         if (!details) {
           return text(`Category ${category_id} not found in month ${m.month}.`);
         }
-        return text(
+        return result(
           renderCategoryDetails(details, { includeIds: include_ids }),
+          details,
         );
       } catch (e) {
         return handleError(e);

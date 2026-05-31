@@ -3,6 +3,7 @@ import type { BudgetDetail, MonthDetail } from "../ynab";
 import {
   computeAgeOfMoneyTrend,
   renderAgeOfMoneyTrend,
+  AgeOfMoneyTrendSchema,
 } from "./reflect-age-of-money";
 
 const month = (m: string, aom: number | null): MonthDetail => ({
@@ -88,6 +89,18 @@ describe("computeAgeOfMoneyTrend", () => {
     const b = budget([month("2026-05-01", null)]);
     const r = computeAgeOfMoneyTrend(b, { monthsBack: 1 });
     expect(r.average).toBeNull();
+  });
+
+  test("compute output conforms to the declared outputSchema", () => {
+    const b = budget([
+      month("2026-01-01", 12),
+      month("2026-02-01", null),
+      month("2026-03-01", 18),
+      month("2026-04-01", 21),
+      month("2026-05-01", 25),
+    ]);
+    const r = computeAgeOfMoneyTrend(b, { monthsBack: 5 });
+    expect(() => AgeOfMoneyTrendSchema.parse(r)).not.toThrow();
   });
 });
 

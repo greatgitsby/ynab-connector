@@ -3,6 +3,7 @@ import type { Account, Budget, MonthDetail } from "../ynab";
 import {
   computeBudgetSummary,
   renderBudgetSummary,
+  BudgetSummarySchema,
 } from "./get-budget-summary";
 
 const account = (overrides: Partial<Account>): Account => ({
@@ -66,6 +67,11 @@ describe("computeBudgetSummary", () => {
       monthDetail(),
     );
     expect(r.iso).toBe("USD");
+  });
+
+  test("result conforms to BudgetSummarySchema", () => {
+    const r = computeBudgetSummary(budget(), [], monthDetail());
+    expect(() => BudgetSummarySchema.parse(r)).not.toThrow();
   });
 });
 

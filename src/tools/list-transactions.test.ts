@@ -3,6 +3,7 @@ import type { Transaction } from "../ynab";
 import {
   computeTransactionList,
   renderTransactionList,
+  TransactionListSchema,
 } from "./list-transactions";
 
 const tx = (id: string, overrides: Partial<Transaction> = {}): Transaction => ({
@@ -47,18 +48,27 @@ describe("computeTransactionList", () => {
       computeTransactionList([], { limit: 100 }).transactions,
     ).toHaveLength(0);
   });
+
+  test("result conforms to TransactionListSchema", () => {
+    const fetched: Transaction[] = [tx("t1"), tx("t2")];
+    const r = computeTransactionList(fetched, { limit: 100, iso: "USD" });
+    expect(() => TransactionListSchema.parse(r)).not.toThrow();
+  });
 });
 
 describe("renderTransactionList", () => {
   test("emits 'No transactions match.' on empty", () => {
     expect(
-      renderTransactionList({ transactions: [] }, { includeIds: false }),
+      renderTransactionList(
+        { iso: "USD", transactions: [] },
+        { includeIds: false },
+      ),
     ).toBe("No transactions match.");
   });
 
   test("one line per tx, separator newline", () => {
     const out = renderTransactionList(
-      { transactions: [tx("a"), tx("b")] },
+      { iso: "USD", transactions: [tx("a"), tx("b")] },
       { includeIds: false },
     );
     expect(out.split("\n")).toHaveLength(2);

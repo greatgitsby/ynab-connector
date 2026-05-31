@@ -1,28 +1,33 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { BudgetDetail, YnabClient } from "../ynab";
-import { text, handleError } from "../format";
+import { result, handleError } from "../format";
 import { resolveMonthWindow } from "../month-window";
 
-// ---- Result types
+// ---- Result types (zod is the single source of truth; the TS types are
+// inferred and the schema doubles as the tool's outputSchema — see ADR 0002).
+// Age-of-money values are DAY counts (integers), not money — there are no
+// milliunit amounts here, so the report carries no currency code.
 
-export interface AgeOfMoneyEntry {
-  month: string;
+const AgeOfMoneyEntrySchema = z.object({
+  month: z.string(),
   // null when YNAB didn't return age_of_money for that month, "no_data" when
   // the month itself is missing from the Budget.
-  aom: number | null | "no_data";
-}
+  aom: z.union([z.number().int(), z.null(), z.literal("no_data")]),
+});
+export type AgeOfMoneyEntry = z.infer<typeof AgeOfMoneyEntrySchema>;
 
-export interface AgeOfMoneyTrend {
-  budgetName: string;
-  requested: string[];
-  current: number | null;
-  history: AgeOfMoneyEntry[];
+export const AgeOfMoneyTrendSchema = z.object({
+  budgetName: z.string(),
+  requested: z.array(z.string()),
+  current: z.number().int().nullable(),
+  history: z.array(AgeOfMoneyEntrySchema),
   // Average over months where AoM was reported. null when none.
-  average: number | null;
+  average: z.number().nullable(),
   // Last - first across reported months. null when fewer than 2 reported.
-  delta: number | null;
-}
+  delta: z.number().int().nullable(),
+});
+export type AgeOfMoneyTrend = z.infer<typeof AgeOfMoneyTrendSchema>;
 
 // ---- Compute (pure)
 
@@ -146,6 +151,7 @@ export const registerReflectAgeOfMoney = (
           .optional()
           .default(5),
       },
+      outputSchema: AgeOfMoneyTrendSchema.shape,
     },
     async ({ budget_id, months_back }) => {
       try {
@@ -154,7 +160,7 @@ export const registerReflectAgeOfMoney = (
         const trend = computeAgeOfMoneyTrend(data.budget, {
           monthsBack: months_back,
         });
-        return text(renderAgeOfMoneyTrend(trend));
+        return result(renderAgeOfMoneyTrend(trend), trend);
       } catch (e) {
         return handleError(e);
       }

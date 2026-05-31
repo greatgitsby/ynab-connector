@@ -137,6 +137,19 @@ export class YnabClient {
       `/budgets/${budgetId}${qs}`,
     );
   }
+  // Lightweight: just date/currency format. Use this instead of getBudget
+  // when a tool only needs the currency code (e.g. for structured output's
+  // `iso` field) — getBudget returns the entire budget payload.
+  getBudgetSettings(budgetId: string) {
+    return this.request<{
+      data: {
+        settings: {
+          date_format: { format: string } | null;
+          currency_format: { iso_code: string; decimal_digits: number } | null;
+        };
+      };
+    }>("GET", `/budgets/${budgetId}/settings`);
+  }
 
   // Accounts
   listAccounts(budgetId: string) {

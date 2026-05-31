@@ -3,6 +3,7 @@ import type { Category, MonthDetail, Transaction } from "../ynab";
 import {
   computeSpendingBreakdown,
   renderSpendingBreakdown,
+  SpendingBreakdownSchema,
 } from "./reflect-spending-breakdown";
 
 const cat = (overrides: Partial<Category>): Category => ({
@@ -66,6 +67,18 @@ describe("computeSpendingBreakdown", () => {
     });
     expect(r.spending.map((row) => row.name)).toEqual(["Rent", "Groceries"]);
     expect(r.spending[0].magnitude).toBe(2_000_000);
+  });
+
+  test("compute output conforms to the declared outputSchema", () => {
+    const txs: Transaction[] = [
+      tx({ id: "big", amount: -800_000, payee_name: "Apple" }),
+    ];
+    const r = computeSpendingBreakdown(monthsInRange, txs, {
+      start: "2026-04-01",
+      end: "2026-04-01",
+      iso: "USD",
+    });
+    expect(() => SpendingBreakdownSchema.parse(r)).not.toThrow();
   });
 
   test("excludes hidden categories", () => {

@@ -3,6 +3,7 @@ import type { BudgetDetail, Category, MonthDetail } from "../ynab";
 import {
   computeSpendingTrends,
   renderSpendingTrends,
+  SpendingTrendsSchema,
 } from "./reflect-spending-trends";
 
 const cat = (overrides: Partial<Category>): Category => ({
@@ -58,6 +59,18 @@ describe("computeSpendingTrends", () => {
       1_000_000, 1_500_000, 2_000_000,
     ]);
     expect(r.avgNet).toBe(1_500_000);
+  });
+
+  test("compute output conforms to the declared outputSchema", () => {
+    const groceries = (mag: number) =>
+      cat({ id: "groceries", name: "Groceries", activity: -mag });
+    const b = budget([
+      month("2026-03-01", -300_000, [groceries(300_000)]),
+      month("2026-04-01", 0, []),
+      month("2026-05-01", -350_000, [groceries(350_000)]),
+    ]);
+    const r = computeSpendingTrends(b, { monthsBack: 3 });
+    expect(() => SpendingTrendsSchema.parse(r)).not.toThrow();
   });
 
   test("ranks categories by total spending magnitude desc", () => {

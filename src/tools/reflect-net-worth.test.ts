@@ -1,6 +1,10 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from "vitest";
 import type { Account, BudgetDetail, Transaction } from "../ynab";
-import { computeNetWorth, renderNetWorth } from "./reflect-net-worth";
+import {
+  computeNetWorth,
+  renderNetWorth,
+  NetWorthReportSchema,
+} from "./reflect-net-worth";
 
 const account = (overrides: Partial<Account>): Account => ({
   id: "acc-x",
@@ -124,6 +128,17 @@ describe("computeNetWorth", () => {
     });
     const r = computeNetWorth(b, [], { monthsBack: 1 });
     expect(r.openAccounts.map((a) => a.name)).toEqual(["Big", "Mid", "Small"]);
+  });
+
+  test("compute output conforms to the declared outputSchema", () => {
+    const b = budget({
+      accounts: [account({ id: "checking", balance: 1_000_000 })],
+    });
+    const txs = [
+      tx({ account_id: "checking", date: "2026-05-10", amount: -100_000 }),
+    ];
+    const r = computeNetWorth(b, txs, { monthsBack: 2 });
+    expect(() => NetWorthReportSchema.parse(r)).not.toThrow();
   });
 });
 

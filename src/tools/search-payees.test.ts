@@ -1,6 +1,10 @@
 import { describe, test, expect } from "vitest";
 import type { Payee } from "../ynab";
-import { computePayeeSearch, renderPayeeSearch } from "./search-payees";
+import {
+  computePayeeSearch,
+  renderPayeeSearch,
+  PayeeSearchResultSchema,
+} from "./search-payees";
 
 const p = (over: Partial<Payee> & { id: string; name: string }): Payee => ({
   transfer_account_id: null,
@@ -62,6 +66,11 @@ describe("computePayeeSearch", () => {
     expect(result.matches[0]).toMatchObject({
       transfer_account_id: "acc-1",
     });
+  });
+
+  test("compute result conforms to PayeeSearchResultSchema", () => {
+    const r = computePayeeSearch(payees, "star", 20);
+    expect(() => PayeeSearchResultSchema.parse(r)).not.toThrow();
   });
 });
 

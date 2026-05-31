@@ -6,9 +6,22 @@ export const text = (s: string) => ({
 });
 
 // Attaches a `structuredContent` field alongside the text content. Per MCP
-// 2025-11-25, write tools return both human-readable text (for the model to
-// quote to the user) and machine-readable JSON (for the model to keep
-// working in the same conversation without re-reading).
+// 2025-11-25, tools return both human-readable text (for the model to quote
+// to the user) and machine-readable JSON (for the model — or a live artifact
+// — to keep working without re-parsing the prose). Read tools also declare an
+// `outputSchema` so the payload is discoverable and validated; see ADR 0002.
+//
+// Conventions for the structured payload (ADR 0002):
+//  - Money is in raw milliunits (matching the YNAB wire + write tools), never
+//    pre-divided dollars. A money-bearing payload also carries an `iso`
+//    currency code so a consumer can format without assuming USD. Summed/raw
+//    amounts are integers; averages are not, so they stay z.number().
+//  - `structuredContent` always carries item ids regardless of any
+//    `include_ids` flag — that flag is a text-verbosity knob only. Structured
+//    data should always be fully addressable for drill-downs.
+//  - Only the success path returns `structuredContent`; pre-compute guard
+//    branches (not-found, invalid range) stay text-only. So a present
+//    `structuredContent` means a real computed result.
 export const result = <S>(s: string, structured: S) => ({
   content: [{ type: "text" as const, text: s }],
   structuredContent: structured as S,
@@ -78,7 +91,7 @@ export const fmtCategoryLine = (
 
 export const fmtTxLine = (
   t: Transaction,
-  opts: { showCategory?: boolean; includeIds?: boolean } = {},
+  opts: { showCategory?: boolean; includeIds?: boolean; iso?: string } = {},
 ): string => {
   const showCategory = opts.showCategory ?? true;
   const payee = t.payee_name ?? "(no payee)";
@@ -87,7 +100,7 @@ export const fmtTxLine = (
     : "";
   const approval = t.approved ? "" : " (unapproved)";
   const idSuffix = opts.includeIds ? ` — id ${t.id}` : "";
-  return `- ${t.date} ${fmtMoney(t.amount)} ${payee}${cat} [${t.account_name}]${approval}${idSuffix}`;
+  return `- ${t.date} ${fmtMoney(t.amount, opts.iso)} ${payee}${cat} [${t.account_name}]${approval}${idSuffix}`;
 };
 
 // One row of activity expanded for a single Category. Used by

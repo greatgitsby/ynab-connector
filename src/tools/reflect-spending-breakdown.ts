@@ -8,6 +8,7 @@ import type {
 } from "../ynab";
 import {
   text,
+  result,
   handleError,
   fmtMoney,
   fmtPercent,
@@ -20,51 +21,61 @@ import {
 } from "../month-window";
 import { isSpendingCategory, isTransferTx } from "../predicates";
 
-// ---- Result types
+// ---- Result types (zod is the single source of truth; the TS types are
+// inferred and the schema doubles as the tool's outputSchema — see ADR 0002).
+// Money is in milliunits; averages are non-integer, so they stay z.number().
 
-export interface CategorySpendingRow {
-  id: string;
-  name: string;
+const CategorySpendingRowSchema = z.object({
+  id: z.string(),
+  name: z.string(),
   // Total outflow magnitude in milliunits (positive number).
-  magnitude: number;
-}
+  magnitude: z.number(),
+});
+export type CategorySpendingRow = z.infer<typeof CategorySpendingRowSchema>;
 
-export interface PositiveInflowRow {
-  id: string;
-  name: string;
+const PositiveInflowRowSchema = z.object({
+  id: z.string(),
+  name: z.string(),
   // Total positive activity in milliunits.
-  positive: number;
-}
+  positive: z.number(),
+});
+export type PositiveInflowRow = z.infer<typeof PositiveInflowRowSchema>;
 
-export interface OutflowRef {
-  date: string;
-  amount: number;
-  payee_name: string | null;
-  category_name: string | null;
-  account_name: string;
-  parent_id: string;
-  sub_id?: string;
-}
+const OutflowRefSchema = z.object({
+  date: z.string(),
+  amount: z.number(),
+  payee_name: z.string().nullable(),
+  category_name: z.string().nullable(),
+  account_name: z.string(),
+  parent_id: z.string(),
+  sub_id: z.string().optional(),
+});
+export type OutflowRef = z.infer<typeof OutflowRefSchema>;
 
-export interface SpendingBreakdown {
-  range: {
-    start: string;
-    end: string;
+export const SpendingBreakdownSchema = z.object({
+  // Currency code (e.g. "USD") for formatting the milliunit amounts below.
+  iso: z.string(),
+  range: z.object({
+    start: z.string(),
+    end: z.string(),
     // Pre-formatted label: "2026-04" or "2026-03 to 2026-04 (2 months)".
-    label: string;
-    months: number;
-    days: number;
-  };
-  totals: {
-    spending: number;
-    monthlyAvg: number;
-    dailyAvg: number;
-  };
-  largestOutflow: OutflowRef | null;
-  mostFrequent: { categoryName: string; count: number } | null;
-  spending: CategorySpendingRow[];
-  positiveInflows: PositiveInflowRow[];
-}
+    label: z.string(),
+    months: z.number().int(),
+    days: z.number().int(),
+  }),
+  totals: z.object({
+    spending: z.number(),
+    monthlyAvg: z.number(),
+    dailyAvg: z.number(),
+  }),
+  largestOutflow: OutflowRefSchema.nullable(),
+  mostFrequent: z
+    .object({ categoryName: z.string(), count: z.number().int() })
+    .nullable(),
+  spending: z.array(CategorySpendingRowSchema),
+  positiveInflows: z.array(PositiveInflowRowSchema),
+});
+export type SpendingBreakdown = z.infer<typeof SpendingBreakdownSchema>;
 
 // ---- Helpers (tool-local — kept private to the breakdown view)
 
@@ -136,6 +147,9 @@ const findMostFrequentCategory = (
 export interface ComputeOpts {
   start: string;
   end: string;
+  // Currency code for the structured payload. Optional for callers (tests)
+  // that don't care; the handler always passes the budget's real code.
+  iso?: string;
 }
 
 // Assumes monthsInRange has at least one MonthDetail. Handler validates
@@ -146,6 +160,7 @@ export const computeSpendingBreakdown = (
   opts: ComputeOpts,
 ): SpendingBreakdown => {
   const { start, end } = opts;
+  const iso = opts.iso ?? "USD";
   const spendByCat = new Map<string, CategorySpendingRow>();
   const positiveByCat = new Map<string, PositiveInflowRow>();
   let totalSpend = 0;
@@ -190,6 +205,7 @@ export const computeSpendingBreakdown = (
       : `${start.slice(0, 7)} to ${end.slice(0, 7)} (${numMonths} months)`;
 
   return {
+    iso,
     range: { start, end, label, months: numMonths, days: totalDays },
     totals: {
       spending: totalSpend,
@@ -214,14 +230,15 @@ export const renderSpendingBreakdown = (
   opts: RenderOpts,
 ): string => {
   const out: string[] = [];
+  const iso = r.iso;
   out.push(`Spending Breakdown: ${r.range.label}`);
   out.push("");
-  out.push(`Total Spending: ${fmtMoney(r.totals.spending)}`);
+  out.push(`Total Spending: ${fmtMoney(r.totals.spending, iso)}`);
   if (r.range.months > 1) {
-    out.push(`Average Monthly Spending: ${fmtMoney(r.totals.monthlyAvg)}`);
+    out.push(`Average Monthly Spending: ${fmtMoney(r.totals.monthlyAvg, iso)}`);
   }
   out.push(
-    `Average Daily Spending: ${fmtMoney(r.totals.dailyAvg)} (over ${r.range.days} days)`,
+    `Average Daily Spending: ${fmtMoney(r.totals.dailyAvg, iso)} (over ${r.range.days} days)`,
   );
   out.push(
     r.mostFrequent
@@ -235,7 +252,7 @@ export const renderSpendingBreakdown = (
       : "";
     const cat = largest.category_name ? ` → ${largest.category_name}` : "";
     out.push(
-      `Largest Outflow: ${largest.payee_name ?? "(no payee)"} ${fmtMoney(largest.amount)} on ${largest.date}${cat} [${largest.account_name}]${idSuffix}`,
+      `Largest Outflow: ${largest.payee_name ?? "(no payee)"} ${fmtMoney(largest.amount, iso)} on ${largest.date}${cat} [${largest.account_name}]${idSuffix}`,
     );
   } else {
     out.push("Largest Outflow: (none)");
@@ -249,7 +266,7 @@ export const renderSpendingBreakdown = (
     r.spending.length,
     (row) => {
       const idSuffix = opts.includeIds ? ` — id ${row.id}` : "";
-      return `- ${row.name}: ${fmtMoney(row.magnitude)} (${fmtPercent(row.magnitude, r.totals.spending)})${idSuffix}`;
+      return `- ${row.name}: ${fmtMoney(row.magnitude, iso)} (${fmtPercent(row.magnitude, r.totals.spending)})${idSuffix}`;
     },
   );
 
@@ -260,7 +277,7 @@ export const renderSpendingBreakdown = (
     r.positiveInflows.length,
     (row) => {
       const idSuffix = opts.includeIds ? ` — id ${row.id}` : "";
-      return `- ${row.name}: +${fmtMoney(row.positive)}${idSuffix}`;
+      return `- ${row.name}: +${fmtMoney(row.positive, iso)}${idSuffix}`;
     },
   );
 
@@ -297,6 +314,7 @@ export const registerReflectSpendingBreakdown = (
           ),
         include_ids: z.boolean().optional().default(false),
       },
+      outputSchema: SpendingBreakdownSchema.shape,
     },
     async ({ budget_id, start_month, end_month, include_ids }) => {
       try {
@@ -323,12 +341,15 @@ export const registerReflectSpendingBreakdown = (
         const txs = txRes.data.transactions.filter(
           (t) => t.date >= start && t.date <= endDate,
         );
+        const iso = budget.currency_format?.iso_code ?? "USD";
         const breakdown = computeSpendingBreakdown(monthsInRange, txs, {
           start,
           end,
+          iso,
         });
-        return text(
+        return result(
           renderSpendingBreakdown(breakdown, { includeIds: include_ids }),
+          breakdown,
         );
       } catch (e) {
         return handleError(e);

@@ -1,6 +1,10 @@
 import { describe, test, expect } from "vitest";
 import type { Category, MonthDetail, Transaction } from "../ynab";
-import { computeTriageInbox, renderTriageInbox } from "./triage-inbox";
+import {
+  computeTriageInbox,
+  renderTriageInbox,
+  TriageInboxSchema,
+} from "./triage-inbox";
 
 const cat = (overrides: Partial<Category>): Category => ({
   id: "cat-x",
@@ -130,6 +134,27 @@ describe("computeTriageInbox", () => {
   test("readyToAssign reads from month.to_be_budgeted", () => {
     const r = computeTriageInbox([], [], monthDetail({ to_be_budgeted: 999 }));
     expect(r.readyToAssign).toBe(999);
+  });
+
+  test("compute result conforms to TriageInboxSchema", () => {
+    const md = monthDetail({
+      categories: [
+        cat({ id: "o-1", name: "Bills", balance: -100_000 }),
+        cat({
+          id: "u-2",
+          name: "Savings",
+          goal_under_funded: 50_000,
+          goal_target: 200_000,
+          goal_type: "MF",
+        }),
+      ],
+    });
+    const r = computeTriageInbox(
+      [tx({ id: "u-1", date: "2026-05-10" })],
+      [tx({ id: "a-1", date: "2026-05-08", approved: false })],
+      md,
+    );
+    expect(() => TriageInboxSchema.parse(r)).not.toThrow();
   });
 });
 

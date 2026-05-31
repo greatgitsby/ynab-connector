@@ -3,6 +3,7 @@ import type { Account } from "../ynab";
 import {
   computeAccountList,
   renderAccountList,
+  AccountListSchema,
 } from "./list-accounts";
 
 const account = (overrides: Partial<Account>): Account => ({
@@ -36,12 +37,27 @@ describe("computeAccountList", () => {
     );
     expect(r.accounts).toHaveLength(2);
   });
+
+  test("result conforms to AccountListSchema", () => {
+    const r = computeAccountList(
+      [
+        account({ id: "open" }),
+        account({
+          id: "linked",
+          direct_import_linked: true,
+          last_reconciled_at: "2026-04-30T12:00:00+00:00",
+        }),
+      ],
+      { includeClosed: false, iso: "USD" },
+    );
+    expect(() => AccountListSchema.parse(r)).not.toThrow();
+  });
 });
 
 describe("renderAccountList", () => {
   test("'No accounts.' on empty", () => {
     expect(
-      renderAccountList({ accounts: [] }, { includeIds: false }),
+      renderAccountList({ iso: "USD", accounts: [] }, { includeIds: false }),
     ).toBe("No accounts.");
   });
 

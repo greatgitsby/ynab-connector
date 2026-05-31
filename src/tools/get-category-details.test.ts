@@ -8,6 +8,7 @@ import type {
 import {
   computeCategoryDetails,
   renderCategoryDetails,
+  CategoryDetailsSchema,
 } from "./get-category-details";
 
 const cat = (overrides: Partial<Category>): Category => ({
@@ -154,6 +155,19 @@ describe("computeCategoryDetails", () => {
       { categoryId: "groceries" },
     );
     expect(r?.activity.map((a) => a.parent_id)).toEqual(["new", "old"]);
+  });
+
+  test("result conforms to CategoryDetailsSchema", () => {
+    const txs: Transaction[] = [
+      tx({ id: "t1", date: "2026-05-08", category_id: "groceries", amount: -25_000 }),
+    ];
+    const r = computeCategoryDetails(
+      monthDetail([cat({ id: "groceries", name: "Groceries" })]),
+      groups,
+      txs,
+      { categoryId: "groceries" },
+    );
+    expect(() => CategoryDetailsSchema.parse(r)).not.toThrow();
   });
 });
 

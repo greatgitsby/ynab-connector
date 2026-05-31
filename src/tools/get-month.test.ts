@@ -1,6 +1,10 @@
 import { describe, test, expect } from "vitest";
 import type { Category, CategoryGroup, MonthDetail } from "../ynab";
-import { computeMonthReport, renderMonthReport } from "./get-month";
+import {
+  computeMonthReport,
+  renderMonthReport,
+  MonthReportSchema,
+} from "./get-month";
 
 const cat = (overrides: Partial<Category>): Category => ({
   id: "cat-x",
@@ -85,6 +89,21 @@ describe("computeMonthReport", () => {
       includeHidden: false,
     });
     expect(r.groups).toHaveLength(0);
+  });
+
+  test("result conforms to MonthReportSchema", () => {
+    const groups: CategoryGroup[] = [
+      group({
+        id: "grp-bills",
+        name: "Monthly Bills",
+        categories: [cat({ id: "rent" })],
+      }),
+    ];
+    const m = monthDetail([
+      cat({ id: "rent", name: "Rent", budgeted: 2_000_000 }),
+    ]);
+    const r = computeMonthReport(m, groups, { includeHidden: false });
+    expect(() => MonthReportSchema.parse(r)).not.toThrow();
   });
 });
 

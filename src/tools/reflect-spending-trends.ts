@@ -1,47 +1,56 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { BudgetDetail, YnabClient } from "../ynab";
-import { text, handleError, fmtMoney, padMoney } from "../format";
+import { result, handleError, fmtMoney, padMoney } from "../format";
 import { resolveMonthWindow } from "../month-window";
 import { isSpendingCategory } from "../predicates";
 
-// ---- Result types
+// ---- Result types (zod is the single source of truth; the TS types are
+// inferred and the schema doubles as the tool's outputSchema — see ADR 0002).
+// Money is in milliunits; averages are non-integer, so they stay z.number().
 
-export interface MonthlyNet {
-  month: string;
+const MonthlyNetSchema = z.object({
+  month: z.string(),
   // -m.activity in milliunits. Positive when non-Inflow categories spent
   // more than they received; negative when refunds/transfers-in exceeded
   // spending.
-  value: number;
-}
+  value: z.number(),
+});
+export type MonthlyNet = z.infer<typeof MonthlyNetSchema>;
 
-export interface CategoryTrend {
-  id: string;
-  name: string;
+const CategoryTrendSchema = z.object({
+  id: z.string(),
+  name: z.string(),
   // Total spending magnitude across the window in milliunits.
-  total: number;
+  total: z.number(),
   // Months where the category had outflows (mag > 0), parallel to window.
   // Used to compute per-month stats over present months only.
-  presentMonths: { month: string; magnitude: number }[];
+  presentMonths: z.array(
+    z.object({ month: z.string(), magnitude: z.number() }),
+  ),
   // null when there were no months with outflows in the window.
-  stats: {
-    avg: number;
-    min: { month: string; v: number };
-    max: { month: string; v: number };
-  } | null;
-}
+  stats: z
+    .object({
+      avg: z.number(),
+      min: z.object({ month: z.string(), v: z.number() }),
+      max: z.object({ month: z.string(), v: z.number() }),
+    })
+    .nullable(),
+});
+export type CategoryTrend = z.infer<typeof CategoryTrendSchema>;
 
-export interface SpendingTrends {
-  budgetName: string;
-  iso: string;
-  window: string[];
-  truncationNote: string | null;
-  monthlyNet: MonthlyNet[];
-  avgNet: number;
+export const SpendingTrendsSchema = z.object({
+  budgetName: z.string(),
+  iso: z.string(),
+  window: z.array(z.string()),
+  truncationNote: z.string().nullable(),
+  monthlyNet: z.array(MonthlyNetSchema),
+  avgNet: z.number(),
   // All categories ranked desc by total spending magnitude. Render slices
   // this to a top-N for display.
-  ranked: CategoryTrend[];
-}
+  ranked: z.array(CategoryTrendSchema),
+});
+export type SpendingTrends = z.infer<typeof SpendingTrendsSchema>;
 
 // ---- Compute (pure)
 
@@ -241,6 +250,7 @@ export const registerReflectSpendingTrends = (
           .default(6),
         include_ids: z.boolean().optional().default(false),
       },
+      outputSchema: SpendingTrendsSchema.shape,
     },
     async ({ budget_id, months_back, include_ids }) => {
       try {
@@ -249,11 +259,12 @@ export const registerReflectSpendingTrends = (
         const trends = computeSpendingTrends(data.budget, {
           monthsBack: months_back,
         });
-        return text(
+        return result(
           renderSpendingTrends(trends, {
             includeIds: include_ids,
             topN: TOP_TREND_DEFAULT,
           }),
+          trends,
         );
       } catch (e) {
         return handleError(e);

@@ -6,35 +6,65 @@ import type {
   Transaction,
   YnabClient,
 } from "../ynab";
-import { text, handleError, fmtMoney, padMoney, pushSection } from "../format";
+import {
+  result,
+  handleError,
+  fmtMoney,
+  padMoney,
+  pushSection,
+} from "../format";
 import { monthEndDate, resolveMonthWindow } from "../month-window";
 
-// ---- Result types
+// ---- Result types (zod is the single source of truth; the TS types are
+// inferred and the schema doubles as the tool's outputSchema — see ADR 0002).
+// Money is in milliunits (z.number()); the report already carries `iso` for
+// formatting, so no currency field is added here.
 
-export interface NetWorthSnapshot {
-  net: number;
-  assets: number;
-  liabilities: number;
-}
+const NetWorthSnapshotSchema = z.object({
+  net: z.number(),
+  assets: z.number(),
+  liabilities: z.number(),
+});
+export type NetWorthSnapshot = z.infer<typeof NetWorthSnapshotSchema>;
 
-export interface NetWorthHistoryRow {
-  month: string;
-  snapshot: NetWorthSnapshot | null;
+const NetWorthHistoryRowSchema = z.object({
+  month: z.string(),
+  snapshot: NetWorthSnapshotSchema.nullable(),
   // Delta from the previous row; null for the first row or when previous is missing.
-  delta: number | null;
-}
+  delta: z.number().nullable(),
+});
+export type NetWorthHistoryRow = z.infer<typeof NetWorthHistoryRowSchema>;
 
-export interface NetWorthReport {
-  budgetName: string;
-  iso: string;
-  requested: string[];
-  current: NetWorthSnapshot;
-  history: NetWorthHistoryRow[];
+// Mirrors the YNAB Account shape consumed by the render's per-account list.
+const AccountSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  type: z.string(),
+  on_budget: z.boolean(),
+  closed: z.boolean(),
+  deleted: z.boolean().optional(),
+  balance: z.number(),
+  cleared_balance: z.number(),
+  uncleared_balance: z.number(),
+  direct_import_linked: z.boolean().optional(),
+  direct_import_in_error: z.boolean().optional(),
+  last_reconciled_at: z.string().nullable().optional(),
+});
+
+export const NetWorthReportSchema = z.object({
+  budgetName: z.string(),
+  iso: z.string(),
+  requested: z.array(z.string()),
+  current: NetWorthSnapshotSchema,
+  history: z.array(NetWorthHistoryRowSchema),
   // Open (non-closed, non-deleted) accounts sorted by balance desc.
-  openAccounts: Account[];
+  openAccounts: z.array(AccountSchema),
   // Difference between last and first snapshot, null if the window has < 2 rows.
-  rangeChange: { delta: number; firstNet: number } | null;
-}
+  rangeChange: z
+    .object({ delta: z.number(), firstNet: z.number() })
+    .nullable(),
+});
+export type NetWorthReport = z.infer<typeof NetWorthReportSchema>;
 
 // ---- Tool-local helper
 
@@ -232,6 +262,7 @@ export const registerReflectNetWorth = (
           .default(5),
         include_ids: z.boolean().optional().default(false),
       },
+      outputSchema: NetWorthReportSchema.shape,
     },
     async ({ budget_id, months_back, include_ids }) => {
       try {
@@ -244,7 +275,10 @@ export const registerReflectNetWorth = (
         const report = computeNetWorth(budget, txRes.data.transactions, {
           monthsBack: months_back,
         });
-        return text(renderNetWorth(report, { includeIds: include_ids }));
+        return result(
+          renderNetWorth(report, { includeIds: include_ids }),
+          report,
+        );
       } catch (e) {
         return handleError(e);
       }

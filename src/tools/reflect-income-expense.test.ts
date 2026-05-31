@@ -9,6 +9,7 @@ import type {
 import {
   computeIncomeExpensePivot,
   renderIncomeExpensePivot,
+  IncomeExpensePivotSchema,
 } from "./reflect-income-expense";
 
 // ---- Fixtures
@@ -233,19 +234,19 @@ describe("computeIncomeExpensePivot", () => {
     });
     expect(r.income.rows).toHaveLength(2);
     expect(r.income.rows[0].label).toBe("Acme Corp");
-    expect(r.income.rows[0].monthly.get("2026-03-01")).toBe(4_000_000);
-    expect(r.income.rows[0].monthly.get("2026-05-01")).toBe(5_000_000);
+    expect(r.income.rows[0].monthly["2026-03-01"]).toBe(4_000_000);
+    expect(r.income.rows[0].monthly["2026-05-01"]).toBe(5_000_000);
     expect(r.income.rows[1].label).toBe("Side Gig LLC");
-    expect(r.income.rows[1].monthly.get("2026-03-01")).toBe(1_000_000);
+    expect(r.income.rows[1].monthly["2026-03-01"]).toBe(1_000_000);
   });
 
   test("monthly income totals sum across payees", () => {
     const r = computeIncomeExpensePivot(fixtureBudget(), fixtureTxs(), {
       monthsBack: 3,
     });
-    expect(r.income.monthly.get("2026-03-01")).toBe(5_000_000);
-    expect(r.income.monthly.get("2026-04-01")).toBe(5_000_000);
-    expect(r.income.monthly.get("2026-05-01")).toBe(5_000_000);
+    expect(r.income.monthly["2026-03-01"]).toBe(5_000_000);
+    expect(r.income.monthly["2026-04-01"]).toBe(5_000_000);
+    expect(r.income.monthly["2026-05-01"]).toBe(5_000_000);
   });
 
   test("hoists internal Uncategorized as a separate row, only when it has activity", () => {
@@ -254,10 +255,10 @@ describe("computeIncomeExpensePivot", () => {
     });
     expect(r.uncategorized).not.toBeNull();
     expect(r.uncategorized?.label).toBe("Uncategorized Transactions");
-    expect(r.uncategorized?.monthly.get("2026-03-01")).toBe(-25_000);
+    expect(r.uncategorized?.monthly["2026-03-01"]).toBe(-25_000);
     // April and May had zero Uncategorized activity in the fixture.
-    expect(r.uncategorized?.monthly.get("2026-04-01")).toBe(0);
-    expect(r.uncategorized?.monthly.get("2026-05-01")).toBe(0);
+    expect(r.uncategorized?.monthly["2026-04-01"]).toBe(0);
+    expect(r.uncategorized?.monthly["2026-05-01"]).toBe(0);
   });
 
   test("drops hidden groups", () => {
@@ -283,8 +284,8 @@ describe("computeIncomeExpensePivot", () => {
       monthsBack: 3,
     });
     const bills = r.groups[0];
-    expect(bills.monthly.get("2026-03-01")).toBe(-2_300_000);
-    expect(bills.monthly.get("2026-04-01")).toBe(-2_400_000);
+    expect(bills.monthly["2026-03-01"]).toBe(-2_300_000);
+    expect(bills.monthly["2026-04-01"]).toBe(-2_400_000);
   });
 
   test("totals.expense includes Uncategorized + every group", () => {
@@ -292,15 +293,15 @@ describe("computeIncomeExpensePivot", () => {
       monthsBack: 3,
     });
     // March expense = -2,000,000 (rent) - 300,000 (groceries) - 50,000 (games) - 25,000 (uncat) = -2,375,000.
-    expect(r.totals.expense.get("2026-03-01")).toBe(-2_375_000);
+    expect(r.totals.expense["2026-03-01"]).toBe(-2_375_000);
   });
 
   test("totals.net is income + expense per month (expense already negative)", () => {
     const r = computeIncomeExpensePivot(fixtureBudget(), fixtureTxs(), {
       monthsBack: 3,
     });
-    expect(r.totals.net.get("2026-03-01")).toBe(5_000_000 - 2_375_000);
-    expect(r.totals.net.get("2026-04-01")).toBe(5_000_000 - 2_475_000);
+    expect(r.totals.net["2026-03-01"]).toBe(5_000_000 - 2_375_000);
+    expect(r.totals.net["2026-04-01"]).toBe(5_000_000 - 2_475_000);
   });
 
   test("excludes Inflow:RTA from expense rows", () => {
@@ -358,6 +359,13 @@ describe("computeIncomeExpensePivot", () => {
     const labels = r.income.rows.map((row) => row.label);
     expect(labels).toContain("Sub Payee A");
     expect(labels).toContain("Parent Payee");
+  });
+
+  test("result conforms to IncomeExpensePivotSchema", () => {
+    const r = computeIncomeExpensePivot(fixtureBudget(), fixtureTxs(), {
+      monthsBack: 3,
+    });
+    expect(() => IncomeExpensePivotSchema.parse(r)).not.toThrow();
   });
 });
 

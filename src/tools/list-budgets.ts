@@ -1,13 +1,28 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Budget, YnabClient } from "../ynab";
-import { text, handleError } from "../format";
+import { result, handleError } from "../format";
 
-// ---- Result type
+// ---- Result types (zod is the single source of truth; the TS types are
+// inferred and the schema doubles as the tool's outputSchema — see ADR 0002).
+// Budgets carry no top-level milliunit money — currency lives per-budget in
+// currency_format — so this view needs no separate iso field.
 
-export interface BudgetList {
-  budgets: Budget[];
-}
+const BudgetSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  last_modified_on: z.string(),
+  first_month: z.string(),
+  last_month: z.string(),
+  currency_format: z
+    .object({ iso_code: z.string(), decimal_digits: z.number().int() })
+    .optional(),
+});
+
+export const BudgetListSchema = z.object({
+  budgets: z.array(BudgetSchema),
+});
+export type BudgetList = z.infer<typeof BudgetListSchema>;
 
 // ---- Compute (pure)
 
@@ -28,7 +43,7 @@ export const computeBudgetList = (
 
 // ---- Render (pure)
 
-const fmtBudgetLine = (b: Budget): string =>
+const fmtBudgetLine = (b: BudgetList["budgets"][number]): string =>
   `- ${b.name} (id: ${b.id}) — ${b.currency_format?.iso_code ?? "USD"}, last modified ${b.last_modified_on}`;
 
 export const renderBudgetList = (list: BudgetList): string => {
@@ -54,6 +69,7 @@ export const registerListBudgets = (
       inputSchema: {
         include_archived: z.boolean().optional().default(false),
       },
+      outputSchema: BudgetListSchema.shape,
     },
     async ({ include_archived }) => {
       try {
@@ -61,7 +77,7 @@ export const registerListBudgets = (
         const list = computeBudgetList(data.budgets, {
           includeArchived: include_archived,
         });
-        return text(renderBudgetList(list));
+        return result(renderBudgetList(list), list);
       } catch (e) {
         return handleError(e);
       }

@@ -1,18 +1,45 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Account, YnabClient } from "../ynab";
-import { text, handleError, fmtMoney } from "../format";
+import { result, handleError, fmtMoney } from "../format";
 
-// ---- Result type
+// ---- Result types (zod is the single source of truth; the TS types are
+// inferred and the schema doubles as the tool's outputSchema — see ADR 0002).
+// Money is in milliunits; balances carry no currency code, so we attach an
+// iso field for formatting.
 
-export interface AccountList {
-  accounts: Account[];
-}
+const AccountSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  type: z.string(),
+  on_budget: z.boolean(),
+  closed: z.boolean(),
+  deleted: z.boolean().optional(),
+  balance: z.number(),
+  cleared_balance: z.number(),
+  uncleared_balance: z.number(),
+  // Direct-import (linked-bank) status. Absent on accounts that predate the
+  // field or were never linked. Note: YNAB's API does NOT expose the bank's
+  // reported balance — only these health flags and the last-reconciled time.
+  direct_import_linked: z.boolean().optional(),
+  direct_import_in_error: z.boolean().optional(),
+  last_reconciled_at: z.string().nullable().optional(),
+});
+
+export const AccountListSchema = z.object({
+  // Currency code (e.g. "USD") for formatting the milliunit balances below.
+  iso: z.string(),
+  accounts: z.array(AccountSchema),
+});
+export type AccountList = z.infer<typeof AccountListSchema>;
 
 // ---- Compute (pure)
 
 export interface ComputeOpts {
   includeClosed: boolean;
+  // Currency code for the structured payload. Optional for callers (tests)
+  // that don't care; the handler always passes the budget's real code.
+  iso?: string;
 }
 
 export const computeAccountList = (
@@ -20,6 +47,7 @@ export const computeAccountList = (
   opts: ComputeOpts,
 ): AccountList => {
   return {
+    iso: opts.iso ?? "USD",
     accounts: fetched.filter((a) => opts.includeClosed || !a.closed),
   };
 };
@@ -30,7 +58,11 @@ export interface RenderOpts {
   includeIds: boolean;
 }
 
-const fmtAccountLine = (a: Account, includeIds: boolean): string => {
+const fmtAccountLine = (
+  a: AccountList["accounts"][number],
+  iso: string,
+  includeIds: boolean,
+): string => {
   const idSuffix = includeIds ? ` — id ${a.id}` : "";
   // Link health: YNAB exposes whether an account is linked for direct import
   // and whether that link is broken (it does NOT expose the bank's balance).
@@ -42,7 +74,7 @@ const fmtAccountLine = (a: Account, includeIds: boolean): string => {
   const lastRecon = a.last_reconciled_at
     ? `, last reconciled ${a.last_reconciled_at.slice(0, 10)}`
     : "";
-  return `- ${a.name} [${a.type}] ${a.on_budget ? "(on-budget)" : "(off-budget)"}${a.closed ? " (closed)" : ""}: balance ${fmtMoney(a.balance)}, cleared ${fmtMoney(a.cleared_balance)}, uncleared ${fmtMoney(a.uncleared_balance)}${link}${lastRecon}${idSuffix}`;
+  return `- ${a.name} [${a.type}] ${a.on_budget ? "(on-budget)" : "(off-budget)"}${a.closed ? " (closed)" : ""}: balance ${fmtMoney(a.balance, iso)}, cleared ${fmtMoney(a.cleared_balance, iso)}, uncleared ${fmtMoney(a.uncleared_balance, iso)}${link}${lastRecon}${idSuffix}`;
 };
 
 export const renderAccountList = (
@@ -51,7 +83,7 @@ export const renderAccountList = (
 ): string => {
   if (!list.accounts.length) return "No accounts.";
   return list.accounts
-    .map((a) => fmtAccountLine(a, opts.includeIds))
+    .map((a) => fmtAccountLine(a, list.iso, opts.includeIds))
     .join("\n");
 };
 
@@ -74,6 +106,7 @@ export const registerListAccounts = (
         include_closed: z.boolean().optional().default(false),
         include_ids: z.boolean().optional().default(false),
       },
+      outputSchema: AccountListSchema.shape,
     },
     async ({ budget_id, include_closed, include_ids }) => {
       try {
@@ -81,7 +114,10 @@ export const registerListAccounts = (
         const list = computeAccountList(data.accounts, {
           includeClosed: include_closed,
         });
-        return text(renderAccountList(list, { includeIds: include_ids }));
+        return result(
+          renderAccountList(list, { includeIds: include_ids }),
+          list,
+        );
       } catch (e) {
         return handleError(e);
       }

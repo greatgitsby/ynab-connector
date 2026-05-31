@@ -3,58 +3,90 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { BudgetDetail, Transaction, YnabClient } from "../ynab";
 import { resolveMonthWindow } from "../month-window";
 import { isInflowRta, isUncategorizedInternal } from "../predicates";
-import { text, handleError, padMoney } from "../format";
+import { result, handleError, padMoney } from "../format";
 
-// ---- Result types
+// ---- Result types (zod is the single source of truth; the TS types are
+// inferred and the schema doubles as the tool's outputSchema — see ADR 0002).
+// Money is in milliunits; the per-month maps are keyed by month ("YYYY-MM-01")
+// and emitted as JSON objects (z.record) so structuredContent round-trips —
+// a Map would serialize to "{}". Averages stay z.number().
 
-export interface PayeeIncomeRow {
-  label: string;
-  monthly: Map<string, number>;
-}
+// Per-month milliunit amounts keyed by month ("YYYY-MM-01").
+const MonthlySchema = z.record(z.string(), z.number());
 
-export interface ExpenseCategoryRow {
-  id: string;
-  label: string;
-  groupName: string;
-  monthly: Map<string, number>;
-}
+const PayeeIncomeRowSchema = z.object({
+  label: z.string(),
+  monthly: MonthlySchema,
+});
+export type PayeeIncomeRow = z.infer<typeof PayeeIncomeRowSchema>;
 
-export interface ExpenseGroup {
-  name: string;
-  rows: ExpenseCategoryRow[];
+const ExpenseCategoryRowSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  groupName: z.string(),
+  monthly: MonthlySchema,
+});
+export type ExpenseCategoryRow = z.infer<typeof ExpenseCategoryRowSchema>;
+
+const ExpenseGroupSchema = z.object({
+  name: z.string(),
+  rows: z.array(ExpenseCategoryRowSchema),
   // Group subtotal per month.
-  monthly: Map<string, number>;
-}
+  monthly: MonthlySchema,
+});
+export type ExpenseGroup = z.infer<typeof ExpenseGroupSchema>;
 
-export interface IncomeExpensePivot {
-  budgetName: string;
-  iso: string;
+export const IncomeExpensePivotSchema = z.object({
+  budgetName: z.string(),
+  iso: z.string(),
   // Months actually present in the window, chronological order.
-  window: string[];
-  requestedMonths: number;
-  truncationNote: string | null;
-  income: {
+  window: z.array(z.string()),
+  requestedMonths: z.number().int(),
+  truncationNote: z.string().nullable(),
+  income: z.object({
     // Sorted by total income desc.
-    rows: PayeeIncomeRow[];
+    rows: z.array(PayeeIncomeRowSchema),
     // Sum of all income rows per month.
-    monthly: Map<string, number>;
-  };
+    monthly: MonthlySchema,
+  }),
   // Synthetic Uncategorized row hoisted above the groups, or null if absent.
-  uncategorized: ExpenseCategoryRow | null;
+  uncategorized: ExpenseCategoryRowSchema.nullable(),
   // In budget.category_groups order, hidden groups omitted, empty groups dropped.
-  groups: ExpenseGroup[];
-  totals: {
-    expense: Map<string, number>;
+  groups: z.array(ExpenseGroupSchema),
+  totals: z.object({
+    expense: MonthlySchema,
     // income + expense (expense activity is already negative).
-    net: Map<string, number>;
-  };
-}
+    net: MonthlySchema,
+  }),
+});
+export type IncomeExpensePivot = z.infer<typeof IncomeExpensePivotSchema>;
 
 export interface ComputeOpts {
   monthsBack: number;
 }
 
 // ---- Compute (pure)
+
+// Internal working rows use Maps while aggregating; they are converted to the
+// JSON-friendly Record shape (mapToRecord) at the return boundary.
+interface PayeeIncomeAgg {
+  label: string;
+  monthly: Map<string, number>;
+}
+interface ExpenseCategoryAgg {
+  id: string;
+  label: string;
+  groupName: string;
+  monthly: Map<string, number>;
+}
+interface ExpenseGroupAgg {
+  name: string;
+  rows: ExpenseCategoryAgg[];
+  monthly: Map<string, number>;
+}
+
+const mapToRecord = (m: Map<string, number>): Record<string, number> =>
+  Object.fromEntries(m);
 
 export const computeIncomeExpensePivot = (
   budget: BudgetDetail,
@@ -81,7 +113,7 @@ export const computeIncomeExpensePivot = (
   }
 
   // Income by payee — sourced from Inflow: Ready to Assign transactions.
-  const incomeByPayee = new Map<string, PayeeIncomeRow>();
+  const incomeByPayee = new Map<string, PayeeIncomeAgg>();
   const addIncome = (payee: string | null, date: string, amount: number) => {
     const mKey = `${date.slice(0, 7)}-01`;
     if (!winSet.has(mKey)) return;
@@ -119,8 +151,8 @@ export const computeIncomeExpensePivot = (
   }
 
   // Expense rows aggregated across the window. Uncategorized is hoisted.
-  const expenseRows = new Map<string, ExpenseCategoryRow>();
-  let uncategorized: ExpenseCategoryRow | null = null;
+  const expenseRows = new Map<string, ExpenseCategoryAgg>();
+  let uncategorized: ExpenseCategoryAgg | null = null;
   for (const m of monthsInWindow) {
     for (const cat of m.categories ?? []) {
       if (cat.deleted || cat.hidden) continue;
@@ -178,7 +210,7 @@ export const computeIncomeExpensePivot = (
   });
 
   // Build expense groups (budget order, most-negative row first within each).
-  const rowsByGroup = new Map<string, ExpenseCategoryRow[]>();
+  const rowsByGroup = new Map<string, ExpenseCategoryAgg[]>();
   for (const row of expenseRows.values()) {
     const arr = rowsByGroup.get(row.groupName);
     if (arr) arr.push(row);
@@ -193,7 +225,7 @@ export const computeIncomeExpensePivot = (
       );
     }
   }
-  const groups: ExpenseGroup[] = [];
+  const groups: ExpenseGroupAgg[] = [];
   for (const groupName of groupOrder) {
     const rows = rowsByGroup.get(groupName);
     if (!rows || !rows.length) continue;
@@ -227,10 +259,27 @@ export const computeIncomeExpensePivot = (
     window,
     requestedMonths: opts.monthsBack,
     truncationNote: win.truncationNote,
-    income: { rows: incomeRowsSorted, monthly: incomeTotal },
-    uncategorized,
-    groups,
-    totals: { expense: expenseTotal, net: netByMonth },
+    income: {
+      rows: incomeRowsSorted.map((r) => ({
+        label: r.label,
+        monthly: mapToRecord(r.monthly),
+      })),
+      monthly: mapToRecord(incomeTotal),
+    },
+    uncategorized: uncategorized
+      ? { ...uncategorized, monthly: mapToRecord(uncategorized.monthly) }
+      : null,
+    groups: groups.map((g) => ({
+      name: g.name,
+      rows: g.rows.map((r) => ({
+        id: r.id,
+        label: r.label,
+        groupName: r.groupName,
+        monthly: mapToRecord(r.monthly),
+      })),
+      monthly: mapToRecord(g.monthly),
+    })),
+    totals: { expense: mapToRecord(expenseTotal), net: mapToRecord(netByMonth) },
   };
 };
 
@@ -248,14 +297,14 @@ const truncateLabel = (label: string): string =>
 
 const rowLine = (
   label: string,
-  monthly: Map<string, number>,
+  monthly: Record<string, number>,
   window: string[],
   iso: string,
 ): string => {
   let total = 0;
   const parts: string[] = [];
   for (const k of window) {
-    const v = monthly.get(k) ?? 0;
+    const v = monthly[k] ?? 0;
     total += v;
     parts.push(padMoney(v, COL_W, iso));
   }
@@ -351,6 +400,7 @@ export const registerReflectIncomeExpense = (
           .default(3),
         include_ids: z.boolean().optional().default(false),
       },
+      outputSchema: IncomeExpensePivotSchema.shape,
     },
     async ({ budget_id, months_back, include_ids }) => {
       try {
@@ -365,7 +415,10 @@ export const registerReflectIncomeExpense = (
           txRes.data.transactions,
           { monthsBack: months_back },
         );
-        return text(renderIncomeExpensePivot(pivot, { includeIds: include_ids }));
+        return result(
+          renderIncomeExpensePivot(pivot, { includeIds: include_ids }),
+          pivot,
+        );
       } catch (e) {
         return handleError(e);
       }

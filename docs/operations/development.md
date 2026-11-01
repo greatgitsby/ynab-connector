@@ -39,15 +39,7 @@ To probe raw YNAB data, skip MCP and use `scripts/ynab.sh` with a user token.
 The helper adds the bearer header, refreshes when the saved expiry has passed, and retries once on
 a 401. Extra arguments after the path go to `curl`.
 
-## Smoke-testing writes
-
-`scripts/smoke-writes.sh` round-trips a `budgeted` change and an approval toggle and exits non-zero
-on any mismatch. Run it before any deploy that touches write tools.
-
-1. Create a separate "Claude Connector Test" plan in YNAB with a few categories and transactions.
-   Never point this at a real plan.
-2. Put `YNAB_TEST_PLAN_ID=<plan id>` in `.dev.vars.smoke` (gitignored).
-3. Run `./scripts/smoke-writes.sh`.
+`patch`, `put`, and `post` write to YNAB. Point them only at a separate test plan, never a real one.
 
 ## Deploying
 

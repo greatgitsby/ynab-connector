@@ -3,6 +3,7 @@ import { YnabClient } from "./ynab";
 import type { Props } from "./ynab-auth";
 import { registerListPlans } from "./tools/list-plans";
 import { registerListAccounts } from "./tools/list-accounts";
+import { registerListMonths } from "./tools/list-months";
 import { registerGetMonth } from "./tools/get-month";
 import { registerListTransactions } from "./tools/list-transactions";
 import { registerListPayees } from "./tools/list-payees";
@@ -44,6 +45,7 @@ export const buildServer = (props: Props): McpServer => {
 
   registerListPlans(server, getClient);
   registerListAccounts(server, getClient);
+  registerListMonths(server, getClient);
   registerGetMonth(server, getClient);
   registerListTransactions(server, getClient);
   registerListPayees(server, getClient);

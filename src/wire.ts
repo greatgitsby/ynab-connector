@@ -7,16 +7,21 @@ import { z } from "zod";
 // Enums stay plain strings so a new YNAB value can't fail outputSchema
 // validation at call time. The `*_formatted` / `*_currency` siblings are left
 // out on purpose: money stays in milliunits.
+//
+// Every schema is a looseObject: YNAB objects pass through verbatim, and
+// YNAB sends fields we don't declare (the `*_formatted` siblings, and any
+// field a later API version adds). A strict z.object emits
+// `additionalProperties: false`, so the SDK would reject the whole call.
 
 const nullableString = z.string().nullable().optional();
 const nullableInt = z.number().int().nullable().optional();
 
-export const CurrencyFormatSchema = z.object({
+export const CurrencyFormatSchema = z.looseObject({
   iso_code: z.string(),
   decimal_digits: z.number().int(),
 });
 
-export const PlanSchema = z.object({
+export const PlanSchema = z.looseObject({
   id: z.string(),
   name: z.string(),
   last_modified_on: z.string().optional(),
@@ -26,7 +31,7 @@ export const PlanSchema = z.object({
 });
 export type Plan = z.infer<typeof PlanSchema>;
 
-export const AccountSchema = z.object({
+export const AccountSchema = z.looseObject({
   id: z.string(),
   name: z.string(),
   type: z.string(),
@@ -45,7 +50,7 @@ export const AccountSchema = z.object({
 });
 export type Account = z.infer<typeof AccountSchema>;
 
-export const CategorySchema = z.object({
+export const CategorySchema = z.looseObject({
   id: z.string(),
   category_group_id: z.string(),
   // Absent from GET /plans/{id}; present on /categories and /months/{month}.
@@ -77,7 +82,7 @@ export const CategorySchema = z.object({
 });
 export type Category = z.infer<typeof CategorySchema>;
 
-export const CategoryGroupSchema = z.object({
+export const CategoryGroupSchema = z.looseObject({
   id: z.string(),
   name: z.string(),
   hidden: z.boolean(),
@@ -88,7 +93,7 @@ export const CategoryGroupSchema = z.object({
 });
 export type CategoryGroup = z.infer<typeof CategoryGroupSchema>;
 
-export const MonthSummarySchema = z.object({
+export const MonthSummarySchema = z.looseObject({
   month: z.string(),
   note: nullableString,
   income: z.number().int(),
@@ -113,7 +118,7 @@ export const PlanDetailSchema = PlanSchema.extend({
 });
 export type PlanDetail = z.infer<typeof PlanDetailSchema>;
 
-export const SubTransactionSchema = z.object({
+export const SubTransactionSchema = z.looseObject({
   id: z.string(),
   transaction_id: z.string(),
   amount: z.number().int(),
@@ -132,7 +137,7 @@ export type SubTransaction = z.infer<typeof SubTransactionSchema>;
 // (plan, account, and month listings) carry `subtransactions`; hybrid rows
 // (category and payee listings) flatten splits into separate rows with
 // `type: "subtransaction"` and `parent_transaction_id`.
-export const TransactionSchema = z.object({
+export const TransactionSchema = z.looseObject({
   id: z.string(),
   date: z.string(),
   amount: z.number().int(),
@@ -161,7 +166,7 @@ export const TransactionSchema = z.object({
 });
 export type Transaction = z.infer<typeof TransactionSchema>;
 
-export const PayeeSchema = z.object({
+export const PayeeSchema = z.looseObject({
   id: z.string(),
   name: z.string(),
   transfer_account_id: nullableString,
@@ -169,7 +174,7 @@ export const PayeeSchema = z.object({
 });
 export type Payee = z.infer<typeof PayeeSchema>;
 
-export const ScheduledSubTransactionSchema = z.object({
+export const ScheduledSubTransactionSchema = z.looseObject({
   id: z.string(),
   scheduled_transaction_id: z.string(),
   amount: z.number().int(),
@@ -182,7 +187,7 @@ export const ScheduledSubTransactionSchema = z.object({
   deleted: z.boolean(),
 });
 
-export const ScheduledTransactionSchema = z.object({
+export const ScheduledTransactionSchema = z.looseObject({
   id: z.string(),
   date_first: z.string(),
   date_next: z.string(),
@@ -205,7 +210,7 @@ export type ScheduledTransaction = z.infer<typeof ScheduledTransactionSchema>;
 
 // A null `from_category_id` is Ready to Assign (an assignment); a null
 // `to_category_id` returns money to Ready to Assign.
-export const MoneyMovementSchema = z.object({
+export const MoneyMovementSchema = z.looseObject({
   id: z.string(),
   month: nullableString,
   moved_at: nullableString,

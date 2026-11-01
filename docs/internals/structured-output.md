@@ -12,7 +12,10 @@ rendered text, which broke on every wording change.
   breaking wire change.
 - **YNAB's shapes and names.** YNAB objects pass through verbatim, typed by the schemas in
   [`wire.ts`](../../src/wire.ts), which follow the spec's required fields so validation tolerates
-  endpoints that omit the rest. Fields the connector adds use YNAB's snake_case.
+  endpoints that omit the rest. Wire schemas are `z.looseObject`, so fields YNAB sends but we don't
+declare (the `*_formatted` / `*_currency` siblings, or anything a later API version adds) pass
+validation. A strict `z.object` emits `additionalProperties: false`, and the client rejects the
+call. Fields the connector adds use YNAB's snake_case.
 - **Zod is the single source of truth.** Each tool file defines its result schema and derives the
   type with `z.infer`. The MCP SDK validates `structuredContent` against `outputSchema` and throws
   on mismatch, so a hand-written interface beside a schema is a production failure waiting to

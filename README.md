@@ -50,7 +50,7 @@ Write tools (require write access — see "Permissions"):
 | `assign_to_categories` | Set per-month `budgeted` amounts on one or more categories (absolute milliunits). Reassign money between categories or fund from Ready to Assign. |
 | `update_transactions` | Edit existing transactions in bulk: categorize, approve, memo, flag, set cleared, set payee, or split across categories. |
 
-Out of scope by design: creating manual transactions, deleting anything, scheduled transactions, payee rename/merge, category rename/move, goal edits. See `docs/adr/0001-add-write-tools.md` for the rationale.
+Out of scope by design: creating manual transactions, deleting anything, scheduled transactions, payee rename/merge, category rename/move, goal edits. See [write tools](docs/internals/write-tools.md) for the rationale.
 
 ## How auth works
 
@@ -172,22 +172,6 @@ the YNAB authorization page will request the broader scope.
 YNAB itself does not split scope into separate read and write grants — a
 single connection either has full access or none. If you prefer to keep
 reads only, simply don't reconnect; existing read-only tokens stay valid.
-
-## Files
-
-```
-src/
-  index.ts          # Worker entry: OAuthProvider + stateless MCP handler
-  server.ts         # buildServer(props): MCP server + tool registration
-  token-refresh.ts  # YNAB token rotation on Claude.ai token refresh
-  ynab-auth.ts      # /authorize + /callback handlers (YNAB upstream OAuth)
-  ynab.ts           # YNAB API client + OAuth helpers
-  tools/            # One file per MCP tool
-docs/
-  adr/           # Architecture decision records (start with 0001-add-write-tools.md)
-  plans/         # Implementation plans for in-flight work
-wrangler.jsonc
-```
 
 ## Disclaimer
 

@@ -9,9 +9,10 @@ export const text = (s: string) => ({
 // 2025-11-25, tools return both human-readable text (for the model to quote
 // to the user) and machine-readable JSON (for the model — or a live artifact
 // — to keep working without re-parsing the prose). Read tools also declare an
-// `outputSchema` so the payload is discoverable and validated; see ADR 0002.
+// `outputSchema` so the payload is discoverable and validated; see
+// docs/internals/structured-output.md.
 //
-// Conventions for the structured payload (ADR 0002):
+// Conventions for the structured payload:
 //  - Money is in raw milliunits (matching the YNAB wire + write tools), never
 //    pre-divided dollars. A money-bearing payload also carries an `iso`
 //    currency code so a consumer can format without assuming USD. Summed/raw

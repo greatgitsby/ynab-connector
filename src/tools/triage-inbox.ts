@@ -19,7 +19,7 @@ import { interpretGoal } from "../goals";
 import { isSpendingCategory, isInboxableTx } from "../predicates";
 
 // ---- Result types (zod is the single source of truth; the TS types are
-// inferred and the schema doubles as the tool's outputSchema — see ADR 0002).
+// inferred and the schema doubles as the tool's outputSchema — see docs/internals/structured-output.md).
 // Money is in milliunits; `iso` is the currency code for formatting them.
 
 // Mirrors the YNAB SubTransaction shape (see ynab.ts).

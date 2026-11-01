@@ -1,4 +1,4 @@
-import type { Category, Transaction } from "./ynab";
+import type { Account, Category, Transaction } from "./ynab";
 
 // True when a Category counts as a real spending bucket: visible, not deleted,
 // and not one of YNAB's synthetic `internal` categories (Inflow: Ready to
@@ -25,6 +25,11 @@ export const isUncategorizedInternal = (c: Category): boolean =>
 // shouldn't surface in inbox review.
 export const isInboxableTx = (t: Transaction): boolean =>
   t.transfer_account_id == null || !t.approved;
+
+// True for an off-budget (tracking) Account, such as a brokerage, 401(k), or
+// mortgage. Its transactions never take a category and don't count as
+// spending, so a missing category there is never something to fix.
+export const isTrackingAccount = (a: Account): boolean => !a.on_budget;
 
 // True when a Transaction is a transfer between two accounts in the same
 // plan. Transfers are excluded from spending stats — moving money between

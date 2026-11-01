@@ -17,7 +17,11 @@ import {
   fmtTxLine,
 } from "../format";
 import { interpretGoal } from "../goals";
-import { isSpendingCategory, isInboxableTx } from "../predicates";
+import {
+  isSpendingCategory,
+  isInboxableTx,
+  isTrackingAccount,
+} from "../predicates";
 
 // ---- Result types (zod is the single source of truth; the TS types are
 // inferred and the schema doubles as the tool's outputSchema — see docs/internals/structured-output.md).
@@ -43,9 +47,11 @@ export const TriageInboxSchema = z.object({
   month: z.string(),
   // Live Ready-to-Assign for the current month.
   ready_to_assign: z.number(),
-  // Sorted desc by date.
+  // Sorted desc by date. Excludes tracking (off-budget) accounts, where
+  // transactions never take a category.
   uncategorized: z.array(TransactionSchema),
-  // Sorted desc by date. Excludes any tx that already appears in uncategorized.
+  // Sorted desc by date. Excludes any tx that already appears in
+  // uncategorized, and tracking (off-budget) accounts.
   auto_categorized: z.array(TransactionSchema),
   // Sorted by balance asc (most overspent first).
   overspent: z.array(CategorySchema),
@@ -60,6 +66,9 @@ export interface ComputeOpts {
   // Currency code for the structured payload. Optional for callers (tests)
   // that don't care; the handler always passes the plan's real code.
   iso?: string;
+  // Ids of tracking (off-budget) accounts, closed ones included. Their
+  // transactions have no category by design and never enter the inbox.
+  trackingAccountIds?: ReadonlySet<string>;
 }
 
 export const computeTriageInbox = (
@@ -69,12 +78,15 @@ export const computeTriageInbox = (
   opts: ComputeOpts = {},
 ): TriageInbox => {
   const iso = opts.iso ?? "USD";
+  const tracking = opts.trackingAccountIds ?? new Set<string>();
+  const inboxable = (t: Transaction) =>
+    isInboxableTx(t) && !tracking.has(t.account_id);
   const uncategorized = uncategorizedTxs
-    .filter(isInboxableTx)
+    .filter(inboxable)
     .sort((a, b) => b.date.localeCompare(a.date));
   const uncatIds = new Set(uncategorized.map((t) => t.id));
   const autoCategorized = unapprovedTxs
-    .filter((t) => isInboxableTx(t) && !uncatIds.has(t.id))
+    .filter((t) => inboxable(t) && !uncatIds.has(t.id))
     .sort((a, b) => b.date.localeCompare(a.date));
 
   const monthCats = monthDetail.categories.filter(isSpendingCategory);
@@ -173,7 +185,7 @@ export const renderTriageInbox = (
 // ---- MCP tool registration
 
 const DESCRIPTION =
-  "What needs attention today, in one call: ready-to-assign, uncategorized transactions, auto-categorized transactions awaiting review, and this month's overspent categories and underfunded goals. The 'auto-categorized' categories are YNAB's guesses and often need correcting before approval. A transaction that is both uncategorized and unapproved appears only under 'uncategorized'.";
+  "What needs attention today, in one call: ready-to-assign, uncategorized transactions, auto-categorized transactions awaiting review, and this month's overspent categories and underfunded goals. The 'auto-categorized' categories are YNAB's guesses and often need correcting before approval. A transaction that is both uncategorized and unapproved appears only under 'uncategorized'. Tracking (off-budget) accounts such as brokerage or retirement accounts are left out: their transactions never take a category.";
 
 export const registerTriageInbox = (
   server: McpServer,
@@ -201,17 +213,22 @@ export const registerTriageInbox = (
     async ({ plan_id, max_per_section, include_ids }) => {
       try {
         const c = getClient();
-        const [uncatRes, unapprovedRes, monthRes, iso] = await Promise.all([
-          c.listTransactions(plan_id, { type: "uncategorized" }),
-          c.listTransactions(plan_id, { type: "unapproved" }),
-          c.getMonth(plan_id, "current"),
-          c.planIso(plan_id),
-        ]);
+        const [uncatRes, unapprovedRes, monthRes, accountsRes, iso] =
+          await Promise.all([
+            c.listTransactions(plan_id, { type: "uncategorized" }),
+            c.listTransactions(plan_id, { type: "unapproved" }),
+            c.getMonth(plan_id, "current"),
+            c.listAccounts(plan_id),
+            c.planIso(plan_id),
+          ]);
+        const trackingAccountIds = new Set(
+          accountsRes.data.accounts.filter(isTrackingAccount).map((a) => a.id),
+        );
         const inbox = computeTriageInbox(
           uncatRes.data.transactions,
           unapprovedRes.data.transactions,
           monthRes.data.month,
-          { iso },
+          { iso, trackingAccountIds },
         );
         return result(
           renderTriageInbox(inbox, {

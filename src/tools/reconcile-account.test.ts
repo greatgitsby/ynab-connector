@@ -74,6 +74,18 @@ describe("computeReconciliation", () => {
     expect(reconciliation.uncleared.map((t) => t.id)).toEqual(["u1"]);
   });
 
+  test("tracking accounts: missing categories don't block, unapproved still does", () => {
+    const tracking = account({ type: "otherAsset", on_budget: false });
+    const uncat = tx({ id: "u", category_id: null, category_name: null });
+    expect(computeReconciliation(tracking, [uncat], 950_000).verified).toBe(true);
+    const r = computeReconciliation(
+      tracking,
+      [uncat, tx({ id: "p", category_id: null, approved: false })],
+      950_000,
+    );
+    expect(r.unverified.map((u) => [u.tx.id, u.reason])).toEqual([["p", "unapproved"]]);
+  });
+
   test("unapproved and uncategorized txns block; transfers and splits don't", () => {
     const reconciliation = computeReconciliation(
       account({}),

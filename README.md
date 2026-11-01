@@ -31,19 +31,18 @@ Read tools:
 
 | Tool | What it does |
 | --- | --- |
-| `list_plans` | List all plans visible to the connected YNAB account |
-| `get_plan_summary` | Accounts and current-month totals |
-| `list_accounts` | All accounts with balances |
-| `get_month` | One month, grouped by category group; defaults to the current month |
-| `list_transactions` | Transactions, optionally filtered to `uncategorized` or `unapproved` |
+| `list_plans` | All plans visible to the connected YNAB account, archived ones included |
+| `list_accounts` | Accounts with balances, bank-link health, and last reconciliation |
+| `list_months` | Income, assigned, activity, Ready to Assign, and age of money for each month in a range |
+| `get_month` | One month's categories, grouped by category group; defaults to the current month |
+| `get_category` | One category in one month, optionally with its month-by-month history and whether its goal was funded each month |
+| `list_transactions` | Transactions for the plan or one account, category, payee, or month over any date range, with totals by month |
+| `list_scheduled_transactions` | Upcoming scheduled bills, paychecks, and transfers that aren't in balances yet |
+| `list_money_movements` | Assignments and moves between categories, with each category's net flow and moves out of savings goals flagged |
+| `list_payees` | Payees, optionally filtered by part of their name |
 | `triage_inbox` | Uncategorized and unapproved transactions, overspent categories, and underfunded goals in one call |
-| `reflect_spending_breakdown` | Spending over a date range (default: last calendar month): total, monthly and daily averages, most frequent category, largest outflow, each category's share, and categories with net inflow |
-| `reflect_spending_trends` | Net activity over the last N months (default 6), each month's difference from the average, and the top categories month over month |
-| `reflect_net_worth` | Current net worth, month-by-month history rebuilt from transactions, and each account's balance |
-| `reflect_income_expense` | Income by payee against expense by category over the last N months (default 3), with Average and Total columns |
-| `reflect_age_of_money` | Current age of money plus monthly history, average, and trend |
-| `get_category_details` | One category's month totals and every transaction in it this month |
-| `search_payees` | Find payees by part of their name, to get the payee `id` to pass to `update_transactions` |
+| `reflect_income_expense` | Income by payee against expense by category for each month in a range (default 3 months), with Average and Total columns |
+| `reflect_net_worth` | Current net worth, month-end history rebuilt from transactions, and each account's balance |
 
 Write tools need write access (see [Permissions](#permissions)):
 
@@ -53,7 +52,7 @@ Write tools need write access (see [Permissions](#permissions)):
 | `update_transactions` | Edit existing transactions in bulk: category, approval, memo, flag, cleared status, payee, or splits. |
 | `reconcile_account` | Reconcile an account against a bank statement balance. Locks cleared transactions only when every transaction is approved and categorized and the balances match. |
 
-The connector deliberately leaves out creating manual transactions, deleting anything, scheduled transactions, renaming or merging payees, renaming or moving categories, and editing goals. [Write tools](docs/internals/write-tools.md) explains why.
+The connector deliberately leaves out creating manual transactions, deleting anything, creating or editing scheduled transactions, renaming or merging payees, renaming or moving categories, and editing goals. [Write tools](docs/internals/write-tools.md) explains why.
 
 ## How auth works
 

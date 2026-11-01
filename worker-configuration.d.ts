@@ -3,7 +3,7 @@
 // Runtime types generated with workerd@1.20261023.1 2026-10-01 global_fetch_strictly_public,nodejs_compat
 interface __BaseEnv_Env {
 	OAUTH_KV: KVNamespace;
-	MCP_RESOURCE: "https://claude-for-ynab.moen.ai/mcp";
+	MCP_RESOURCE: "https://ynab.mcp.moen.ai/mcp";
 }
 declare namespace Cloudflare {
 	interface GlobalProps {

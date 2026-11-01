@@ -9,7 +9,7 @@ YNAB (You Need A Budget) data — categorize transactions, approve pending
 imports, split receipts across categories, reassign money between
 categories, and run analytical reflections.
 
-**[→ Add to Claude.ai](https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=Claude%20for%20YNAB&connectorUrl=https%3A%2F%2Fclaude-for-ynab.moen.ai%2Fmcp)**
+**[→ Add to Claude.ai](https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=Claude%20for%20YNAB&connectorUrl=https%3A%2F%2Fynab.mcp.moen.ai%2Fmcp)**
 
 Opens Claude.ai's "Add custom connector" dialog with the name and URL
 prefilled. After you confirm, Claude walks you through authorizing the

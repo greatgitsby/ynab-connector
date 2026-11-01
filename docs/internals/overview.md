@@ -16,7 +16,7 @@ each request and hands them to `buildServer(props)`.
 short-lived state that bridges `/authorize` to `/callback`. Losing it signs users out; it never held
 YNAB credentials.
 
-The token audience is bound to `MCP_RESOURCE`, which must stay `https://claude-for-ynab.moen.ai/mcp`
+The token audience is bound to `MCP_RESOURCE`, which must stay `https://ynab.mcp.moen.ai/mcp`
 in production because existing grants carry it. `wrangler dev` overrides it through `.dev.vars`.
 
 ## Token rotation lives in one place

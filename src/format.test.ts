@@ -9,7 +9,6 @@ import {
   pushSection,
   fmtCategoryLine,
   fmtTxLine,
-  fmtActivityLine,
   result,
   scopeDeniedError,
 } from "./format";
@@ -111,6 +110,8 @@ const cat = (overrides: Partial<Category>): Category => ({
   category_group_id: "grp-1",
   name: "Groceries",
   hidden: false,
+  internal: false,
+  deleted: false,
   budgeted: 500_000,
   activity: -350_000,
   balance: 150_000,
@@ -132,34 +133,38 @@ const tx = (overrides: Partial<Transaction>): Transaction => ({
   category_name: "Groceries",
   flag_color: null,
   transfer_account_id: null,
+  deleted: false,
   ...overrides,
 });
 
 describe("fmtCategoryLine", () => {
   test("renders budgeted, activity, and balance", () => {
-    const line = fmtCategoryLine(cat({}), "2026-05-01");
+    const line = fmtCategoryLine(cat({}), "2026-05-01", "USD");
     expect(line).toBe(
       "- Groceries: budgeted $500.00, activity -$350.00, balance $150.00",
     );
   });
 
-  test("appends goal suffix when category has a goal", () => {
+  test("formats every amount, goal included, in the plan's currency", () => {
     const line = fmtCategoryLine(
       cat({ goal_type: "MF", goal_target: 500_000 }),
       "2026-05-01",
+      "EUR",
     );
-    expect(line).toContain(" — goal: $500.00/month");
+    expect(line).toContain("budgeted €500.00");
+    expect(line).toContain(" — goal: €500.00/month");
+    expect(line).not.toContain("$");
   });
 
   test("appends id when includeIds is true", () => {
-    const line = fmtCategoryLine(cat({}), "2026-05-01", true);
+    const line = fmtCategoryLine(cat({}), "2026-05-01", "USD", true);
     expect(line).toContain("— id cat-1");
   });
 });
 
 describe("fmtTxLine", () => {
   test("renders date, amount, payee, category, and account", () => {
-    const line = fmtTxLine(tx({}));
+    const line = fmtTxLine(tx({}), "USD");
     expect(line).toBe(
       "- 2026-05-01 -$50.00 Costco → Groceries [Checking]",
     );
@@ -168,66 +173,43 @@ describe("fmtTxLine", () => {
   test("falls back to (no payee) and (uncategorized) when missing", () => {
     const line = fmtTxLine(
       tx({ payee_name: null, category_name: null }),
+      "USD",
     );
     expect(line).toContain("(no payee)");
     expect(line).toContain("(uncategorized)");
   });
 
   test("hides category when showCategory is false", () => {
-    const line = fmtTxLine(tx({}), { showCategory: false });
+    const line = fmtTxLine(tx({}), "USD", { showCategory: false });
     expect(line).not.toContain("→");
   });
 
   test("appends (unapproved) when not approved", () => {
-    expect(fmtTxLine(tx({ approved: false }))).toContain("(unapproved)");
+    expect(fmtTxLine(tx({ approved: false }), "USD")).toContain("(unapproved)");
   });
 
   test("appends id when includeIds is true", () => {
-    expect(fmtTxLine(tx({}), { includeIds: true })).toContain("— id tx-1");
-  });
-});
-
-describe("fmtActivityLine", () => {
-  test("renders parent transaction activity", () => {
-    const line = fmtActivityLine({
-      date: "2026-05-01",
-      amount: -75_000,
-      payee_name: "Whole Foods",
-      account_name: "Visa",
-      approved: true,
-      parent_id: "parent-1",
-    });
-    expect(line).toBe("- 2026-05-01 -$75.00 Whole Foods [Visa]");
-  });
-
-  test("appends note when present", () => {
-    const line = fmtActivityLine({
-      date: "2026-05-01",
-      amount: -10_000,
-      payee_name: "Costco",
-      account_name: "Visa",
-      approved: true,
-      parent_id: "parent-1",
-      sub_id: "sub-1",
-      note: 'split from "Costco"',
-    });
-    expect(line).toContain('(split from "Costco")');
-  });
-
-  test("uses sub_id for the id suffix when present", () => {
-    const line = fmtActivityLine(
-      {
-        date: "2026-05-01",
-        amount: -10_000,
-        payee_name: "X",
-        account_name: "Y",
-        approved: true,
-        parent_id: "parent-1",
-        sub_id: "sub-9",
-      },
-      true,
+    expect(fmtTxLine(tx({}), "USD", { includeIds: true })).toContain(
+      "— id tx-1",
     );
-    expect(line).toContain("— id sub-9");
+  });
+
+  test("marks split parents and hybrid split parts", () => {
+    const sub = {
+      id: "s1",
+      transaction_id: "tx-1",
+      amount: -50_000,
+      deleted: false,
+    };
+    expect(fmtTxLine(tx({ subtransactions: [sub, sub] }), "USD")).toContain(
+      "(2-way split)",
+    );
+    expect(
+      fmtTxLine(
+        tx({ type: "subtransaction", parent_transaction_id: "tx-0" }),
+        "USD",
+      ),
+    ).toContain("(split of tx-0)");
   });
 });
 

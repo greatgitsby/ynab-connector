@@ -156,7 +156,7 @@ const fmtHealthHeader = (reconciliation: Reconciliation): string => {
   return `Account: ${reconciliation.accountName} — ${link}${lastRecon}`;
 };
 
-export const renderReconcile = (out: ReconcileResult): string => {
+export const renderReconcile = (out: ReconcileResult, iso: string): string => {
   const { reconciliation } = out;
   const lines: string[] = [fmtHealthHeader(reconciliation), ""];
 
@@ -172,7 +172,7 @@ export const renderReconcile = (out: ReconcileResult): string => {
         "update_transactions), then run this again:",
     );
     for (const u of reconciliation.unverified) {
-      lines.push(`${fmtTxLine(u.tx, { includeIds: true })} [${u.reason}]`);
+      lines.push(`${fmtTxLine(u.tx, iso, { includeIds: true })} [${u.reason}]`);
     }
     return lines.join("\n");
   }
@@ -180,10 +180,10 @@ export const renderReconcile = (out: ReconcileResult): string => {
   // Mismatch: balances disagree — report and list uncleared txns, no write.
   if (!reconciliation.matches) {
     lines.push(
-      `## Cannot reconcile ${reconciliation.accountName} — off by ${fmtMoney(reconciliation.delta)}`,
+      `## Cannot reconcile ${reconciliation.accountName} — off by ${fmtMoney(reconciliation.delta, iso)}`,
     );
-    lines.push(`Statement balance: ${fmtMoney(reconciliation.statementBalance)}`);
-    lines.push(`YNAB cleared balance: ${fmtMoney(reconciliation.clearedBalance)}`);
+    lines.push(`Statement balance: ${fmtMoney(reconciliation.statementBalance, iso)}`);
+    lines.push(`YNAB cleared balance: ${fmtMoney(reconciliation.clearedBalance, iso)}`);
     lines.push(
       "Clear or correct the transactions below until the cleared balance " +
         "matches your statement, or add a reconciliation adjustment in the " +
@@ -192,7 +192,7 @@ export const renderReconcile = (out: ReconcileResult): string => {
     if (reconciliation.uncleared.length) {
       lines.push("", `Uncleared transactions (${reconciliation.uncleared.length}):`);
       for (const t of reconciliation.uncleared) {
-        lines.push(fmtTxLine(t, { includeIds: true }));
+        lines.push(fmtTxLine(t, iso, { includeIds: true }));
       }
     }
     return lines.join("\n");
@@ -204,7 +204,7 @@ export const renderReconcile = (out: ReconcileResult): string => {
       `## ${reconciliation.accountName} already reconciled — nothing to lock`,
     );
     lines.push(
-      `Cleared balance ${fmtMoney(reconciliation.clearedBalance)} matches your statement.`,
+      `Cleared balance ${fmtMoney(reconciliation.clearedBalance, iso)} matches your statement.`,
     );
     return lines.join("\n");
   }
@@ -216,13 +216,13 @@ export const renderReconcile = (out: ReconcileResult): string => {
     `## Reconciled ${reconciliation.accountName} — locked ${okCount} / ${out.locked.length} transaction${out.locked.length === 1 ? "" : "s"}${errCount ? ` (${errCount} error${errCount === 1 ? "" : "s"})` : ""}`,
   );
   lines.push(
-    `Cleared balance ${fmtMoney(reconciliation.clearedBalance)} matches your statement.`,
+    `Cleared balance ${fmtMoney(reconciliation.clearedBalance, iso)} matches your statement.`,
   );
   for (const r of out.locked) {
     if (!r.ok) {
       lines.push(`- [error] tx ${r.transaction_id}: ${r.error}`);
     } else {
-      lines.push(`- [ok] ${fmtTxLine(r.transaction, { includeIds: true })}`);
+      lines.push(`- [ok] ${fmtTxLine(r.transaction, iso, { includeIds: true })}`);
     }
   }
   return lines.join("\n");
@@ -269,9 +269,10 @@ export const registerReconcileAccount = (
       if (!getProps().canWrite) return scopeDeniedError();
       try {
         const client = getClient();
-        const [accountRes, txRes] = await Promise.all([
+        const [accountRes, txRes, iso] = await Promise.all([
           client.getAccount(plan_id, account_id),
-          client.listAccountTransactions(plan_id, account_id),
+          client.listTransactions(plan_id, { accountId: account_id }),
+          client.planIso(plan_id),
         ]);
         const reconciliation = computeReconciliation(
           accountRes.data.account,
@@ -279,7 +280,7 @@ export const registerReconcileAccount = (
           statement_balance_milliunits,
         );
         const out = await applyReconcile(client, plan_id, reconciliation);
-        return result(renderReconcile(out), out);
+        return result(renderReconcile(out, iso), out);
       } catch (e) {
         return handleError(e);
       }

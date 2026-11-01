@@ -31,3 +31,4 @@ export const isInboxableTx = (t: Transaction): boolean =>
 // accounts isn't spending even though one side is negative.
 export const isTransferTx = (t: Transaction): boolean =>
   t.transfer_account_id != null;
+

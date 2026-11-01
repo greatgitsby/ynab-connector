@@ -45,12 +45,12 @@ const EXPECTED_TOOLS = [
   "assign_to_categories",
   "get_month",
   "list_accounts",
+  "list_payees",
   "list_plans",
   "list_transactions",
   "reconcile_account",
   "reflect_income_expense",
   "reflect_net_worth",
-  "search_payees",
   "triage_inbox",
   "update_transactions",
 ];
@@ -133,11 +133,11 @@ describe("tool calls", () => {
   });
 
   test("omitting plan_id targets YNAB's last-used plan", async () => {
-    fetchMock.mockResolvedValue(json({ data: { accounts: [] } }));
+    fetchMock.mockResolvedValue(json({ data: { payees: [] } }));
     const client = await connect();
-    const res = await client.callTool({ name: "list_accounts", arguments: {} });
+    const res = await client.callTool({ name: "list_payees", arguments: {} });
     expect(res.isError).toBeFalsy();
-    expect(requestedUrls()[0].pathname).toBe("/v1/plans/last-used/accounts");
+    expect(requestedUrls()[0].pathname).toBe("/v1/plans/last-used/payees");
   });
 
   test("triage_inbox asks YNAB for full history, not the 1-year default", async () => {
@@ -173,7 +173,7 @@ describe("tool calls", () => {
   test("YNAB failures come back as tool errors (isError: true)", async () => {
     fetchMock.mockResolvedValue(json({ error: { id: "404.2", name: "resource_not_found" } }, 404));
     const client = await connect();
-    const res = await client.callTool({ name: "list_accounts", arguments: { plan_id: "nope" } });
+    const res = await client.callTool({ name: "list_payees", arguments: { plan_id: "nope" } });
     expect(res.isError).toBe(true);
     expect((res.content as Array<{ text: string }>)[0].text).toContain("YNAB error 404");
   });

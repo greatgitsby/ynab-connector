@@ -13,6 +13,8 @@ const cat = (overrides: Partial<Category>): Category => ({
   category_group_id: "grp-1",
   name: "Groceries",
   hidden: false,
+  internal: false,
+  deleted: false,
   budgeted: 0,
   activity: 0,
   balance: 0,
@@ -34,6 +36,7 @@ const tx = (overrides: Partial<Transaction>): Transaction => ({
   category_name: "Groceries",
   flag_color: null,
   transfer_account_id: null,
+  deleted: false,
   ...overrides,
 });
 

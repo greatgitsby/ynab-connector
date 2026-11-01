@@ -11,6 +11,8 @@ const cat = (overrides: Partial<Category>): Category => ({
   category_group_id: "grp-x",
   name: "Generic",
   hidden: false,
+  internal: false,
+  deleted: false,
   budgeted: 0,
   activity: 0,
   balance: 0,
@@ -32,6 +34,7 @@ const tx = (overrides: Partial<Transaction>): Transaction => ({
   category_name: null,
   flag_color: null,
   transfer_account_id: null,
+  deleted: false,
   ...overrides,
 });
 
@@ -42,6 +45,7 @@ const monthDetail = (overrides: Partial<MonthDetail> = {}): MonthDetail => ({
   activity: 0,
   to_be_budgeted: 1_500_000,
   age_of_money: null,
+  deleted: false,
   categories: [],
   ...overrides,
 });
@@ -84,7 +88,7 @@ describe("computeTriageInbox", () => {
       monthDetail(),
     );
     expect(r.uncategorized.map((t) => t.id)).toEqual(["shared"]);
-    expect(r.autoCategorized.map((t) => t.id)).toEqual(["auto-only"]);
+    expect(r.auto_categorized.map((t) => t.id)).toEqual(["auto-only"]);
   });
 
   test("overspent sorts by balance asc (most overspent first), excludes internal/hidden", () => {
@@ -126,14 +130,14 @@ describe("computeTriageInbox", () => {
     });
     const r = computeTriageInbox([], [], md);
     expect(r.underfunded.map((u) => u.id)).toEqual(["big-gap", "small-gap"]);
-    expect(r.underfunded[0].cadenceLabel).toBe("/month");
-    expect(r.underfunded[0].goalTarget).toBe(500_000);
+    expect(r.underfunded[0].cadence_label).toBe("/month");
+    expect(r.underfunded[0].goal_target).toBe(500_000);
     expect(r.underfunded[0].underfunded).toBe(300_000);
   });
 
   test("readyToAssign reads from month.to_be_budgeted", () => {
     const r = computeTriageInbox([], [], monthDetail({ to_be_budgeted: 999 }));
-    expect(r.readyToAssign).toBe(999);
+    expect(r.ready_to_assign).toBe(999);
   });
 
   test("compute result conforms to TriageInboxSchema", () => {
@@ -193,7 +197,7 @@ describe("renderTriageInbox", () => {
       maxPerSection: 25,
       includeIds: false,
     });
-    expect(out).toContain("Ready to assign: $1,500.00");
+    expect(out).toContain("Ready to Assign: $1,500.00");
   });
 
   test("underfunded row includes /month cadence and the gap", () => {

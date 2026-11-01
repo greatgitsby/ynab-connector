@@ -21,56 +21,52 @@ const tx = (id: string, overrides: Partial<Transaction> = {}): Transaction => ({
   category_name: "Generic",
   flag_color: null,
   transfer_account_id: null,
+  deleted: false,
   ...overrides,
 });
 
 describe("computeTransactionList", () => {
-  test("takes the last `limit` txs and reverses to most-recent-first", () => {
-    const fetched: Transaction[] = [
-      tx("t1", { date: "2026-05-01" }),
-      tx("t2", { date: "2026-05-02" }),
-      tx("t3", { date: "2026-05-03" }),
-      tx("t4", { date: "2026-05-04" }),
-      tx("t5", { date: "2026-05-05" }),
-    ];
-    const r = computeTransactionList(fetched, { limit: 3 });
-    expect(r.transactions.map((t) => t.id)).toEqual(["t5", "t4", "t3"]);
+  const fetched: Transaction[] = [
+    tx("t1", { date: "2026-03-10", amount: -10_000 }),
+    tx("t3", { date: "2026-05-02", amount: -5_000 }),
+    tx("t2", { date: "2026-03-20", amount: -2_500 }),
+    // A hybrid split part from the category endpoint.
+    tx("s1", {
+      date: "2026-05-01",
+      amount: -1_500,
+      type: "subtransaction",
+      parent_transaction_id: "p1",
+    }),
+  ];
+
+  test("lists the most recent `limit`, but totals every match", () => {
+    const r = computeTransactionList(fetched, { limit: 2, iso: "USD" });
+    expect(r.transactions.map((t) => t.id)).toEqual(["t3", "s1"]);
+    expect(r.count).toBe(4);
+    expect(r.total).toBe(-19_000);
   });
 
-  test("returns all when fetched < limit", () => {
-    const fetched: Transaction[] = [tx("t1"), tx("t2")];
-    const r = computeTransactionList(fetched, { limit: 100 });
-    expect(r.transactions).toHaveLength(2);
+  test("totals by month in chronological order", () => {
+    const r = computeTransactionList(fetched, { limit: 100, iso: "USD" });
+    expect(r.by_month).toEqual([
+      { month: "2026-03-01", count: 2, total: -12_500 },
+      { month: "2026-05-01", count: 2, total: -6_500 },
+    ]);
   });
 
-  test("empty input -> empty output", () => {
-    expect(
-      computeTransactionList([], { limit: 100 }).transactions,
-    ).toHaveLength(0);
-  });
-
-  test("result conforms to TransactionListSchema", () => {
-    const fetched: Transaction[] = [tx("t1"), tx("t2")];
+  test("result, hybrid rows included, conforms to TransactionListSchema", () => {
     const r = computeTransactionList(fetched, { limit: 100, iso: "USD" });
     expect(() => TransactionListSchema.parse(r)).not.toThrow();
   });
 });
 
 describe("renderTransactionList", () => {
-  test("emits 'No transactions match.' on empty", () => {
+  test("says so when nothing matches", () => {
     expect(
       renderTransactionList(
-        { iso: "USD", transactions: [] },
+        computeTransactionList([], { limit: 10, iso: "USD" }),
         { includeIds: false },
       ),
     ).toBe("No transactions match.");
-  });
-
-  test("one line per tx, separator newline", () => {
-    const out = renderTransactionList(
-      { iso: "USD", transactions: [tx("a"), tx("b")] },
-      { includeIds: false },
-    );
-    expect(out.split("\n")).toHaveLength(2);
   });
 });

@@ -1,10 +1,10 @@
 import { describe, test, expect } from "vitest";
 import type { Payee } from "../ynab";
 import {
-  computePayeeSearch,
-  renderPayeeSearch,
-  PayeeSearchResultSchema,
-} from "./search-payees";
+  computePayeeList,
+  renderPayeeList,
+  PayeeListSchema,
+} from "./list-payees";
 
 const p = (over: Partial<Payee> & { id: string; name: string }): Payee => ({
   transfer_account_id: null,
@@ -21,26 +21,26 @@ const payees: Payee[] = [
   p({ id: "p6", name: "Transfer : Checking", transfer_account_id: "acc-1" }),
 ];
 
-describe("computePayeeSearch", () => {
+describe("computePayeeList", () => {
   test("substring matches are case-insensitive, sorted by name length", () => {
-    const result = computePayeeSearch(payees, "star", 20);
-    expect(result.matches.map((m) => m.name)).toEqual([
+    const result = computePayeeList(payees, "star", 20);
+    expect(result.payees.map((m) => m.name)).toEqual([
       "Starbucks",
       "STAR Market",
       "Starbucks Westshore",
     ]);
-    expect(result.totalMatched).toBe(3);
+    expect(result.total_matched).toBe(3);
   });
 
   test("excludes deleted payees", () => {
-    const result = computePayeeSearch(payees, "coffee", 20);
-    expect(result.matches).toEqual([]);
-    expect(result.totalMatched).toBe(0);
+    const result = computePayeeList(payees, "coffee", 20);
+    expect(result.payees).toEqual([]);
+    expect(result.total_matched).toBe(0);
   });
 
   test("sorts by name length then alphabetical", () => {
-    const result = computePayeeSearch(payees, "starbucks", 20);
-    expect(result.matches.map((m) => m.name)).toEqual([
+    const result = computePayeeList(payees, "starbucks", 20);
+    expect(result.payees.map((m) => m.name)).toEqual([
       "Starbucks",
       "Starbucks Westshore",
     ]);
@@ -50,42 +50,45 @@ describe("computePayeeSearch", () => {
     const many = Array.from({ length: 30 }, (_, i) =>
       p({ id: `p${i}`, name: `Match ${i.toString().padStart(2, "0")}` }),
     );
-    const result = computePayeeSearch(many, "match", 5);
-    expect(result.matches).toHaveLength(5);
-    expect(result.totalMatched).toBe(30);
-    expect(result.cap).toBe(5);
+    const result = computePayeeList(many, "match", 5);
+    expect(result.payees).toHaveLength(5);
+    expect(result.total_matched).toBe(30);
   });
 
   test("trims whitespace from the query", () => {
-    const result = computePayeeSearch(payees, "  whole  ", 20);
-    expect(result.matches.map((m) => m.name)).toEqual(["Whole Foods"]);
+    const result = computePayeeList(payees, "  whole  ", 20);
+    expect(result.payees.map((m) => m.name)).toEqual(["Whole Foods"]);
   });
 
   test("propagates transfer_account_id on matches", () => {
-    const result = computePayeeSearch(payees, "transfer", 20);
-    expect(result.matches[0]).toMatchObject({
+    const result = computePayeeList(payees, "transfer", 20);
+    expect(result.payees[0]).toMatchObject({
       transfer_account_id: "acc-1",
     });
   });
 
-  test("compute result conforms to PayeeSearchResultSchema", () => {
-    const r = computePayeeSearch(payees, "star", 20);
-    expect(() => PayeeSearchResultSchema.parse(r)).not.toThrow();
+  test("compute result conforms to PayeeListSchema", () => {
+    const r = computePayeeList(payees, "star", 20);
+    expect(() => PayeeListSchema.parse(r)).not.toThrow();
   });
 });
 
-describe("renderPayeeSearch", () => {
+describe("renderPayeeList", () => {
   test("renders a no-match message with the query", () => {
-    const result = { matches: [], totalMatched: 0, cap: 20 };
-    expect(renderPayeeSearch(result, "Foo")).toBe('No payees match "Foo".');
+    const result = { payees: [], total_matched: 0 };
+    expect(renderPayeeList(result, "Foo")).toBe('No payees match "Foo".');
+  });
+
+  test("an empty query lists every live payee", () => {
+    expect(computePayeeList(payees, "", 50).total_matched).toBe(5);
   });
 
   test("includes id suffix and transfer note", () => {
-    const result = computePayeeSearch(payees, "star", 20);
-    const rendered = renderPayeeSearch(result, "star");
+    const result = computePayeeList(payees, "star", 20);
+    const rendered = renderPayeeList(result, "star");
     expect(rendered).toContain("Starbucks — id p1");
-    const transferResult = computePayeeSearch(payees, "transfer", 20);
-    const transferRendered = renderPayeeSearch(transferResult, "transfer");
+    const transferResult = computePayeeList(payees, "transfer", 20);
+    const transferRendered = renderPayeeList(transferResult, "transfer");
     expect(transferRendered).toContain("(transfer) — id p6");
   });
 
@@ -93,8 +96,8 @@ describe("renderPayeeSearch", () => {
     const many = Array.from({ length: 30 }, (_, i) =>
       p({ id: `p${i}`, name: `Match ${i.toString().padStart(2, "0")}` }),
     );
-    const result = computePayeeSearch(many, "match", 5);
-    const rendered = renderPayeeSearch(result, "match");
+    const result = computePayeeList(many, "match", 5);
+    const rendered = renderPayeeList(result, "match");
     expect(rendered).toContain('showing 5 of 30');
   });
 });

@@ -1,10 +1,10 @@
 import { describe, test, expect } from "vitest";
-import type { Account, Budget, MonthDetail } from "../ynab";
+import type { Account, Plan, MonthDetail } from "../ynab";
 import {
-  computeBudgetSummary,
-  renderBudgetSummary,
-  BudgetSummarySchema,
-} from "./get-budget-summary";
+  computePlanSummary,
+  renderPlanSummary,
+  PlanSummarySchema,
+} from "./get-plan-summary";
 
 const account = (overrides: Partial<Account>): Account => ({
   id: "acc-x",
@@ -29,7 +29,7 @@ const monthDetail = (overrides: Partial<MonthDetail> = {}): MonthDetail => ({
   ...overrides,
 });
 
-const budget = (overrides: Partial<Budget> = {}): Budget => ({
+const plan = (overrides: Partial<Plan> = {}): Plan => ({
   id: "b-1",
   name: "Test Plan",
   last_modified_on: "2026-05-01",
@@ -38,7 +38,7 @@ const budget = (overrides: Partial<Budget> = {}): Budget => ({
   ...overrides,
 });
 
-describe("computeBudgetSummary", () => {
+describe("computePlanSummary", () => {
   test("counts open on-budget and off-budget accounts", () => {
     const accounts = [
       account({ id: "checking", on_budget: true }),
@@ -46,14 +46,14 @@ describe("computeBudgetSummary", () => {
       account({ id: "tracking", on_budget: false }),
       account({ id: "closed", on_budget: true, closed: true }),
     ];
-    const r = computeBudgetSummary(budget(), accounts, monthDetail());
+    const r = computePlanSummary(plan(), accounts, monthDetail());
     expect(r.accountCounts.onBudget).toBe(2);
     expect(r.accountCounts.offBudget).toBe(1);
   });
 
   test("reads readyToAssign from current month's to_be_budgeted", () => {
-    const r = computeBudgetSummary(
-      budget(),
+    const r = computePlanSummary(
+      plan(),
       [],
       monthDetail({ to_be_budgeted: 999 }),
     );
@@ -61,25 +61,25 @@ describe("computeBudgetSummary", () => {
   });
 
   test("defaults iso to USD when currency_format is missing", () => {
-    const r = computeBudgetSummary(
-      budget({ currency_format: undefined }),
+    const r = computePlanSummary(
+      plan({ currency_format: undefined }),
       [],
       monthDetail(),
     );
     expect(r.iso).toBe("USD");
   });
 
-  test("result conforms to BudgetSummarySchema", () => {
-    const r = computeBudgetSummary(budget(), [], monthDetail());
-    expect(() => BudgetSummarySchema.parse(r)).not.toThrow();
+  test("result conforms to PlanSummarySchema", () => {
+    const r = computePlanSummary(plan(), [], monthDetail());
+    expect(() => PlanSummarySchema.parse(r)).not.toThrow();
   });
 });
 
-describe("renderBudgetSummary", () => {
+describe("renderPlanSummary", () => {
   test("renders the headline block and current month sub-block", () => {
-    const r = computeBudgetSummary(budget(), [], monthDetail());
-    const out = renderBudgetSummary(r);
-    expect(out).toContain("Budget: Test Plan");
+    const r = computePlanSummary(plan(), [], monthDetail());
+    const out = renderPlanSummary(r);
+    expect(out).toContain("Plan: Test Plan");
     expect(out).toContain("Accounts: 0 on-budget, 0 off-budget");
     expect(out).toContain("Ready to assign: $750.00");
     expect(out).toContain("Current month (2026-05-01)");
@@ -87,11 +87,11 @@ describe("renderBudgetSummary", () => {
   });
 
   test("omits Age of money when null", () => {
-    const r = computeBudgetSummary(
-      budget(),
+    const r = computePlanSummary(
+      plan(),
       [],
       monthDetail({ age_of_money: null }),
     );
-    expect(renderBudgetSummary(r)).not.toContain("Age of money");
+    expect(renderPlanSummary(r)).not.toContain("Age of money");
   });
 });

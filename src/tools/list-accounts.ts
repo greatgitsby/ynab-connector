@@ -1,5 +1,6 @@
 import { z } from "zod";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { planIdParam } from "../schemas";
+import type { McpServer } from "@modelcontextprotocol/server";
 import type { Account, YnabClient } from "../ynab";
 import { result, handleError, fmtMoney } from "../format";
 
@@ -38,7 +39,7 @@ export type AccountList = z.infer<typeof AccountListSchema>;
 export interface ComputeOpts {
   includeClosed: boolean;
   // Currency code for the structured payload. Optional for callers (tests)
-  // that don't care; the handler always passes the budget's real code.
+  // that don't care; the handler always passes the plan's real code.
   iso?: string;
 }
 
@@ -89,7 +90,7 @@ export const renderAccountList = (
 
 // ---- MCP tool registration
 
-const DESCRIPTION = "List all accounts in a budget with balances.";
+const DESCRIPTION = "List all accounts in a plan with balances.";
 
 export const registerListAccounts = (
   server: McpServer,
@@ -102,15 +103,15 @@ export const registerListAccounts = (
       description: DESCRIPTION,
       annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
-        budget_id: z.string(),
+        plan_id: planIdParam,
         include_closed: z.boolean().optional().default(false),
         include_ids: z.boolean().optional().default(false),
       },
       outputSchema: AccountListSchema.shape,
     },
-    async ({ budget_id, include_closed, include_ids }) => {
+    async ({ plan_id, include_closed, include_ids }) => {
       try {
-        const { data } = await getClient().listAccounts(budget_id);
+        const { data } = await getClient().listAccounts(plan_id);
         const list = computeAccountList(data.accounts, {
           includeClosed: include_closed,
         });

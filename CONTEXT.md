@@ -1,17 +1,17 @@
 # YNAB Connector
 
-A read-only MCP server that exposes YNAB budget data as tools for a Claude.ai custom connector. The domain blends YNAB's own vocabulary (Budget, Category, Goal, Reflect) with this project's tool surface.
+A read-only MCP server that exposes YNAB plan data as tools for a Claude.ai custom connector. The domain blends YNAB's own vocabulary (Plan, Category, Goal, Reflect) with this project's tool surface.
 
 ## Language
 
 ### YNAB primitives
 
-**Budget**:
-A YNAB plan — the top-level container that owns accounts, categories, months, and transactions. YNAB's API uses `/budgets` and `/plans` interchangeably; this codebase always says **Budget**.
-_Avoid_: Plan.
+**Plan**:
+The top-level YNAB container that owns accounts, categories, months, and transactions (formerly called a "budget"). YNAB API v1.79 (2026-03) made `/plans/{plan_id}` the resource path and renamed response keys (`budgets` → `plans`, `budget` → `plan`); the legacy `/budgets` paths still answer but are undocumented. This codebase always says **Plan** — in tool names (`list_plans`, `get_plan_summary`), parameters (`plan_id`), types, and rendered text. YNAB's own field names that still say "budget" (`budgeted`, `to_be_budgeted`, `on_budget`, `goal_months_to_budget`) are kept verbatim because they're wire fields.
+_Avoid_: Budget (except when quoting those wire fields, or the on-budget/off-budget Account distinction).
 
 **Account**:
-A bank account, credit card, loan, or tracking line attached to a Budget. Flagged **on-budget** (contributes to Ready to Assign) or **off-budget** (tracked but not budgeted).
+A bank account, credit card, loan, or tracking line attached to a Plan. Flagged **on-budget** (contributes to Ready to Assign) or **off-budget** (tracked but not budgeted).
 
 **Category Group**:
 A named cluster of **Categories** (e.g. "Monthly Bills", "Fun Money"). Has its own `id` and `hidden`/`deleted` flags. Categories carry a `category_group_id` back-reference.
@@ -32,7 +32,7 @@ A split inside a parent Transaction. Each sub has its own `amount` and `category
 YNAB's amount encoding — integer thousandths of a currency unit. $1.00 = 1000 milliunits. All API amounts are milliunits; `fromMilli()` converts for display.
 
 **Ready to Assign**:
-The unassigned cash pool YNAB shows at the top of the budget. Sourced from `month.to_be_budgeted` — the live figure the app displays. **Never** read this off the `Inflow: Ready to Assign` Category's `balance`; that's a lifetime-cumulative number, not a user-actionable one.
+The unassigned cash pool YNAB shows at the top of the plan. Sourced from `month.to_be_budgeted` — the live figure the app displays. **Never** read this off the `Inflow: Ready to Assign` Category's `balance`; that's a lifetime-cumulative number, not a user-actionable one.
 _Avoid_: To-be-budgeted (correct in API, but "Ready to Assign" is what users see).
 
 ### Reflect & Triage
@@ -44,7 +44,7 @@ YNAB's analytical tabs — Spending Breakdown, Spending Trends, Net Worth, Incom
 A day-to-day review surface unique to this connector — uncategorized transactions + auto-categorized awaiting approval + overspent categories + underfunded goals, in one call. Mirrors YNAB's review workflow without being a single YNAB screen.
 
 **Month Window**:
-A consecutive run of months a Reflect tool operates over. Resolved by `resolveMonthWindow(budget, monthsBack)` which intersects the requested window with the months the Budget actually has data for, and emits a pre-formatted truncation note when those differ.
+A consecutive run of months a Reflect tool operates over. Resolved by `resolveMonthWindow(plan, monthsBack)` which intersects the requested window with the months the Plan actually has data for, and emits a pre-formatted truncation note when those differ.
 
 **GoalView**:
 The interpreted form of a Goal — `{ displayLabel, nextDueDate, underfundedThisMonth, isRecurring }`. Hides the YNAB goal_* matrix from callers.
@@ -52,7 +52,7 @@ The interpreted form of a Goal — `{ displayLabel, nextDueDate, underfundedThis
 ### Module shapes
 
 **Compute / Render split**:
-Every tool over ~60 lines is split into a pure `computeX(budget, transactions, opts) → X` and a pure `renderX(result, opts) → string`. The handler does fetch · compute · render · error-wrap and nothing else. The typed `X` (e.g. `SpendingBreakdown`, `IncomeExpensePivot`) is the test surface.
+Every tool over ~60 lines is split into a pure `computeX(plan, transactions, opts) → X` and a pure `renderX(result, opts) → string`. The handler does fetch · compute · render · error-wrap and nothing else. The typed `X` (e.g. `SpendingBreakdown`, `IncomeExpensePivot`) is the test surface.
 
 **Domain predicate**:
 A named one-expression predicate over a YNAB type that captures a project-wide filtering convention. Examples: `isSpendingCategory`, `isInflowRta`, `isUncategorizedInternal`, `isInboxableTx`, `isTransferTx`. Live in `src/predicates.ts`. Used everywhere `cat.hidden || cat.deleted || cat.internal` or `t.transfer_account_id != null` would otherwise be inlined.

@@ -77,16 +77,31 @@ export const refreshYnabToken = (params: {
     }),
   );
 
-// Refresh callback: returns a fresh access token. The caller (YnabMcp) is
-// responsible for persisting the new tokens somewhere durable; this client
-// just uses whatever it's handed.
-export type RefreshFn = () => Promise<string>;
+// Earliest date passed as `since_date` when a caller wants every transaction.
+// Since YNAB v1.85 (2026-05), transaction listings default `since_date` to
+// one year ago when it's omitted, which silently truncates "all uncategorized"
+// / "all unreconciled" queries. We always send an explicit lower bound.
+export const ALL_TIME = "1900-01-01";
 
+const txQuery = (opts?: {
+  sinceDate?: string;
+  untilDate?: string;
+  type?: string;
+}): string => {
+  const params = new URLSearchParams({
+    since_date: opts?.sinceDate ?? ALL_TIME,
+  });
+  if (opts?.untilDate) params.set("until_date", opts.untilDate);
+  if (opts?.type) params.set("type", opts.type);
+  return `?${params.toString()}`;
+};
+
+// Token rotation is not this client's job: the OAuthProvider's
+// tokenExchangeCallback (src/token-refresh.ts) refreshes the YNAB token when
+// Claude refreshes its own, and persists the result in the grant. A 401 here
+// surfaces as a YnabError like any other failure.
 export class YnabClient {
-  constructor(
-    private token: string,
-    private refresh?: RefreshFn,
-  ) {}
+  constructor(private token: string) {}
 
   private async request<T>(
     method: string,
@@ -95,24 +110,18 @@ export class YnabClient {
   ): Promise<T> {
     const headers: Record<string, string> = {
       Accept: "application/json",
+      Authorization: `Bearer ${this.token}`,
     };
     let payload: string | undefined;
     if (body !== undefined) {
       headers["Content-Type"] = "application/json";
       payload = JSON.stringify(body);
     }
-    const send = (token: string) =>
-      fetch(`${BASE_URL}${path}`, {
-        method,
-        headers: { ...headers, Authorization: `Bearer ${token}` },
-        body: payload,
-      });
-
-    let res = await send(this.token);
-    if (res.status === 401 && this.refresh) {
-      this.token = await this.refresh();
-      res = await send(this.token);
-    }
+    const res = await fetch(`${BASE_URL}${path}`, {
+      method,
+      headers,
+      body: payload,
+    });
     const text = await res.text();
     if (!res.ok) throw new YnabError(res.status, text);
     return text ? (JSON.parse(text) as T) : ({} as T);
@@ -124,23 +133,28 @@ export class YnabClient {
     return this.request<{ data: { user: { id: string } } }>("GET", "/user");
   }
 
-  // Budgets
-  listBudgets() {
-    return this.request<{ data: { budgets: Budget[] } }>("GET", "/budgets");
+  // Plans
+  //
+  // YNAB v1.79 (2026-03) made `/plans` the resource path and renamed the
+  // response keys (`plans` → `plans`, `plan` → `plan`). This codebase
+  // follows YNAB's current vocabulary throughout.
+  listPlans() {
+    return this.request<{
+      data: { plans: Plan[]; default_plan?: Plan | null };
+    }>("GET", "/plans");
   }
-  getBudget(budgetId: string, lastKnowledgeOfServer?: number) {
+  getPlan(planId: string, lastKnowledgeOfServer?: number) {
     const qs = lastKnowledgeOfServer
       ? `?last_knowledge_of_server=${lastKnowledgeOfServer}`
       : "";
-    return this.request<{ data: { budget: BudgetDetail } }>(
-      "GET",
-      `/budgets/${budgetId}${qs}`,
-    );
+    return this.request<{
+      data: { plan: PlanDetail; server_knowledge: number };
+    }>("GET", `/plans/${planId}${qs}`);
   }
-  // Lightweight: just date/currency format. Use this instead of getBudget
+  // Lightweight: just date/currency format. Use this instead of getPlan
   // when a tool only needs the currency code (e.g. for structured output's
-  // `iso` field) — getBudget returns the entire budget payload.
-  getBudgetSettings(budgetId: string) {
+  // `iso` field) — getPlan returns the entire plan payload.
+  getPlanSettings(planId: string) {
     return this.request<{
       data: {
         settings: {
@@ -148,96 +162,104 @@ export class YnabClient {
           currency_format: { iso_code: string; decimal_digits: number } | null;
         };
       };
-    }>("GET", `/budgets/${budgetId}/settings`);
+    }>("GET", `/plans/${planId}/settings`);
   }
 
   // Accounts
-  listAccounts(budgetId: string) {
+  listAccounts(planId: string) {
     return this.request<{ data: { accounts: Account[] } }>(
       "GET",
-      `/budgets/${budgetId}/accounts`,
+      `/plans/${planId}/accounts`,
     );
   }
-  getAccount(budgetId: string, accountId: string) {
+  getAccount(planId: string, accountId: string) {
     return this.request<{ data: { account: Account } }>(
       "GET",
-      `/budgets/${budgetId}/accounts/${accountId}`,
+      `/plans/${planId}/accounts/${accountId}`,
     );
   }
-  listAccountTransactions(budgetId: string, accountId: string) {
+  // `sinceDate` defaults to ALL_TIME, not YNAB's server default — see
+  // ALL_TIME for why.
+  listAccountTransactions(
+    planId: string,
+    accountId: string,
+    opts?: { sinceDate?: string; untilDate?: string },
+  ) {
     return this.request<{ data: { transactions: Transaction[] } }>(
       "GET",
-      `/budgets/${budgetId}/accounts/${accountId}/transactions`,
+      `/plans/${planId}/accounts/${accountId}/transactions${txQuery(opts)}`,
     );
   }
 
   // Categories
-  listCategories(budgetId: string) {
+  listCategories(planId: string) {
     return this.request<{ data: { category_groups: CategoryGroup[] } }>(
       "GET",
-      `/budgets/${budgetId}/categories`,
+      `/plans/${planId}/categories`,
     );
   }
-  getCategory(budgetId: string, categoryId: string) {
+  getCategory(planId: string, categoryId: string) {
     return this.request<{ data: { category: Category } }>(
       "GET",
-      `/budgets/${budgetId}/categories/${categoryId}`,
+      `/plans/${planId}/categories/${categoryId}`,
     );
   }
   // Months
-  listMonths(budgetId: string) {
+  listMonths(planId: string) {
     return this.request<{ data: { months: MonthSummary[] } }>(
       "GET",
-      `/budgets/${budgetId}/months`,
+      `/plans/${planId}/months`,
     );
   }
-  getMonth(budgetId: string, month: string) {
+  getMonth(planId: string, month: string) {
     return this.request<{ data: { month: MonthDetail } }>(
       "GET",
-      `/budgets/${budgetId}/months/${month}`,
+      `/plans/${planId}/months/${month}`,
     );
   }
 
   updateCategoryMonth(
-    budgetId: string,
+    planId: string,
     month: string,
     categoryId: string,
     body: { budgeted: number },
   ) {
     return this.request<{ data: { category: Category } }>(
       "PATCH",
-      `/budgets/${budgetId}/months/${month}/categories/${categoryId}`,
+      `/plans/${planId}/months/${month}/categories/${categoryId}`,
       { category: body },
     );
   }
 
   // Transactions
+  // `sinceDate` defaults to ALL_TIME, not YNAB's server default — see
+  // ALL_TIME for why.
   listTransactions(
-    budgetId: string,
-    opts?: { sinceDate?: string; type?: "uncategorized" | "unapproved" },
+    planId: string,
+    opts?: {
+      sinceDate?: string;
+      untilDate?: string;
+      type?: "uncategorized" | "unapproved";
+    },
   ) {
-    const params = new URLSearchParams();
-    if (opts?.sinceDate) params.set("since_date", opts.sinceDate);
-    if (opts?.type) params.set("type", opts.type);
-    const qs = params.toString() ? `?${params.toString()}` : "";
     return this.request<{ data: { transactions: Transaction[] } }>(
       "GET",
-      `/budgets/${budgetId}/transactions${qs}`,
+      `/plans/${planId}/transactions${txQuery(opts)}`,
     );
   }
   updateTransaction(
-    budgetId: string,
+    planId: string,
     transactionId: string,
     body: SaveTransactionFields,
   ) {
     return this.request<{ data: { transaction: Transaction } }>(
       "PUT",
-      `/budgets/${budgetId}/transactions/${transactionId}`,
+      `/plans/${planId}/transactions/${transactionId}`,
       { transaction: body },
     );
   }
   updateTransactionsBulk(
-    budgetId: string,
+    planId: string,
     body: { transactions: SaveTransactionWithId[] },
   ) {
     return this.request<{
@@ -245,14 +267,14 @@ export class YnabClient {
         transactions: Transaction[];
         transaction_ids: string[];
       };
-    }>("PATCH", `/budgets/${budgetId}/transactions`, body);
+    }>("PATCH", `/plans/${planId}/transactions`, body);
   }
 
   // Payees
-  listPayees(budgetId: string) {
+  listPayees(planId: string) {
     return this.request<{ data: { payees: Payee[] } }>(
       "GET",
-      `/budgets/${budgetId}/payees`,
+      `/plans/${planId}/payees`,
     );
   }
 }
@@ -260,7 +282,7 @@ export class YnabClient {
 // Convert milliunits (YNAB internal format) to dollars.
 export const fromMilli = (m: number) => m / 1000;
 
-export interface Budget {
+export interface Plan {
   id: string;
   name: string;
   last_modified_on: string;
@@ -269,7 +291,7 @@ export interface Budget {
   currency_format?: { iso_code: string; decimal_digits: number };
 }
 
-export interface BudgetDetail extends Budget {
+export interface PlanDetail extends Plan {
   accounts?: Account[];
   category_groups?: CategoryGroup[];
   categories?: Category[];
@@ -323,6 +345,8 @@ export interface Category {
   goal_under_funded?: number | null;
   goal_overall_funded?: number | null;
   goal_overall_left?: number | null;
+  // Set when the user has snoozed the goal for the current month (v1.76).
+  goal_snoozed_at?: string | null;
 }
 
 export interface MonthSummary {

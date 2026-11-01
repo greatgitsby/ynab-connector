@@ -1,5 +1,6 @@
 import { z } from "zod";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { planIdParam } from "../schemas";
+import type { McpServer } from "@modelcontextprotocol/server";
 import type {
   Category,
   CategoryGroup,
@@ -116,7 +117,7 @@ const expandForCategory = (
 export interface ComputeOpts {
   categoryId: string;
   // Currency code for the structured payload. Optional for callers (tests)
-  // that don't care; the handler always passes the budget's real code.
+  // that don't care; the handler always passes the plan's real code.
   iso?: string;
 }
 
@@ -197,7 +198,7 @@ export const registerGetCategoryDetails = (
       description: DESCRIPTION,
       annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
-        budget_id: z.string(),
+        plan_id: planIdParam,
         category_id: z.string(),
         month: z
           .string()
@@ -208,18 +209,18 @@ export const registerGetCategoryDetails = (
       },
       outputSchema: CategoryDetailsSchema.shape,
     },
-    async ({ budget_id, category_id, month, include_ids }) => {
+    async ({ plan_id, category_id, month, include_ids }) => {
       try {
         const c = getClient();
-        const monthRes = await c.getMonth(budget_id, month);
+        const monthRes = await c.getMonth(plan_id, month);
         const m = monthRes.data.month;
         if (!m.categories.some((x) => x.id === category_id)) {
           return text(`Category ${category_id} not found in month ${m.month}.`);
         }
         const [settingsRes, catsRes, txRes] = await Promise.all([
-          c.getBudgetSettings(budget_id),
-          c.listCategories(budget_id),
-          c.listTransactions(budget_id, { sinceDate: m.month }),
+          c.getPlanSettings(plan_id),
+          c.listCategories(plan_id),
+          c.listTransactions(plan_id, { sinceDate: m.month }),
         ]);
         const iso =
           settingsRes.data.settings.currency_format?.iso_code ?? "USD";

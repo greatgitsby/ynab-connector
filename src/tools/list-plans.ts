@@ -1,14 +1,14 @@
 import { z } from "zod";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { Budget, YnabClient } from "../ynab";
+import type { McpServer } from "@modelcontextprotocol/server";
+import type { Plan, YnabClient } from "../ynab";
 import { result, handleError } from "../format";
 
 // ---- Result types (zod is the single source of truth; the TS types are
 // inferred and the schema doubles as the tool's outputSchema — see ADR 0002).
-// Budgets carry no top-level milliunit money — currency lives per-budget in
+// Plans carry no top-level milliunit money — currency lives per-plan in
 // currency_format — so this view needs no separate iso field.
 
-const BudgetSchema = z.object({
+const PlanSchema = z.object({
   id: z.string(),
   name: z.string(),
   last_modified_on: z.string(),
@@ -19,10 +19,10 @@ const BudgetSchema = z.object({
     .optional(),
 });
 
-export const BudgetListSchema = z.object({
-  budgets: z.array(BudgetSchema),
+export const PlanListSchema = z.object({
+  plans: z.array(PlanSchema),
 });
-export type BudgetList = z.infer<typeof BudgetListSchema>;
+export type PlanList = z.infer<typeof PlanListSchema>;
 
 // ---- Compute (pure)
 
@@ -30,12 +30,12 @@ export interface ComputeOpts {
   includeArchived: boolean;
 }
 
-export const computeBudgetList = (
-  fetched: Budget[],
+export const computePlanList = (
+  fetched: Plan[],
   opts: ComputeOpts,
-): BudgetList => {
+): PlanList => {
   return {
-    budgets: fetched.filter(
+    plans: fetched.filter(
       (b) => opts.includeArchived || !/\(Archived/.test(b.name),
     ),
   };
@@ -43,41 +43,41 @@ export const computeBudgetList = (
 
 // ---- Render (pure)
 
-const fmtBudgetLine = (b: BudgetList["budgets"][number]): string =>
+const fmtPlanLine = (b: PlanList["plans"][number]): string =>
   `- ${b.name} (id: ${b.id}) — ${b.currency_format?.iso_code ?? "USD"}, last modified ${b.last_modified_on}`;
 
-export const renderBudgetList = (list: BudgetList): string => {
-  if (!list.budgets.length) return "No budgets found.";
-  return list.budgets.map(fmtBudgetLine).join("\n");
+export const renderPlanList = (list: PlanList): string => {
+  if (!list.plans.length) return "No plans found.";
+  return list.plans.map(fmtPlanLine).join("\n");
 };
 
 // ---- MCP tool registration
 
 const DESCRIPTION =
-  "List YNAB budgets accessible with the configured token. Returns id, name, currency, and last-modified date. Archived budgets (name contains '(Archived') are hidden by default.";
+  "List YNAB plans accessible with the configured token. Returns id, name, currency, and last-modified date. Archived plans (name contains '(Archived') are hidden by default.";
 
-export const registerListBudgets = (
+export const registerListPlans = (
   server: McpServer,
   getClient: () => YnabClient,
 ) => {
   server.registerTool(
-    "list_budgets",
+    "list_plans",
     {
-      title: "List Budgets",
+      title: "List Plans",
       description: DESCRIPTION,
       annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
         include_archived: z.boolean().optional().default(false),
       },
-      outputSchema: BudgetListSchema.shape,
+      outputSchema: PlanListSchema.shape,
     },
     async ({ include_archived }) => {
       try {
-        const { data } = await getClient().listBudgets();
-        const list = computeBudgetList(data.budgets, {
+        const { data } = await getClient().listPlans();
+        const list = computePlanList(data.plans, {
           includeArchived: include_archived,
         });
-        return result(renderBudgetList(list), list);
+        return result(renderPlanList(list), list);
       } catch (e) {
         return handleError(e);
       }

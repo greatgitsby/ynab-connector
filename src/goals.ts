@@ -17,6 +17,9 @@ export interface GoalView {
   underfundedThisMonth: number;
   // True for any cadence > 0; false for single-target goals.
   isRecurring: boolean;
+  // True when the user snoozed the goal during the reference month
+  // (YNAB v1.76 `goal_snoozed_at`). Snoozes apply to a single month.
+  snoozed: boolean;
 }
 
 // MF (monthly funding) targets are per-month; all other types are total
@@ -93,10 +96,13 @@ export const interpretGoal = (
   const nextDueDate = nextGoalDate(c, refMonth);
   const underfunded =
     c.goal_under_funded && c.goal_under_funded > 0 ? c.goal_under_funded : 0;
+  const snoozed =
+    !!c.goal_snoozed_at && c.goal_snoozed_at.slice(0, 7) === refMonth.slice(0, 7);
   const parts = [`${fmtMoney(c.goal_target)}${cadenceLabel}`];
   if (nextDueDate) parts.push(`by ${nextDueDate}`);
   if (underfunded > 0)
     parts.push(`needs ${fmtMoney(underfunded)} more this month`);
+  if (snoozed) parts.push("snoozed this month");
   return {
     label: parts.join(", "),
     targetAmount: c.goal_target,
@@ -104,6 +110,7 @@ export const interpretGoal = (
     nextDueDate,
     underfundedThisMonth: underfunded,
     isRecurring: (c.goal_cadence ?? 0) > 0,
+    snoozed,
   };
 };
 

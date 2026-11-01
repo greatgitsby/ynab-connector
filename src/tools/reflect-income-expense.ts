@@ -1,6 +1,7 @@
 import { z } from "zod";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { BudgetDetail, Transaction, YnabClient } from "../ynab";
+import { planIdParam } from "../schemas";
+import type { McpServer } from "@modelcontextprotocol/server";
+import type { PlanDetail, Transaction, YnabClient } from "../ynab";
 import { resolveMonthWindow } from "../month-window";
 import { isInflowRta, isUncategorizedInternal } from "../predicates";
 import { result, handleError, padMoney } from "../format";
@@ -37,7 +38,7 @@ const ExpenseGroupSchema = z.object({
 export type ExpenseGroup = z.infer<typeof ExpenseGroupSchema>;
 
 export const IncomeExpensePivotSchema = z.object({
-  budgetName: z.string(),
+  planName: z.string(),
   iso: z.string(),
   // Months actually present in the window, chronological order.
   window: z.array(z.string()),
@@ -51,7 +52,7 @@ export const IncomeExpensePivotSchema = z.object({
   }),
   // Synthetic Uncategorized row hoisted above the groups, or null if absent.
   uncategorized: ExpenseCategoryRowSchema.nullable(),
-  // In budget.category_groups order, hidden groups omitted, empty groups dropped.
+  // In plan.category_groups order, hidden groups omitted, empty groups dropped.
   groups: z.array(ExpenseGroupSchema),
   totals: z.object({
     expense: MonthlySchema,
@@ -89,18 +90,18 @@ const mapToRecord = (m: Map<string, number>): Record<string, number> =>
   Object.fromEntries(m);
 
 export const computeIncomeExpensePivot = (
-  budget: BudgetDetail,
+  plan: PlanDetail,
   transactions: Transaction[],
   opts: ComputeOpts,
 ): IncomeExpensePivot => {
-  const iso = budget.currency_format?.iso_code ?? "USD";
-  const win = resolveMonthWindow(budget, opts.monthsBack);
+  const iso = plan.currency_format?.iso_code ?? "USD";
+  const win = resolveMonthWindow(plan, opts.monthsBack);
   const window = win.present;
   const monthsInWindow = win.months;
   const winSet = new Set(window);
 
   // Locate the Inflow: Ready to Assign category id by scanning per-month
-  // categories (category_groups[].categories comes back null on /budgets/{id}).
+  // categories (category_groups[].categories comes back null on /plans/{id}).
   let inflowRtaId: string | null = null;
   for (const m of monthsInWindow) {
     for (const cat of m.categories ?? []) {
@@ -139,11 +140,11 @@ export const computeIncomeExpensePivot = (
     }
   }
 
-  // Group name lookup + visible group order from budget.category_groups.
+  // Group name lookup + visible group order from plan.category_groups.
   const groupNameById = new Map<string, string>();
   const groupOrder: string[] = [];
   const hiddenGroupIds = new Set<string>();
-  for (const grp of budget.category_groups ?? []) {
+  for (const grp of plan.category_groups ?? []) {
     if (grp.deleted) continue;
     groupNameById.set(grp.id, grp.name);
     if (grp.hidden) hiddenGroupIds.add(grp.id);
@@ -209,7 +210,7 @@ export const computeIncomeExpensePivot = (
     return bt - at;
   });
 
-  // Build expense groups (budget order, most-negative row first within each).
+  // Build expense groups (plan order, most-negative row first within each).
   const rowsByGroup = new Map<string, ExpenseCategoryAgg[]>();
   for (const row of expenseRows.values()) {
     const arr = rowsByGroup.get(row.groupName);
@@ -254,7 +255,7 @@ export const computeIncomeExpensePivot = (
   }
 
   return {
-    budgetName: budget.name,
+    planName: plan.name,
     iso,
     window,
     requestedMonths: opts.monthsBack,
@@ -316,14 +317,14 @@ export const renderIncomeExpensePivot = (
   pivot: IncomeExpensePivot,
   opts: RenderOpts,
 ): string => {
-  const { window, iso, budgetName, income, uncategorized, groups, totals } =
+  const { window, iso, planName, income, uncategorized, groups, totals } =
     pivot;
   const winStart = window[0] ?? "(none)";
   const winEnd = window[window.length - 1] ?? "(none)";
   const out: string[] = [];
 
   out.push(
-    `Income v Expense: ${budgetName} — last ${window.length} months (${winStart.slice(0, 7)} to ${winEnd.slice(0, 7)})`,
+    `Income v Expense: ${planName} — last ${window.length} months (${winStart.slice(0, 7)} to ${winEnd.slice(0, 7)})`,
   );
   if (pivot.truncationNote) out.push(pivot.truncationNote);
   out.push("");
@@ -390,7 +391,7 @@ export const registerReflectIncomeExpense = (
       description: DESCRIPTION,
       annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
-        budget_id: z.string(),
+        plan_id: planIdParam,
         months_back: z
           .number()
           .int()
@@ -402,16 +403,16 @@ export const registerReflectIncomeExpense = (
       },
       outputSchema: IncomeExpensePivotSchema.shape,
     },
-    async ({ budget_id, months_back, include_ids }) => {
+    async ({ plan_id, months_back, include_ids }) => {
       try {
         const c = getClient();
-        const budgetRes = await c.getBudget(budget_id);
-        const budget = budgetRes.data.budget;
-        const win = resolveMonthWindow(budget, months_back);
-        const sinceDate = win.present[0] ?? budget.first_month;
-        const txRes = await c.listTransactions(budget_id, { sinceDate });
+        const planRes = await c.getPlan(plan_id);
+        const plan = planRes.data.plan;
+        const win = resolveMonthWindow(plan, months_back);
+        const sinceDate = win.present[0] ?? plan.first_month;
+        const txRes = await c.listTransactions(plan_id, { sinceDate });
         const pivot = computeIncomeExpensePivot(
-          budget,
+          plan,
           txRes.data.transactions,
           { monthsBack: months_back },
         );

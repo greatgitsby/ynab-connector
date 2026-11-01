@@ -1,6 +1,7 @@
 import { z } from "zod";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { BudgetDetail, YnabClient } from "../ynab";
+import { planIdParam } from "../schemas";
+import type { McpServer } from "@modelcontextprotocol/server";
+import type { PlanDetail, YnabClient } from "../ynab";
 import { result, handleError } from "../format";
 import { resolveMonthWindow } from "../month-window";
 
@@ -12,13 +13,13 @@ import { resolveMonthWindow } from "../month-window";
 const AgeOfMoneyEntrySchema = z.object({
   month: z.string(),
   // null when YNAB didn't return age_of_money for that month, "no_data" when
-  // the month itself is missing from the Budget.
+  // the month itself is missing from the Plan.
   aom: z.union([z.number().int(), z.null(), z.literal("no_data")]),
 });
 export type AgeOfMoneyEntry = z.infer<typeof AgeOfMoneyEntrySchema>;
 
 export const AgeOfMoneyTrendSchema = z.object({
-  budgetName: z.string(),
+  planName: z.string(),
   requested: z.array(z.string()),
   current: z.number().int().nullable(),
   history: z.array(AgeOfMoneyEntrySchema),
@@ -36,10 +37,10 @@ export interface ComputeOpts {
 }
 
 export const computeAgeOfMoneyTrend = (
-  budget: BudgetDetail,
+  plan: PlanDetail,
   opts: ComputeOpts,
 ): AgeOfMoneyTrend => {
-  const win = resolveMonthWindow(budget, opts.monthsBack);
+  const win = resolveMonthWindow(plan, opts.monthsBack);
   const { requested, monthsByKey } = win;
 
   const latest = monthsByKey.get(requested[requested.length - 1] ?? "");
@@ -68,7 +69,7 @@ export const computeAgeOfMoneyTrend = (
     aomVals.length >= 2 ? aomVals[aomVals.length - 1] - aomVals[0] : null;
 
   return {
-    budgetName: budget.name,
+    planName: plan.name,
     requested,
     current,
     history,
@@ -80,12 +81,12 @@ export const computeAgeOfMoneyTrend = (
 // ---- Render (pure)
 
 export const renderAgeOfMoneyTrend = (trend: AgeOfMoneyTrend): string => {
-  const { requested, budgetName, current, history, average, delta } = trend;
+  const { requested, planName, current, history, average, delta } = trend;
   const out: string[] = [];
   const winStart = requested[0] ?? "(none)";
   const winEnd = requested[requested.length - 1] ?? "(none)";
   out.push(
-    `Age of Money: ${budgetName} — last ${requested.length} months (${winStart.slice(0, 7)} to ${winEnd.slice(0, 7)})`,
+    `Age of Money: ${planName} — last ${requested.length} months (${winStart.slice(0, 7)} to ${winEnd.slice(0, 7)})`,
   );
   out.push("");
 
@@ -142,7 +143,7 @@ export const registerReflectAgeOfMoney = (
       description: DESCRIPTION,
       annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
-        budget_id: z.string(),
+        plan_id: planIdParam,
         months_back: z
           .number()
           .int()
@@ -153,11 +154,11 @@ export const registerReflectAgeOfMoney = (
       },
       outputSchema: AgeOfMoneyTrendSchema.shape,
     },
-    async ({ budget_id, months_back }) => {
+    async ({ plan_id, months_back }) => {
       try {
         const c = getClient();
-        const { data } = await c.getBudget(budget_id);
-        const trend = computeAgeOfMoneyTrend(data.budget, {
+        const { data } = await c.getPlan(plan_id);
+        const trend = computeAgeOfMoneyTrend(data.plan, {
           monthsBack: months_back,
         });
         return result(renderAgeOfMoneyTrend(trend), trend);

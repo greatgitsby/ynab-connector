@@ -112,7 +112,7 @@ describe("applyUpdateTransactions", () => {
   } => {
     const bodies: unknown[] = [];
     const updateTransactionsBulk = vi.fn(
-      async (_budgetId: string, body: unknown) => {
+      async (_planId: string, body: unknown) => {
         bodies.push(body);
         const r = responder(body);
         if (r instanceof YnabError) throw r;

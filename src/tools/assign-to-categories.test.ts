@@ -32,13 +32,13 @@ const stubClient = (
   },
 ): { client: MockClient; calls: { method: string; args: unknown[] }[] } => {
   const calls: { method: string; args: unknown[] }[] = [];
-  const getCategory = vi.fn(async (_budgetId: string, id: string) => {
+  const getCategory = vi.fn(async (_planId: string, id: string) => {
     calls.push({ method: "getCategory", args: [id] });
     return { data: { category: responder.getCategory(id) } };
   });
   const updateCategoryMonth = vi.fn(
     async (
-      _budgetId: string,
+      _planId: string,
       month: string,
       id: string,
       body: { budgeted: number },

@@ -48,7 +48,7 @@ export const scopeDeniedError = () => ({
       text:
         "Write access denied: this YNAB connection was granted read-only " +
         "access. To enable plan edits, disconnect and reconnect the YNAB " +
-        "connector in Claude.ai's settings — accept the broader permission " +
+        "connector in your MCP client — accept the broader permission " +
         "scope on the YNAB authorization page.",
     },
   ],

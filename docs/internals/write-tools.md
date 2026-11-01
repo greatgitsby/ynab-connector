@@ -1,7 +1,7 @@
 # Write tools
 
-The connector writes only to close the triage loop: Claude finds problems with `triage_inbox`,
-proposes fixes in chat, the user approves each call in Claude.ai, and the fixes land in YNAB. It
+The connector writes only to close the triage loop: the model finds problems with `triage_inbox`,
+proposes fixes in chat, the user approves each call in their MCP client, and the fixes land in YNAB. It
 stays in the "review and clean up" lane, not manual data entry.
 
 ## Scope
@@ -18,25 +18,25 @@ not an implementation detail. Mistakes are fixed by another write, never by dele
 ## Shape
 
 - **Batched per resource.** One `update_transactions` call and one `assign_to_categories` call cover
-  a typical triage pass. Per-operation tools would mean a click-through per transaction in Claude's
+  a typical triage pass. Per-operation tools would mean a click-through per transaction in the client's
   approval UI.
 - **Absolute values, not deltas.** `assign_to_categories` takes the new `budgeted`, so a retry
   lands on the same state and the chat shows "was $400, now $450". There is no balance
   validation: drawing from Ready to Assign or overspending on purpose is legitimate.
 - **Existing transactions only.** `date`, top-level `amount`, and `account_id` are excluded from
-  `update_transactions` to keep Claude out of data correction. Splits replace the subtransaction
+  `update_transactions` to keep the model out of data correction. Splits replace the subtransaction
   array wholesale, and a split parent carries no `category_id`.
 - **Payees.** `payee_id` wins over `payee_name`. A `payee_name` YNAB cannot match silently creates a
   new payee, which is why `search_payees` exists.
 - **Best-effort batches.** YNAB has no bulk endpoint for month categories, so
   `assign_to_categories` loops. Every item is tried, each gets its own result, and nothing rolls
-  back. Claude reads the per-item results and recovers.
+  back. The model reads the per-item results and recovers.
 - **Return shape.** Text for the model to quote, plus `structuredContent` with YNAB's post-write
-  state, so Claude needn't re-fetch. Writes declare no `outputSchema` yet.
+  state, so the model needn't re-fetch. Writes declare no `outputSchema` yet.
 - **Annotations.** Writes are `destructiveHint: true` (they overwrite prior values) and
   `idempotentHint: true`.
-- **No connector-side safety layer** beyond the write gate: no dry runs, no confirm flags. Claude.ai's
-  per-call approval is the human in the loop.
+- **No connector-side safety layer** beyond the write gate: no dry runs, no confirm flags. The client's
+  per-call approval is the human in the loop. A client that auto-approves tool calls removes it.
 
 ## Write access
 

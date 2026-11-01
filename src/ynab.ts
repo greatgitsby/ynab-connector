@@ -98,7 +98,7 @@ const txQuery = (opts?: {
 
 // Token rotation is not this client's job: the OAuthProvider's
 // tokenExchangeCallback (src/token-refresh.ts) refreshes the YNAB token when
-// Claude refreshes its own, and persists the result in the grant. A 401 here
+// the MCP client refreshes its own, and persists the result in the grant. A 401 here
 // surfaces as a YnabError like any other failure.
 export class YnabClient {
   constructor(private token: string) {}

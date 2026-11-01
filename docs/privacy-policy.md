@@ -1,11 +1,11 @@
-# Privacy Policy — Claude for YNAB
+# Privacy Policy — YNAB Connector
 
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-11-01
 
-This privacy policy describes how the "Claude for YNAB" connector (the
-"Connector") handles data accessed through the YNAB API. The Connector is a
-personal-use OAuth application that lets the Claude.ai assistant
-(<https://claude.ai>) read and edit your YNAB data on your behalf.
+This privacy policy describes how the "YNAB Connector" (the "Connector")
+handles data accessed through the YNAB API. The Connector is a personal-use
+OAuth application that lets the AI assistant you connect it to (your "MCP
+client", such as Claude) read and edit your YNAB data on your behalf.
 
 ## What the Connector accesses
 
@@ -35,15 +35,15 @@ Connector's side — write tools refuse to act on those tokens and surface a
 
 **No persistent storage of your financial data.** The Connector does not
 maintain a database of your transactions, balances, or any other YNAB data.
-Every request from Claude.ai triggers a live call to the YNAB API; the
-response is returned to Claude.ai and then discarded. Nothing is cached on
+Every request from your MCP client triggers a live call to the YNAB API; the
+response is returned to the client and then discarded. Nothing is cached on
 the server side.
 
 **OAuth tokens.** Your YNAB access token and refresh token are encrypted
-into the bearer token that the Connector issues back to Claude.ai. The
+into the bearer token that the Connector issues back to your MCP client. The
 Connector itself does not store your YNAB tokens in plaintext at rest —
 they exist only inside the encrypted bearer, which is decrypted in memory
-per-request when Claude.ai calls the Connector. The Connector retains a
+per-request when your MCP client calls the Connector. The Connector retains a
 short-lived (≤10 minute) OAuth state record in Cloudflare Workers KV
 during the authorization handshake; this record contains no YNAB data and
 is deleted automatically once authorization completes or expires.
@@ -60,8 +60,8 @@ are encrypted end-to-end inside the OAuth bearer using the
 
 **Retention.** Because the Connector stores no YNAB data, there is nothing
 to retain or delete on the data side. The encrypted OAuth bearer lives
-only on the Claude.ai client side; revoking the Connector in YNAB or
-disconnecting it in Claude.ai immediately ends all access.
+only on the MCP client side; revoking the Connector in YNAB or
+disconnecting it in your MCP client immediately ends all access.
 
 ## Third parties
 
@@ -72,8 +72,9 @@ third party. YNAB data flows only between:
 2. The Connector (running on Cloudflare Workers — Cloudflare is the
    hosting infrastructure provider only and does not receive YNAB data as
    a recipient)
-3. Anthropic's Claude.ai service (the requesting MCP client, acting on
-   the authenticated user's behalf)
+3. The MCP client you connected (for example, Anthropic's Claude), acting
+   on the authenticated user's behalf. Its handling of the data it receives
+   is governed by that provider's own privacy policy.
 
 The Connector does not use analytics services, advertising networks, or
 tracking pixels of any kind.
@@ -83,8 +84,9 @@ tracking pixels of any kind.
 You may revoke the Connector's access to your YNAB account at any time:
 
 1. In YNAB, go to **Account Settings → Developer Settings → OAuth
-   Applications**, find "Claude for YNAB", and revoke access.
-2. In Claude.ai, remove the connector under **Settings → Connectors**.
+   Applications**, find the Connector, and revoke access.
+2. In your MCP client, remove the connector (in Claude.ai, under
+   **Settings → Connectors**).
 
 Because the Connector stores no YNAB data, no deletion request is
 necessary on the Connector side. If you have any question about your

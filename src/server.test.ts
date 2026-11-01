@@ -4,7 +4,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { buildServer } from "./server";
 import type { Props } from "./ynab-auth";
 
-// Drives the real MCP server through an SDK v2 client, the way Claude does:
+// Drives the real MCP server through an SDK v2 client, the way a remote MCP client does:
 // tool discovery, schema validation, and tool calls end-to-end, with only the
 // YNAB HTTP API stubbed.
 

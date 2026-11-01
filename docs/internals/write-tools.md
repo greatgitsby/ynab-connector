@@ -62,6 +62,4 @@ fields. The caller must supply the statement balance.
 ## Testing
 
 Unit tests mock `YnabClient` and cover request bodies, response interpretation, per-item errors,
-and the write gate. There is no automated live test; run the
-[smoke test](../operations/development.md#smoke-testing-writes) against the test plan before
-deploying write changes.
+and the write gate. There is no live test; try write changes by hand against a test plan.

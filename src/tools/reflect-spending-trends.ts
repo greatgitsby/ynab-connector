@@ -226,7 +226,7 @@ export const renderSpendingTrends = (
 // ---- MCP tool registration
 
 const DESCRIPTION =
-  "Reflect: monthly net activity over the last N months (default 6, matching YNAB's default) with each month's delta from the window average. Net activity = -month.activity, which mirrors what YNAB shows on Spending Trends: positive means non-Inflow categories spent more than they received; negative means refunds/transfers-in exceeded spending. Also lists the top categories ranked by total spending magnitude with their month-over-month average / min / max.";
+  "Reflect: net activity for each of the last N months (default 6, YNAB's default) and each month's difference from the average. Net activity is -month.activity, the figure YNAB shows on Spending Trends. Positive means non-Inflow categories spent more than they received; negative means refunds and incoming transfers exceeded spending. Also lists the categories with the most total spending, with each one's monthly average, minimum, and maximum.";
 
 const TOP_TREND_DEFAULT = 5;
 

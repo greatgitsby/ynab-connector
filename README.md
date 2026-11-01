@@ -1,93 +1,96 @@
 # YNAB Connector
 
-A remote MCP server, hosted on Cloudflare Workers, that lets your AI
-assistant read and edit your YNAB (You Need A Budget) data. It works with any
-MCP client that supports remote servers with OAuth. Multi-user,
-OAuth-protected on both sides: the MCP client authenticates via OAuth 2.1
-(dynamic client registration + PKCE), and each user authorizes the connector
-against YNAB via OAuth 2.0 Authorization Code Grant. Per-user YNAB access +
-refresh tokens are encrypted into the bearer token issued back to the client
-— the connector itself holds no long-lived per-user state.
+A remote MCP server on Cloudflare Workers that lets your AI assistant read
+and edit your YNAB (You Need A Budget) data. It works with any MCP client
+that supports remote servers with OAuth, and it serves many users.
+
+Both sides use OAuth. Your MCP client signs in to the connector with OAuth 2.1
+(dynamic client registration and PKCE), and you authorize the connector
+against YNAB with the OAuth 2.0 authorization code grant. The connector
+encrypts your YNAB access and refresh tokens into the bearer token it issues
+to your client, so it keeps no long-lived state for any user.
 
 > [!NOTE]
-> ### [→ Project page: greatgitsby.github.io/ynab-connector](https://greatgitsby.github.io/ynab-connector/)
+> Project page: [greatgitsby.github.io/ynab-connector](https://greatgitsby.github.io/ynab-connector/)
 
 ## Install
 
 > [!TIP]
-> Add `https://ynab.mcp.moen.ai/mcp` as a remote MCP server (often called a
-> custom connector) in your MCP client. The client discovers the OAuth flow
-> and walks you through authorizing the connector against your YNAB account.
+> Add `https://ynab.mcp.moen.ai/mcp` as a remote MCP server in your MCP
+> client. Some clients call this a custom connector. The client finds the
+> OAuth endpoints on its own and walks you through authorizing the connector
+> against your YNAB account.
 >
-> Using Claude.ai? [→ Add it in one click](https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=YNAB&connectorUrl=https%3A%2F%2Fynab.mcp.moen.ai%2Fmcp)
+> On Claude.ai, you can [add it in one click](https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=YNAB&connectorUrl=https%3A%2F%2Fynab.mcp.moen.ai%2Fmcp)
 
-Prefer to self-host instead? See [One-time setup](#one-time-setup) below.
+To host your own copy, see [One-time setup](#one-time-setup).
 
-## What your assistant can do with it
+## Tools
 
 Read tools:
 
 | Tool | What it does |
 | --- | --- |
 | `list_plans` | List all plans visible to the connected YNAB account |
-| `get_plan_summary` | Snapshot: accounts + current-month totals |
+| `get_plan_summary` | Accounts and current-month totals |
 | `list_accounts` | All accounts with balances |
-| `get_month` | Full month breakdown grouped by category group; defaults to the current month |
-| `list_transactions` | Transactions, optionally filtered to `uncategorized` / `unapproved` |
-| `triage_inbox` | Uncategorized + unapproved txs, overspent categories, underfunded goals — one call |
-| `reflect_spending_breakdown` | Spending over a date range (defaults to previous calendar month): total, average monthly & daily, most frequent category, largest outflow, per-category share, positive-inflow categories |
-| `reflect_spending_trends` | Net activity over last N months (default 6) with deltas from window average, plus top categories month-over-month |
-| `reflect_net_worth` | Current snapshot + historical month-by-month net worth (reconstructed from transactions), plus per-account balances |
-| `reflect_income_expense` | Income (by payee) vs expense (by category, grouped) pivot over last N months (default 3), with Average and Total columns |
+| `get_month` | One month, grouped by category group; defaults to the current month |
+| `list_transactions` | Transactions, optionally filtered to `uncategorized` or `unapproved` |
+| `triage_inbox` | Uncategorized and unapproved transactions, overspent categories, and underfunded goals in one call |
+| `reflect_spending_breakdown` | Spending over a date range (default: last calendar month): total, monthly and daily averages, most frequent category, largest outflow, each category's share, and categories with net inflow |
+| `reflect_spending_trends` | Net activity over the last N months (default 6), each month's difference from the average, and the top categories month over month |
+| `reflect_net_worth` | Current net worth, month-by-month history rebuilt from transactions, and each account's balance |
+| `reflect_income_expense` | Income by payee against expense by category over the last N months (default 3), with Average and Total columns |
 | `reflect_age_of_money` | Current age of money plus monthly history, average, and trend |
-| `get_category_details` | Drilldown for one category: month aggregates + every transaction this month |
-| `search_payees` | Substring-match payees in a plan — use to canonicalize a payee `id` before passing it to `update_transactions` |
+| `get_category_details` | One category's month totals and every transaction in it this month |
+| `search_payees` | Find payees by part of their name, to get the payee `id` to pass to `update_transactions` |
 
-Write tools (require write access — see "Permissions"):
+Write tools need write access (see [Permissions](#permissions)):
 
 | Tool | What it does |
 | --- | --- |
-| `assign_to_categories` | Set per-month `budgeted` amounts on one or more categories (absolute milliunits). Reassign money between categories or fund from Ready to Assign. |
-| `update_transactions` | Edit existing transactions in bulk: categorize, approve, memo, flag, set cleared, set payee, or split across categories. |
+| `assign_to_categories` | Set a month's `budgeted` amount on one or more categories, as absolute milliunits. Moves money between categories or funds them from Ready to Assign. |
+| `update_transactions` | Edit existing transactions in bulk: category, approval, memo, flag, cleared status, payee, or splits. |
+| `reconcile_account` | Reconcile an account against a bank statement balance. Locks cleared transactions only when every transaction is approved and categorized and the balances match. |
 
-Out of scope by design: creating manual transactions, deleting anything, scheduled transactions, payee rename/merge, category rename/move, goal edits. See [write tools](docs/internals/write-tools.md) for the rationale.
+The connector deliberately leaves out creating manual transactions, deleting anything, scheduled transactions, renaming or merging payees, renaming or moving categories, and editing goals. [Write tools](docs/internals/write-tools.md) explains why.
 
 ## How auth works
 
-Two OAuth flows are bridged in a single browser handshake when a user
-connects:
+Connecting runs two OAuth flows in one browser session.
 
-1. **MCP client → Connector** (inbound). The client discovers the connector's
-   authorization endpoints via RFC 9728 protected-resource metadata, registers
-   itself (dynamic registration per RFC 7591, or a Client ID Metadata
-   Document), and starts an OAuth 2.1 authorization-code flow with S256 PKCE. The connector acts as the Authorization Server using
+1. MCP client to connector. The client finds the connector's authorization
+   endpoints through RFC 9728 protected-resource metadata and registers
+   itself, either with dynamic registration (RFC 7591) or a Client ID
+   Metadata Document. It then starts an OAuth 2.1 authorization code flow
+   with S256 PKCE. The connector is the authorization server, built on
    `@cloudflare/workers-oauth-provider`.
-2. **Connector → YNAB** (outbound). The connector's `/authorize` endpoint
-   redirects the user to `https://app.ynab.com/oauth/authorize`. After the
-   user grants access, YNAB redirects back to `/callback`; the connector
-   exchanges the code for `{ access_token, refresh_token }` and looks up the
-   YNAB user id via `GET /v1/user`.
+2. Connector to YNAB. The connector's `/authorize` endpoint sends you to
+   `https://app.ynab.com/oauth/authorize`. Once you grant access, YNAB
+   redirects to `/callback`. The connector exchanges the code for
+   `{ access_token, refresh_token }` and reads your YNAB user id from
+   `GET /v1/user`.
 
-`completeAuthorization` then encrypts the YNAB tokens into the client's bearer
-token via the OAuth provider's `props`. On every MCP request, the provider
-decrypts them and hands them to a fresh, stateless MCP server built for that
-request — so each tool call uses the right user's YNAB credentials. The
-client's access token is issued to expire just before the YNAB token inside it;
-when the client refreshes, the connector refreshes the YNAB token and stores the
-new pair in the grant.
+`completeAuthorization` then encrypts the YNAB tokens into the client's
+bearer token through the OAuth provider's `props`. On each MCP request the
+provider decrypts them and passes them to a new, stateless MCP server built
+for that request, so every tool call runs with the right user's YNAB
+credentials. The client's access token expires just before the YNAB token
+inside it. When the client refreshes, the connector refreshes the YNAB token
+and stores the new pair in the grant.
 
 ## One-time setup
 
 ### 1. Register a YNAB OAuth application
 
 At <https://app.ynab.com/settings/developer>, click **New Application** under
-the OAuth Applications section. Set the redirect URI to your deployed
-worker's `/callback` path, e.g.
-`https://ynab-connector.<your-account>.workers.dev/callback`. Copy the
-client ID and client secret.
+OAuth Applications. Set the redirect URI to your worker's `/callback` path,
+for example `https://ynab-connector.<your-account>.workers.dev/callback`.
+Copy the client ID and client secret.
 
-Note: new YNAB OAuth apps start in "Restricted Mode" with a cap of 25 access
-tokens, removable after a 2–4 week review. Fine for personal use.
+New YNAB OAuth apps start in Restricted Mode, which caps them at 25 access
+tokens. YNAB lifts the cap after a review that takes 2 to 4 weeks. For
+personal use, the cap doesn't matter.
 
 ### 2. Create the OAuth KV namespace
 
@@ -107,24 +110,25 @@ npx wrangler secret put YNAB_CLIENT_SECRET         # from step 1
 npx wrangler deploy
 ```
 
-Wrangler will print the deployed URL — something like
+Wrangler prints the deployed URL, something like
 `https://ynab-connector.<your-account>.workers.dev`.
 
 ## Connect a client
 
 Add `https://ynab-connector.<your-account>.workers.dev/mcp` as a remote MCP
-server in your client (no secret path suffix — OAuth replaces it). The client
-discovers the OAuth flow and walks you through authorizing against YNAB.
+server in your client. It needs no secret path suffix, because OAuth does
+that job. The client finds the OAuth endpoints and walks you through
+authorizing against YNAB.
 
-For Claude.ai you can share a one-click install link with the same format as
-the hosted one above — just swap in your worker's URL:
+For Claude.ai, you can share a one-click install link in the same format as
+the hosted one above, with your worker's URL in place of ours:
 
 ```
 https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=YOUR_NAME&connectorUrl=https%3A%2F%2Fynab-connector.YOUR_ACCOUNT.workers.dev%2Fmcp
 ```
 
-Subsequent users connect by repeating only this step: each one runs their own
-YNAB OAuth handshake when they add the connector.
+Other users only repeat this step. Each one authorizes their own YNAB account
+when they add the connector.
 
 ## Local development
 
@@ -142,36 +146,36 @@ Test it with the MCP inspector:
 npx @modelcontextprotocol/inspector
 ```
 
-Connect to `http://localhost:8787/mcp` using Streamable HTTP transport. The
-inspector will detect the OAuth requirement, redirect you through YNAB, and
-return authenticated.
+Connect to `http://localhost:8787/mcp` with the Streamable HTTP transport.
+The inspector sees that OAuth is required, sends you through YNAB, and comes
+back signed in.
 
 ## Notes
 
-- YNAB stores money as **milliunits** (1 USD = 1000). The tools translate to
-  normal currency in their output.
-- For `get_month`, pass the calendar `month` as `YYYY-MM-01` or `current`.
+- YNAB stores money in milliunits (1 USD = 1000). Text output shows normal
+  currency.
+- For `get_month`, pass `month` as `YYYY-MM-01` or `current`.
 
 ## Permissions
 
-The connector requests full read+write access from YNAB. Reads work for any
-connection; write tools additionally check that the token was issued under
-the current (write-capable) flow.
+The connector asks YNAB for full read and write access. Reads work on any
+connection. Write tools also check that the token came from the current,
+write-capable sign-in flow.
 
-**Connections established before write support shipped remain effectively
-read-only** — those tokens predate the write-capable scope and write tools
-respond with a "reconnect to grant write access" error message. To opt in to
-writes, disconnect the connector in your MCP client and add it again;
-the YNAB authorization page will request the broader scope.
+Connections made before write support shipped are read-only in practice.
+Their tokens predate the write scope, so write tools answer with an error
+asking you to reconnect. To turn on writes, disconnect the connector in your
+MCP client and add it again. The YNAB authorization page will ask for the
+broader scope.
 
-YNAB itself does not split scope into separate read and write grants — a
-single connection either has full access or none. If you prefer to keep
-reads only, simply don't reconnect; existing read-only tokens stay valid.
+YNAB has no separate read and write grants; a connection has full access or
+none. To stay read-only, don't reconnect. Your existing read-only token keeps
+working.
 
 ## Disclaimer
 
 We are not affiliated, associated, or in any way officially connected with
-YNAB or any of its subsidiaries or affiliates. The official YNAB website
-can be found at <https://www.ynab.com>. The names YNAB and You Need A
+YNAB or any of its subsidiaries or affiliates. The official YNAB website is
+<https://www.ynab.com>. The names YNAB and You Need A
 Budget, as well as related names, tradenames, marks, trademarks, emblems,
 and images are registered trademarks of YNAB.

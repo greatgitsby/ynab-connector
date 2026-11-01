@@ -130,7 +130,7 @@ export const renderAgeOfMoneyTrend = (trend: AgeOfMoneyTrend): string => {
 // ---- MCP tool registration
 
 const DESCRIPTION =
-  "Reflect: age-of-money trend over the last N months (default 5). Age of money is YNAB's measure of how long money sits in accounts between earning and spending. Returns the current value (latest month), monthly history, average, and start-to-end delta.";
+  "Reflect: age of money over the last N months (default 5). Age of money is YNAB's measure of how long money sits in accounts between earning and spending. Returns the latest month's value, the monthly history, the average, and the change from first month to last.";
 
 export const registerReflectAgeOfMoney = (
   server: McpServer,

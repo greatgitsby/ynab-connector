@@ -47,8 +47,8 @@ export const scopeDeniedError = () => ({
       type: "text" as const,
       text:
         "Write access denied: this YNAB connection was granted read-only " +
-        "access. To enable plan edits, disconnect and reconnect the YNAB " +
-        "connector in your MCP client — accept the broader permission " +
+        "access. To allow plan edits, disconnect and reconnect the YNAB " +
+        "connector in your MCP client, then accept the broader permission " +
         "scope on the YNAB authorization page.",
     },
   ],

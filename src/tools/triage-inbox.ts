@@ -228,7 +228,7 @@ export const renderTriageInbox = (
 // ---- MCP tool registration
 
 const DESCRIPTION =
-  "Day-to-day triage view: ready-to-assign, uncategorized transactions, auto-categorized transactions awaiting review, overspent categories (current month), and underfunded goals (current month) — all in one call. The 'auto-categorized' section is YNAB's guess at a category; it often needs correction before being approved. A transaction appearing in both 'uncategorized' and 'unapproved' is shown only under 'uncategorized'.";
+  "What needs attention today, in one call: ready-to-assign, uncategorized transactions, auto-categorized transactions awaiting review, and this month's overspent categories and underfunded goals. The 'auto-categorized' categories are YNAB's guesses and often need correcting before approval. A transaction that is both uncategorized and unapproved appears only under 'uncategorized'.";
 
 export const registerTriageInbox = (
   server: McpServer,

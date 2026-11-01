@@ -1,10 +1,11 @@
 import { describe, test, expect } from "vitest";
-import type { Category, Transaction } from "./ynab";
+import type { Account, Category, Transaction } from "./ynab";
 import {
   isSpendingCategory,
   isInflowRta,
   isUncategorizedInternal,
   isInboxableTx,
+  isTrackingAccount,
   isTransferTx,
   isSavingsCategory,
 } from "./predicates";
@@ -112,6 +113,16 @@ describe("isInboxableTx", () => {
     expect(
       isInboxableTx(tx({ transfer_account_id: "acc-2", approved: true })),
     ).toBe(false);
+  });
+});
+
+describe("isTrackingAccount", () => {
+  const acct = (on_budget: boolean) => ({ on_budget }) as Account;
+  test("off-budget accounts are tracking", () => {
+    expect(isTrackingAccount(acct(false))).toBe(true);
+  });
+  test("on-budget accounts are not", () => {
+    expect(isTrackingAccount(acct(true))).toBe(false);
   });
 });
 

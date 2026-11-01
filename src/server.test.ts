@@ -174,6 +174,99 @@ describe("tool calls", () => {
     for (const u of txUrls) expect(u.searchParams.get("since_date")).toBe("1900-01-01");
   });
 
+  test("triage_inbox accepts undeclared YNAB fields and skips tracking accounts", async () => {
+    // Shapes as YNAB v1.88 actually sends them, `*_formatted` siblings included.
+    const wireTx = (id: string, account_id: string) => ({
+      id,
+      date: "2026-11-01",
+      amount: -10,
+      amount_formatted: "-$0.01",
+      amount_currency: -0.01,
+      memo: null,
+      cleared: "cleared",
+      approved: true,
+      flag_color: null,
+      flag_name: null,
+      account_id,
+      account_name: account_id,
+      payee_id: null,
+      payee_name: "Fidelity",
+      category_id: null,
+      category_name: "Uncategorized",
+      transfer_account_id: null,
+      transfer_transaction_id: null,
+      matched_transaction_id: null,
+      import_id: null,
+      import_payee_name: null,
+      import_payee_name_original: null,
+      debt_transaction_type: null,
+      deleted: false,
+      subtransactions: [],
+    });
+    const wireAccount = (id: string, on_budget: boolean, closed: boolean) => ({
+      id,
+      name: id,
+      type: on_budget ? "checking" : "otherAsset",
+      on_budget,
+      closed,
+      note: null,
+      balance: 0,
+      balance_formatted: "$0.00",
+      balance_currency: 0,
+      cleared_balance: 0,
+      uncleared_balance: 0,
+      transfer_payee_id: null,
+      deleted: false,
+    });
+    fetchMock.mockImplementation(async (u: string) => {
+      const url = new URL(u);
+      if (url.pathname.endsWith("/transactions"))
+        return json({
+          data: {
+            transactions:
+              url.searchParams.get("type") === "uncategorized"
+                ? [wireTx("t-bank", "checking"), wireTx("t-401k", "fidelity-401k")]
+                : [],
+          },
+        });
+      if (url.pathname.endsWith("/settings"))
+        return json({ data: { settings: { currency_format: { iso_code: "USD", decimal_digits: 2 } } } });
+      if (url.pathname.includes("/months/"))
+        return json({
+          data: {
+            month: {
+              month: "2026-11-01",
+              income: 0,
+              budgeted: 0,
+              activity: 0,
+              to_be_budgeted: 0,
+              to_be_budgeted_formatted: "$0.00",
+              age_of_money: null,
+              deleted: false,
+              categories: [],
+            },
+          },
+        });
+      return json({
+        data: {
+          accounts: [
+            wireAccount("checking", true, false),
+            // Closed accounts still own transactions, so they still count.
+            wireAccount("fidelity-401k", false, true),
+          ],
+        },
+      });
+    });
+    const client = await connect();
+    // The client validates structuredContent only against output schemas it
+    // cached from listTools, which is how remote clients behave.
+    await client.listTools();
+    const res = await client.callTool({ name: "triage_inbox", arguments: { plan_id: "p1" } });
+    expect(res.isError).toBeFalsy();
+    const inbox = res.structuredContent as { uncategorized: { id: string }[] };
+    expect(inbox.uncategorized.map((t) => t.id)).toEqual(["t-bank"]);
+  });
+
   test("YNAB failures come back as tool errors (isError: true)", async () => {
     fetchMock.mockResolvedValue(json({ error: { id: "404.2", name: "resource_not_found" } }, 404));
     const client = await connect();

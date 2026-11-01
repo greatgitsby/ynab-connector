@@ -32,3 +32,14 @@ export const isInboxableTx = (t: Transaction): boolean =>
 export const isTransferTx = (t: Transaction): boolean =>
   t.transfer_account_id != null;
 
+// True when a Category's goal saves toward something bigger than this
+// month's spending: a target balance (TB, TBD) or a Plan Your Spending (NEED)
+// goal that isn't due every week or every month. Money moved out of one of
+// these to cover other spending is drawing down savings.
+export const isSavingsCategory = (c: Category): boolean => {
+  if (c.goal_type === "TB" || c.goal_type === "TBD") return true;
+  if (c.goal_type !== "NEED") return false;
+  const cadence = c.goal_cadence ?? 0;
+  const everyMonth = cadence === 1 && (c.goal_cadence_frequency ?? 1) === 1;
+  return !(everyMonth || cadence === 2);
+};

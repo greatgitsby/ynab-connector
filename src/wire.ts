@@ -215,5 +215,6 @@ export const MoneyMovementSchema = z.object({
   from_category_id: nullableString,
   to_category_id: nullableString,
   amount: z.number().int(),
+  deleted: z.boolean().optional(),
 });
 export type MoneyMovement = z.infer<typeof MoneyMovementSchema>;

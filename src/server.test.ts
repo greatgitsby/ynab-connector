@@ -46,6 +46,7 @@ const EXPECTED_TOOLS = [
   "get_category",
   "get_month",
   "list_accounts",
+  "list_money_movements",
   "list_months",
   "list_payees",
   "list_plans",

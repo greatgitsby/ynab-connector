@@ -2,13 +2,13 @@
 
 A remote MCP server on Cloudflare Workers that lets Claude read and edit a user's YNAB data. Claude.ai authenticates to us with OAuth 2.1; we authenticate to YNAB with OAuth 2.0. Per-user YNAB tokens live inside the bearer token we issue to Claude, never in our storage.
 
-It runs in production at `https://claude-for-ynab.moen.ai/mcp` against real people's money. Treat writes accordingly.
+It runs in production at `https://ynab.mcp.moen.ai/mcp` against real people's money. Treat writes accordingly.
 
 Think of these instructions as good defaults, not hard rules. The developer's preferences override anything here. Prefer the smallest change that makes the correct behavior unsurprising, and fight scope creep.
 
 ## The ways to hurt yourself
 
-1. **Changing `MCP_RESOURCE`.** Every token's audience is bound to `https://claude-for-ynab.moen.ai/mcp`. Any other production value signs every user out.
+1. **Changing `MCP_RESOURCE`.** Every token's audience is bound to `https://ynab.mcp.moen.ai/mcp`. Any other production value signs every user out.
 2. **Refreshing YNAB tokens anywhere but `src/token-refresh.ts`.** YNAB refresh tokens rotate. Refreshing inside a tool call races concurrent calls and strands the grant with a spent token.
 3. **Skipping the write gate.** Every write handler checks `getProps().canWrite` before any YNAB call. Tokens from before write support deserialize with `canWrite === undefined`; treat that as `false`.
 4. **Pruning `wrangler.jsonc` migrations.** Keep both migration entries, including the `v2` `deleted_classes` one. Cloudflare replays the history by tag.

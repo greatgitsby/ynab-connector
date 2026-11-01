@@ -10,7 +10,7 @@ import type {
 import { result, handleError, fmtMoney } from "../format";
 
 // ---- Result type (zod is the single source of truth; the TS type is
-// inferred and the schema doubles as the tool's outputSchema — see ADR 0002).
+// inferred and the schema doubles as the tool's outputSchema — see docs/internals/structured-output.md).
 // Money is in milliunits; counts are integers.
 
 export const PlanSummarySchema = z.object({

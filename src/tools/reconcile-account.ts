@@ -25,8 +25,8 @@ export interface Unverified {
 export interface Reconciliation {
   accountId: string;
   accountName: string;
-  // Link-health fields surfaced from the account (see CONTEXT.md note: YNAB's
-  // API does not expose the bank's own balance, only these flags).
+  // Link-health fields surfaced from the account. YNAB's
+  // API does not expose the bank's own balance, only these flags.
   directImportLinked: boolean;
   directImportInError: boolean;
   lastReconciledAt: string | null;

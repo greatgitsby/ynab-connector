@@ -17,7 +17,7 @@ import {
 import { monthEndDate, resolveMonthWindow } from "../month-window";
 
 // ---- Result types (zod is the single source of truth; the TS types are
-// inferred and the schema doubles as the tool's outputSchema — see ADR 0002).
+// inferred and the schema doubles as the tool's outputSchema — see docs/internals/structured-output.md).
 // Money is in milliunits (z.number()); the report already carries `iso` for
 // formatting, so no currency field is added here.
 

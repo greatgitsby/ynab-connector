@@ -5,7 +5,7 @@ import type { Transaction, YnabClient } from "../ynab";
 import { result, handleError, fmtTxLine } from "../format";
 
 // ---- Result types (zod is the single source of truth; the TS types are
-// inferred and the schema doubles as the tool's outputSchema — see ADR 0002).
+// inferred and the schema doubles as the tool's outputSchema — see docs/internals/structured-output.md).
 // Money (`amount`) is in milliunits; cleared status and flag color are YNAB
 // enum-ish strings left as plain strings.
 

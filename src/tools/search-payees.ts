@@ -72,10 +72,10 @@ export const renderPayeeSearch = (
 // ---- MCP tool registration
 
 const DESCRIPTION =
-  "Search payees by substring match on name. Use this to canonicalize a " +
-  "payee before passing it to update_transactions — pass the returned `id` " +
-  "as `payee_id` to link to the existing payee instead of risking a new one " +
-  "being auto-created from a name string.";
+  "Find payees whose name contains the query. Call this before setting a " +
+  "payee with update_transactions, and pass the returned `id` as " +
+  "`payee_id`. Passing a name instead can make YNAB create a duplicate " +
+  "payee.";
 
 export const registerSearchPayees = (
   server: McpServer,

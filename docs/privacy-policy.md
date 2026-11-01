@@ -1,107 +1,116 @@
-# Privacy Policy — YNAB Connector
+# Privacy policy: YNAB Connector
 
-**Last Updated:** 2026-11-01
+Last updated: 2026-11-01
 
-This privacy policy describes how the "YNAB Connector" (the "Connector")
-handles data accessed through the YNAB API. The Connector is a personal-use
-OAuth application that lets the AI assistant you connect it to (your "MCP
-client", such as Claude) read and edit your YNAB data on your behalf.
+This policy describes how the YNAB Connector (the "Connector") handles data
+it accesses through the YNAB API. The Connector is a personal-use OAuth
+application. It lets the AI assistant you connect it to (your "MCP client",
+such as Claude) read and edit your YNAB data on your behalf.
 
 ## What the Connector accesses
 
-When you authorize the Connector against your YNAB account, it requests
-full access (read + write). This grants the Connector access to:
+When you authorize the Connector against your YNAB account, it requests full
+read and write access. That gives the Connector access to:
 
-- Your plans (names, IDs, currency) — read
-- Accounts and balances — read
-- Categories, category groups, and goal data — read
-- Transactions and split transactions — read; edit (categorize, approve,
-  memo, flag, mark cleared/reconciled, set payee, split across categories)
-- Monthly summaries — read
-- Per-month category budgeted amounts — read; edit (reassign money between
-  categories, fund from Ready to Assign)
-- Your YNAB user ID (used as an internal identifier — see below)
+- Your plans (names, IDs, currency): read
+- Accounts and balances: read
+- Categories, category groups, and goal data: read
+- Transactions and split transactions: read and edit (categorize, approve,
+  memo, flag, mark cleared or reconciled, set payee, split across categories)
+- Monthly summaries: read
+- Each category's budgeted amount per month: read and edit (move money
+  between categories, fund from Ready to Assign)
+- Your YNAB user ID, used as an internal identifier (see below)
 
-The Connector deliberately does **not** create new transactions, delete
-anything, manage scheduled transactions, or rename/merge payees or
-categories. YNAB's OAuth model is binary (full access or none); if you want
-read-only access, do not authorize the Connector, or revoke its access in
-YNAB at any time (see "Revoking access" below). Connections authorized
-before write support shipped remain effectively read-only on the
-Connector's side — write tools refuse to act on those tokens and surface a
-"reconnect to grant write access" message.
+The Connector does not create new transactions, delete anything, manage
+scheduled transactions, or rename or merge payees or categories. YNAB's
+OAuth grants full access or none. If you want read-only access, don't
+authorize the Connector, or revoke its access in YNAB at any time (see
+"Revoking access and deleting data" below). Connections authorized before
+write support shipped stay read-only on the Connector's side: write tools
+refuse to act on those tokens and ask you to reconnect to grant write
+access.
 
 ## How data is handled
 
-**No persistent storage of your financial data.** The Connector does not
-maintain a database of your transactions, balances, or any other YNAB data.
-Every request from your MCP client triggers a live call to the YNAB API; the
-response is returned to the client and then discarded. Nothing is cached on
-the server side.
+### No stored financial data
 
-**OAuth tokens.** Your YNAB access token and refresh token are encrypted
-into the bearer token that the Connector issues back to your MCP client. The
-Connector itself does not store your YNAB tokens in plaintext at rest —
-they exist only inside the encrypted bearer, which is decrypted in memory
-per-request when your MCP client calls the Connector. The Connector retains a
-short-lived (≤10 minute) OAuth state record in Cloudflare Workers KV
-during the authorization handshake; this record contains no YNAB data and
-is deleted automatically once authorization completes or expires.
+The Connector keeps no database of your transactions, balances, or any
+other YNAB data. Each request from your MCP client makes a live call to the
+YNAB API. The Connector returns the response to the client and then
+discards it. Nothing is cached on the server.
 
-**Logs.** The Connector runs on Cloudflare Workers and uses Cloudflare's
-default observability (request logs, error traces). These logs do not
-record YNAB response bodies. They may record request paths, HTTP status
-codes, and error messages. Cloudflare's data handling is governed by
-Cloudflare's own privacy policy.
+### OAuth tokens
 
-**Security.** All traffic to the Connector is HTTPS-only. Your YNAB tokens
-are encrypted end-to-end inside the OAuth bearer using the
-`@cloudflare/workers-oauth-provider` library's standard encryption scheme.
+The Connector encrypts your YNAB access token and refresh token into the
+bearer token it issues to your MCP client. It does not store your YNAB
+tokens in plaintext at rest. They exist only inside the encrypted bearer,
+which the Connector decrypts in memory for each request from your MCP
+client. During authorization, the Connector keeps a short-lived OAuth state
+record (10 minutes at most) in Cloudflare Workers KV. That record contains
+no YNAB data and is deleted automatically when authorization completes or
+expires.
 
-**Retention.** Because the Connector stores no YNAB data, there is nothing
-to retain or delete on the data side. The encrypted OAuth bearer lives
-only on the MCP client side; revoking the Connector in YNAB or
-disconnecting it in your MCP client immediately ends all access.
+### Logs
+
+The Connector runs on Cloudflare Workers with Cloudflare's default
+observability (request logs and error traces). These logs do not record YNAB
+response bodies. They may record request paths, HTTP status codes, and error
+messages. Cloudflare's own privacy policy governs how Cloudflare handles
+this data.
+
+### Security
+
+The Connector accepts HTTPS traffic only. Your YNAB tokens are encrypted
+inside the OAuth bearer with the standard encryption scheme of the
+`@cloudflare/workers-oauth-provider` library.
+
+### Retention
+
+The Connector stores no YNAB data, so there is nothing to retain or delete on
+the data side. The encrypted OAuth bearer lives only with your MCP client.
+Revoking the Connector in YNAB or disconnecting it in your MCP client ends
+all access immediately.
 
 ## Third parties
 
-The Connector does not share, sell, or otherwise pass YNAB data to any
-third party. YNAB data flows only between:
+The Connector does not share, sell, or otherwise pass YNAB data to any third
+party. YNAB data moves only between:
 
-1. YNAB's API (over the user-authorized OAuth connection)
-2. The Connector (running on Cloudflare Workers — Cloudflare is the
-   hosting infrastructure provider only and does not receive YNAB data as
-   a recipient)
-3. The MCP client you connected (for example, Anthropic's Claude), acting
-   on the authenticated user's behalf. Its handling of the data it receives
-   is governed by that provider's own privacy policy.
+1. YNAB's API, over the OAuth connection you authorized.
+2. The Connector, running on Cloudflare Workers. Cloudflare provides the
+   hosting infrastructure only and does not receive YNAB data as a
+   recipient.
+3. The MCP client you connected (for example, Anthropic's Claude), acting on
+   your behalf. That provider's own privacy policy governs how it handles
+   the data it receives.
 
-The Connector does not use analytics services, advertising networks, or
-tracking pixels of any kind.
+The Connector uses no analytics services, advertising networks, or tracking
+pixels.
 
 ## Revoking access and deleting data
 
-You may revoke the Connector's access to your YNAB account at any time:
+You can revoke the Connector's access to your YNAB account at any time:
 
 1. In YNAB, go to **Account Settings → Developer Settings → OAuth
    Applications**, find the Connector, and revoke access.
-2. In your MCP client, remove the connector (in Claude.ai, under
-   **Settings → Connectors**).
+2. In your MCP client, remove the connector. In Claude.ai, it's under
+   **Settings → Connectors**.
 
-Because the Connector stores no YNAB data, no deletion request is
-necessary on the Connector side. If you have any question about your
-data, contact: **trey@moen.ai**
+The Connector stores no YNAB data, so you don't need to request deletion
+from the Connector. For any question about your data, contact
+trey@moen.ai.
 
 ## Changes to this policy
 
-If the Connector's behavior changes to access additional data types beyond
-those listed above, this policy will be updated and you will be prompted
-to re-consent before any new data is accessed.
+If the Connector starts accessing data types beyond those listed above, this
+policy will be updated, and you will be asked to consent again before the
+Connector accesses any new data.
 
 ## Disclaimer
 
 We are not affiliated, associated, or in any way officially connected with
-YNAB or any of its subsidiaries or affiliates. The official YNAB website
-can be found at <https://www.ynab.com>. The names YNAB and You Need A
-Budget, as well as related names, tradenames, marks, trademarks, emblems,
-and images are registered trademarks of YNAB.
+YNAB or any of its subsidiaries or affiliates. The official YNAB website is
+<https://www.ynab.com>. The names YNAB and You Need A Budget, as well as
+related names, tradenames, marks, trademarks, emblems, and images are
+registered trademarks of YNAB.

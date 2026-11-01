@@ -378,7 +378,7 @@ export const renderIncomeExpensePivot = (
 // ---- MCP tool registration
 
 const DESCRIPTION =
-  "Reflect: income-vs-expense pivot over the last N months (default 3, matching YNAB's default). Income is broken down by payee (scanning transactions categorized as Inflow: Ready to Assign) so you see who paid you, not just the total. Expense rows are every non-Inflow category with activity in the window, grouped by category group with group subtotals. Each row has Average and Total columns. Net Income row at the bottom = Total Income + Total Expense per month (expense activity is already negative).";
+  "Reflect: income against expense over the last N months (default 3, YNAB's default). Income rows are payees, taken from transactions categorized as Inflow: Ready to Assign. Expense rows are each non-Inflow category with activity in the window, grouped by category group with subtotals. Each row has Average and Total columns. The Net Income row at the bottom is Total Income plus Total Expense for each month; expense activity is already negative.";
 
 export const registerReflectIncomeExpense = (
   server: McpServer,

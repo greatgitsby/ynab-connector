@@ -54,7 +54,7 @@ export const renderPlanList = (list: PlanList): string => {
 // ---- MCP tool registration
 
 const DESCRIPTION =
-  "List YNAB plans accessible with the configured token. Returns id, name, currency, and last-modified date. Archived plans (name contains '(Archived') are hidden by default.";
+  "List the YNAB plans this connection can see, with id, name, currency, and last-modified date. Archived plans (name contains '(Archived') are hidden by default.";
 
 export const registerListPlans = (
   server: McpServer,

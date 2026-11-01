@@ -240,7 +240,7 @@ export const renderNetWorth = (
 // ---- MCP tool registration
 
 const DESCRIPTION =
-  "Reflect: net worth snapshot plus a historical month-by-month reconstruction over the last N months (default 5, matching YNAB's default). Historical balances are derived by walking each account's current balance back through transaction history — YNAB's REST API doesn't expose a balance-snapshot endpoint, but transfers cancel naturally so the reconstruction is exact. Also lists every account's current balance.";
+  "Reflect: current net worth and its month-by-month history over the last N months (default 5, YNAB's default), plus each account's current balance. YNAB's API has no historical balance endpoint, so the tool works back from each account's current balance through its transactions. Transfers cancel out, so the history is exact.";
 
 export const registerReflectNetWorth = (
   server: McpServer,

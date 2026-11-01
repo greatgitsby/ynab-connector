@@ -83,7 +83,7 @@ export const renderPlanSummary = (summary: PlanSummary): string => {
 // ---- MCP tool registration
 
 const DESCRIPTION =
-  "High-level snapshot of a plan: account counts, ready-to-assign, and the current month's income/budgeted/activity totals.";
+  "Summary of a plan: account counts, ready-to-assign, and the current month's income, budgeted, and activity totals.";
 
 export const registerGetPlanSummary = (
   server: McpServer,

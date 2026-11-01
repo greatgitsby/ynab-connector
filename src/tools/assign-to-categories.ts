@@ -111,14 +111,13 @@ export const renderAssignToCategoriesResult = (
 // ---- MCP tool registration
 
 const DESCRIPTION =
-  "Set per-month `budgeted` amounts on one or more categories (absolute " +
-  "set, in milliunits). Use this to reassign money between categories or " +
-  "to fund a category from Ready to Assign. Each move is the literal new " +
-  "value, not a delta — read `get_month` or `triage_inbox` first to know " +
-  "the current values and compute new totals. Best-effort per item: " +
-  "failures don't stop subsequent moves; the response reports per-item " +
-  "outcomes. Requires write access — connections granted read-only must " +
-  "be reconnected to enable this tool.";
+  "Set a month's `budgeted` amount on one or more categories, in " +
+  "milliunits. Use it to move money between categories or to fund a " +
+  "category from Ready to Assign. Each move sets the new total, so read " +
+  "`get_month` or `triage_inbox` first for the current values and compute " +
+  "the totals from them. A failed move doesn't stop the rest, and the " +
+  "response reports each move's outcome. Requires write access; a " +
+  "read-only connection must be reconnected to use this tool.";
 
 export const registerAssignToCategories = (
   server: McpServer,

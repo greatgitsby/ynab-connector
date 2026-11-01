@@ -288,7 +288,7 @@ export const renderSpendingBreakdown = (
 // ---- MCP tool registration
 
 const DESCRIPTION =
-  "Reflect: spending breakdown over a date range. Mirrors YNAB's in-app Spending Breakdown tab. Returns total spending, average monthly and daily spending, most frequent spending category (by transaction count), single largest outflow (by transaction amount), per-category share sorted desc, and a separate list of categories with net positive activity (refunds, transfers in). Range defaults to the previous calendar month — pass start_month / end_month to widen it.";
+  "Reflect: spending over a date range, matching the Spending Breakdown tab in the YNAB app. Returns total spending, monthly and daily averages, the most frequent category by transaction count, the largest single outflow, each category's share from largest to smallest, and a separate list of categories with net positive activity (refunds, transfers in). The range defaults to the previous calendar month; pass start_month and end_month to widen it.";
 
 export const registerReflectSpendingBreakdown = (
   server: McpServer,

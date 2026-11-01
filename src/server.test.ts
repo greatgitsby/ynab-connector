@@ -43,18 +43,13 @@ afterEach(() => vi.unstubAllGlobals());
 
 const EXPECTED_TOOLS = [
   "assign_to_categories",
-  "get_category_details",
   "get_month",
-  "get_plan_summary",
   "list_accounts",
   "list_plans",
   "list_transactions",
   "reconcile_account",
-  "reflect_age_of_money",
   "reflect_income_expense",
   "reflect_net_worth",
-  "reflect_spending_breakdown",
-  "reflect_spending_trends",
   "search_payees",
   "triage_inbox",
   "update_transactions",

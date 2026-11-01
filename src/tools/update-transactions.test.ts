@@ -194,12 +194,12 @@ describe("renderUpdateTransactionsResult", () => {
   };
 
   test("header shows ok/total and error count", () => {
-    const rendered = renderUpdateTransactionsResult(sample);
+    const rendered = renderUpdateTransactionsResult(sample, "USD");
     expect(rendered).toContain("Updated 1 / 2 transactions (1 error)");
   });
 
   test("ok rows render payee → category, approval, cleared", () => {
-    const rendered = renderUpdateTransactionsResult(sample);
+    const rendered = renderUpdateTransactionsResult(sample, "USD");
     expect(rendered).toContain(
       "[ok] 2026-05-15 -$45.00 Starbucks → Coffee, approved, cleared — id tx-1",
     );
@@ -241,7 +241,7 @@ describe("renderUpdateTransactionsResult", () => {
         },
       ],
     };
-    expect(renderUpdateTransactionsResult(splitSample)).toContain(
+    expect(renderUpdateTransactionsResult(splitSample, "USD")).toContain(
       "(2-way split)",
     );
   });

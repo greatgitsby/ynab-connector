@@ -50,6 +50,10 @@ pure `renderX` turns the result into text. The handler only fetches, computes, r
 errors with `handleError`, which returns an `isError: true` tool execution error. The typed result
 is the test surface and, via [structured output](./structured-output.md), the wire contract.
 
+YNAB's wire objects are zod schemas in [`wire.ts`](../../src/wire.ts), transcribed from the OpenAPI
+spec; `ynab.ts` re-exports their types. Extend them from the spec rather than redeclaring a shape in
+a tool.
+
 Domain filtering goes through named predicates in [`predicates.ts`](../../src/predicates.ts) and
 goal interpretation through `interpretGoal`, so YNAB's `hidden`/`deleted`/`internal` flags and the
 `goal_*` matrix are read in exactly one place each.

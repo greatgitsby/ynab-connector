@@ -12,6 +12,8 @@ const account = (overrides: Partial<Account>): Account => ({
   type: "checking",
   on_budget: true,
   closed: false,
+  transfer_payee_id: null,
+  deleted: false,
   balance: 1_000_000,
   cleared_balance: 950_000,
   uncleared_balance: 50_000,

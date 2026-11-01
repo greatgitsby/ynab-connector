@@ -1,3 +1,32 @@
+import type {
+  Account,
+  Category,
+  CategoryGroup,
+  MonthDetail,
+  MoneyMovement,
+  MonthSummary,
+  Payee,
+  Plan,
+  PlanDetail,
+  ScheduledTransaction,
+  Transaction,
+} from "./wire";
+
+export type {
+  Account,
+  Category,
+  CategoryGroup,
+  MonthDetail,
+  MonthSummary,
+  MoneyMovement,
+  Payee,
+  Plan,
+  PlanDetail,
+  ScheduledTransaction,
+  SubTransaction,
+  Transaction,
+} from "./wire";
+
 const BASE_URL = "https://api.ynab.com/v1";
 const TOKEN_URL = "https://app.ynab.com/oauth/token";
 const AUTHORIZE_URL = "https://app.ynab.com/oauth/authorize";
@@ -83,11 +112,17 @@ export const refreshYnabToken = (params: {
 // / "all unreconciled" queries. We always send an explicit lower bound.
 export const ALL_TIME = "1900-01-01";
 
-const txQuery = (opts?: {
+export interface TransactionQuery {
+  accountId?: string;
+  categoryId?: string;
+  payeeId?: string;
+  month?: string;
   sinceDate?: string;
   untilDate?: string;
-  type?: string;
-}): string => {
+  type?: "uncategorized" | "unapproved";
+}
+
+const txQuery = (opts?: TransactionQuery): string => {
   const params = new URLSearchParams({
     since_date: opts?.sinceDate ?? ALL_TIME,
   });
@@ -143,13 +178,13 @@ export class YnabClient {
       data: { plans: Plan[]; default_plan?: Plan | null };
     }>("GET", "/plans");
   }
-  getPlan(planId: string, lastKnowledgeOfServer?: number) {
-    const qs = lastKnowledgeOfServer
-      ? `?last_knowledge_of_server=${lastKnowledgeOfServer}`
-      : "";
-    return this.request<{
-      data: { plan: PlanDetail; server_knowledge: number };
-    }>("GET", `/plans/${planId}${qs}`);
+  // The full plan export. Heavy; use it only for months[].categories[]
+  // across many months, which no lighter endpoint returns.
+  getPlan(planId: string) {
+    return this.request<{ data: { plan: PlanDetail } }>(
+      "GET",
+      `/plans/${planId}`,
+    );
   }
   // Lightweight: just date/currency format. Use this instead of getPlan
   // when a tool only needs the currency code (e.g. for structured output's
@@ -165,6 +200,12 @@ export class YnabClient {
     }>("GET", `/plans/${planId}/settings`);
   }
 
+  // The plan's ISO currency code, for formatting milliunits.
+  async planIso(planId: string): Promise<string> {
+    const { data } = await this.getPlanSettings(planId);
+    return data.settings.currency_format?.iso_code ?? "USD";
+  }
+
   // Accounts
   listAccounts(planId: string) {
     return this.request<{ data: { accounts: Account[] } }>(
@@ -178,19 +219,6 @@ export class YnabClient {
       `/plans/${planId}/accounts/${accountId}`,
     );
   }
-  // `sinceDate` defaults to ALL_TIME, not YNAB's server default — see
-  // ALL_TIME for why.
-  listAccountTransactions(
-    planId: string,
-    accountId: string,
-    opts?: { sinceDate?: string; untilDate?: string },
-  ) {
-    return this.request<{ data: { transactions: Transaction[] } }>(
-      "GET",
-      `/plans/${planId}/accounts/${accountId}/transactions${txQuery(opts)}`,
-    );
-  }
-
   // Categories
   listCategories(planId: string) {
     return this.request<{ data: { category_groups: CategoryGroup[] } }>(
@@ -198,10 +226,10 @@ export class YnabClient {
       `/plans/${planId}/categories`,
     );
   }
-  getCategory(planId: string, categoryId: string) {
+  getMonthCategory(planId: string, month: string, categoryId: string) {
     return this.request<{ data: { category: Category } }>(
       "GET",
-      `/plans/${planId}/categories/${categoryId}`,
+      `/plans/${planId}/months/${month}/categories/${categoryId}`,
     );
   }
   // Months
@@ -232,30 +260,24 @@ export class YnabClient {
   }
 
   // Transactions
-  // `sinceDate` defaults to ALL_TIME, not YNAB's server default — see
-  // ALL_TIME for why.
-  listTransactions(
-    planId: string,
-    opts?: {
-      sinceDate?: string;
-      untilDate?: string;
-      type?: "uncategorized" | "unapproved";
-    },
-  ) {
+  //
+  // One listing over YNAB's five transaction endpoints. At most one scope
+  // applies. Account and month listings return split parents with
+  // `subtransactions`; category and payee listings return hybrid rows, one per
+  // split part. `sinceDate` defaults to ALL_TIME, not YNAB's one-year default.
+  listTransactions(planId: string, opts: TransactionQuery = {}) {
+    const scope = opts.accountId
+      ? `/accounts/${opts.accountId}`
+      : opts.categoryId
+        ? `/categories/${opts.categoryId}`
+        : opts.payeeId
+          ? `/payees/${opts.payeeId}`
+          : opts.month
+            ? `/months/${opts.month}`
+            : "";
     return this.request<{ data: { transactions: Transaction[] } }>(
       "GET",
-      `/plans/${planId}/transactions${txQuery(opts)}`,
-    );
-  }
-  updateTransaction(
-    planId: string,
-    transactionId: string,
-    body: SaveTransactionFields,
-  ) {
-    return this.request<{ data: { transaction: Transaction } }>(
-      "PUT",
-      `/plans/${planId}/transactions/${transactionId}`,
-      { transaction: body },
+      `/plans/${planId}${scope}/transactions${txQuery(opts)}`,
     );
   }
   updateTransactionsBulk(
@@ -277,127 +299,26 @@ export class YnabClient {
       `/plans/${planId}/payees`,
     );
   }
+
+  // Scheduled transactions
+  listScheduledTransactions(planId: string) {
+    return this.request<{
+      data: { scheduled_transactions: ScheduledTransaction[] };
+    }>("GET", `/plans/${planId}/scheduled_transactions`);
+  }
+
+  // Money movements. Never pass last_knowledge_of_server here: the delta
+  // response includes deleted tombstones.
+  listMoneyMovements(planId: string) {
+    return this.request<{ data: { money_movements: MoneyMovement[] } }>(
+      "GET",
+      `/plans/${planId}/money_movements`,
+    );
+  }
 }
 
 // Convert milliunits (YNAB internal format) to dollars.
 export const fromMilli = (m: number) => m / 1000;
-
-export interface Plan {
-  id: string;
-  name: string;
-  last_modified_on: string;
-  first_month: string;
-  last_month: string;
-  currency_format?: { iso_code: string; decimal_digits: number };
-}
-
-export interface PlanDetail extends Plan {
-  accounts?: Account[];
-  category_groups?: CategoryGroup[];
-  categories?: Category[];
-  months?: MonthDetail[];
-}
-
-export interface Account {
-  id: string;
-  name: string;
-  type: string;
-  on_budget: boolean;
-  closed: boolean;
-  deleted?: boolean;
-  balance: number;
-  cleared_balance: number;
-  uncleared_balance: number;
-  // Direct-import (linked-bank) status. Absent on accounts that predate the
-  // field or were never linked. Note: YNAB's API does NOT expose the bank's
-  // reported balance — only these health flags and the last-reconciled time.
-  direct_import_linked?: boolean;
-  direct_import_in_error?: boolean;
-  last_reconciled_at?: string | null;
-}
-
-export interface CategoryGroup {
-  id: string;
-  name: string;
-  hidden: boolean;
-  deleted?: boolean;
-  categories: Category[];
-}
-
-export interface Category {
-  id: string;
-  category_group_id: string;
-  category_group_name?: string;
-  name: string;
-  hidden: boolean;
-  internal?: boolean;
-  deleted?: boolean;
-  budgeted: number;
-  activity: number;
-  balance: number;
-  goal_type?: string | null;
-  goal_target?: number | null;
-  goal_target_date?: string | null;
-  goal_cadence?: number | null;
-  goal_cadence_frequency?: number | null;
-  goal_months_to_budget?: number | null;
-  goal_percentage_complete?: number | null;
-  goal_under_funded?: number | null;
-  goal_overall_funded?: number | null;
-  goal_overall_left?: number | null;
-  // Set when the user has snoozed the goal for the current month (v1.76).
-  goal_snoozed_at?: string | null;
-}
-
-export interface MonthSummary {
-  month: string;
-  income: number;
-  budgeted: number;
-  activity: number;
-  to_be_budgeted: number;
-  age_of_money: number | null;
-}
-
-export interface MonthDetail extends MonthSummary {
-  categories: Category[];
-}
-
-export interface Transaction {
-  id: string;
-  date: string;
-  amount: number;
-  memo: string | null;
-  cleared: string;
-  approved: boolean;
-  account_id: string;
-  account_name: string;
-  payee_id: string | null;
-  payee_name: string | null;
-  category_id: string | null;
-  category_name: string | null;
-  flag_color: string | null;
-  transfer_account_id: string | null;
-  deleted?: boolean;
-  subtransactions?: SubTransaction[];
-}
-
-export interface SubTransaction {
-  id: string;
-  transaction_id: string;
-  amount: number;
-  memo: string | null;
-  payee_id: string | null;
-  payee_name: string | null;
-  category_id: string | null;
-  category_name: string | null;
-}
-
-export interface Payee {
-  id: string;
-  name: string;
-  transfer_account_id: string | null;
-  deleted?: boolean;
-}
 
 // A single subtransaction in a write payload. Only the fields the connector's
 // tools are willing to set are listed — YNAB tolerates extras but we don't

@@ -1,5 +1,5 @@
-import { describe, test, expect, beforeEach, afterEach, vi } from "vitest";
-import type { Account, PlanDetail, Transaction } from "../ynab";
+import { describe, test, expect } from "vitest";
+import type { Account, Transaction } from "../ynab";
 import {
   computeNetWorth,
   renderNetWorth,
@@ -12,6 +12,8 @@ const account = (overrides: Partial<Account>): Account => ({
   type: "checking",
   on_budget: true,
   closed: false,
+  transfer_payee_id: null,
+  deleted: false,
   balance: 0,
   cleared_balance: 0,
   uncleared_balance: 0,
@@ -33,125 +35,75 @@ const tx = (overrides: Partial<Transaction>): Transaction => ({
   category_name: null,
   flag_color: null,
   transfer_account_id: null,
+  deleted: false,
   ...overrides,
 });
 
-const plan = (overrides: Partial<PlanDetail> = {}): PlanDetail => ({
-  id: "b-1",
-  name: "Test Plan",
-  last_modified_on: "2026-05-20",
-  first_month: "2024-01-01",
-  last_month: "2026-05-01",
-  currency_format: { iso_code: "USD", decimal_digits: 2 },
-  ...overrides,
+const opts = (since: string, until = "2026-05-01") => ({
+  since,
+  until,
+  iso: "USD",
 });
-
-beforeEach(() => {
-  vi.useFakeTimers();
-  vi.setSystemTime(new Date("2026-05-20T10:00:00Z"));
-});
-afterEach(() => vi.useRealTimers());
 
 describe("computeNetWorth", () => {
   test("current snapshot is sum of open account balances", () => {
-    const b = plan({
-      accounts: [
-        account({ id: "checking", balance: 5_000_000 }),
-        account({ id: "savings", balance: 10_000_000 }),
-        account({ id: "credit", balance: -2_000_000 }),
-        account({ id: "closed", balance: 999_999, closed: true }),
-      ],
-    });
-    const r = computeNetWorth(b, [], { monthsBack: 1 });
-    expect(r.current.assets).toBe(15_000_000);
-    expect(r.current.liabilities).toBe(-2_000_000);
-    expect(r.current.net).toBe(13_000_000);
-  });
-
-  test("historical reconstruction walks balances back through later transactions", () => {
-    // Current balance: 1,000,000 in checking. A $100,000 outflow happened on
-    // 2026-05-10. So end of April balance = 1,000,000 + 100,000 = 1,100,000.
-    const b = plan({
-      accounts: [account({ id: "checking", balance: 1_000_000 })],
-    });
-    const txs = [
-      tx({
-        id: "t1",
-        account_id: "checking",
-        date: "2026-05-10",
-        amount: -100_000,
-      }),
+    const accounts = [
+      account({ id: "checking", balance: 5_000_000 }),
+      account({ id: "savings", balance: 10_000_000 }),
+      account({ id: "credit", balance: -2_000_000 }),
+      account({ id: "closed", balance: 999_999, closed: true }),
     ];
-    const r = computeNetWorth(b, txs, { monthsBack: 2 });
-    expect(r.history[0].month).toBe("2026-04-01");
-    expect(r.history[0].snapshot?.net).toBe(1_100_000);
-    expect(r.history[1].month).toBe("2026-05-01");
-    expect(r.history[1].snapshot?.net).toBe(1_000_000);
+    const r = computeNetWorth(accounts, [], opts("2026-05-01"));
+    expect(r.current).toEqual({
+      net: 13_000_000,
+      assets: 15_000_000,
+      liabilities: -2_000_000,
+    });
   });
 
-  test("history.delta is null on the first row, then row.net - prev.net", () => {
-    const b = plan({
-      accounts: [account({ id: "checking", balance: 1_000_000 })],
-    });
+  test("walks balances back through later transactions", () => {
+    // $100 left checking on 2026-05-10, so April ended $100 higher.
+    const accounts = [account({ id: "checking", balance: 1_000_000 })];
     const txs = [
-      tx({ account_id: "checking", date: "2026-05-10", amount: -100_000 }),
+      tx({ id: "t1", account_id: "checking", date: "2026-05-10", amount: -100_000 }),
+      // A transfer between two accounts cancels out.
+      tx({ id: "t2", account_id: "checking", date: "2026-05-12", amount: -50_000 }),
+      tx({ id: "t3", account_id: "savings", date: "2026-05-12", amount: 50_000 }),
     ];
-    const r = computeNetWorth(b, txs, { monthsBack: 2 });
-    expect(r.history[0].delta).toBeNull();
-    expect(r.history[1].delta).toBe(-100_000);
-  });
-
-  test("rangeChange is null for < 2 months", () => {
-    const r = computeNetWorth(plan({ accounts: [] }), [], { monthsBack: 1 });
-    expect(r.rangeChange).toBeNull();
-  });
-
-  test("rangeChange surfaces last - first when both snapshots exist", () => {
-    const b = plan({
-      accounts: [account({ id: "checking", balance: 1_000_000 })],
-    });
-    const txs = [
-      tx({ account_id: "checking", date: "2026-05-10", amount: -100_000 }),
-    ];
-    const r = computeNetWorth(b, txs, { monthsBack: 2 });
-    expect(r.rangeChange?.delta).toBe(-100_000);
-    expect(r.rangeChange?.firstNet).toBe(1_100_000);
-  });
-
-  test("openAccounts sorts by balance desc", () => {
-    const b = plan({
-      accounts: [
-        account({ id: "a", name: "Small", balance: 100_000 }),
-        account({ id: "b", name: "Big", balance: 9_000_000 }),
-        account({ id: "c", name: "Mid", balance: 1_000_000 }),
-      ],
-    });
-    const r = computeNetWorth(b, [], { monthsBack: 1 });
-    expect(r.openAccounts.map((a) => a.name)).toEqual(["Big", "Mid", "Small"]);
-  });
-
-  test("compute output conforms to the declared outputSchema", () => {
-    const b = plan({
-      accounts: [account({ id: "checking", balance: 1_000_000 })],
-    });
-    const txs = [
-      tx({ account_id: "checking", date: "2026-05-10", amount: -100_000 }),
-    ];
-    const r = computeNetWorth(b, txs, { monthsBack: 2 });
+    const r = computeNetWorth(
+      [...accounts, account({ id: "savings", balance: 50_000 })],
+      txs,
+      opts("2026-04-01"),
+    );
+    expect(r.history.map((h) => [h.month, h.net, h.change])).toEqual([
+      ["2026-04-01", 1_150_000, null],
+      ["2026-05-01", 1_050_000, -100_000],
+    ]);
     expect(() => NetWorthReportSchema.parse(r)).not.toThrow();
+  });
+
+  test("open_accounts sorts by balance desc", () => {
+    const accounts = [
+      account({ id: "a", name: "Small", balance: 100_000 }),
+      account({ id: "b", name: "Big", balance: 9_000_000 }),
+      account({ id: "c", name: "Mid", balance: 1_000_000 }),
+    ];
+    const r = computeNetWorth(accounts, [], opts("2026-05-01"));
+    expect(r.open_accounts.map((a) => a.name)).toEqual(["Big", "Mid", "Small"]);
   });
 });
 
 describe("renderNetWorth", () => {
-  test("renders title, current snapshot, history header, and per-account list", () => {
-    const b = plan({
-      accounts: [account({ id: "checking", balance: 1_000_000 })],
-    });
-    const report = computeNetWorth(b, [], { monthsBack: 2 });
-    const out = renderNetWorth(report, { includeIds: false });
-    expect(out).toContain("Net Worth: Test Plan");
-    expect(out).toContain("## Current snapshot");
-    expect(out).toContain("## Historical net worth");
-    expect(out).toContain("## By account (current)");
+  test("renders the snapshot, history, range change, and accounts", () => {
+    const r = computeNetWorth(
+      [account({ id: "checking", name: "Checking", balance: 1_000_000 })],
+      [tx({ account_id: "checking", date: "2026-05-10", amount: -100_000 })],
+      opts("2026-04-01"),
+    );
+    const out = renderNetWorth(r, { includeIds: false });
+    expect(out).toContain("Net worth: $1,000.00");
+    expect(out).toContain("## End of month");
+    expect(out).toContain("Range change: -$100.00");
+    expect(out).toContain("- Checking [checking]: $1,000.00");
   });
 });

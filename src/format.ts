@@ -89,47 +89,32 @@ export function pushSection<T>(
 export const fmtCategoryLine = (
   c: Category,
   refMonth: string,
+  iso: string,
   includeIds = false,
 ): string => {
   const idSuffix = includeIds ? ` — id ${c.id}` : "";
-  return `- ${c.name}: budgeted ${fmtMoney(c.budgeted)}, activity ${fmtMoney(c.activity)}, balance ${fmtMoney(c.balance)}${fmtGoalSuffix(c, refMonth)}${idSuffix}`;
+  return `- ${c.name}: budgeted ${fmtMoney(c.budgeted, iso)}, activity ${fmtMoney(c.activity, iso)}, balance ${fmtMoney(c.balance, iso)}${fmtGoalSuffix(c, refMonth, iso)}${idSuffix}`;
 };
 
+// One transaction line. Hybrid split rows (category and payee listings) are
+// marked so the reader knows the amount is one part of a larger transaction.
 export const fmtTxLine = (
   t: Transaction,
-  opts: { showCategory?: boolean; includeIds?: boolean; iso?: string } = {},
+  iso: string,
+  opts: { showCategory?: boolean; includeIds?: boolean } = {},
 ): string => {
   const showCategory = opts.showCategory ?? true;
   const payee = t.payee_name ?? "(no payee)";
   const cat = showCategory
     ? ` → ${t.category_name ?? "(uncategorized)"}`
     : "";
+  const split =
+    t.type === "subtransaction"
+      ? ` (split of ${t.parent_transaction_id})`
+      : t.subtransactions?.length
+        ? ` (${t.subtransactions.length}-way split)`
+        : "";
   const approval = t.approved ? "" : " (unapproved)";
   const idSuffix = opts.includeIds ? ` — id ${t.id}` : "";
-  return `- ${t.date} ${fmtMoney(t.amount, opts.iso)} ${payee}${cat} [${t.account_name}]${approval}${idSuffix}`;
-};
-
-// One row of activity expanded for a single Category. Used by
-// fmtActivityLine and produced by tool-local expandForCategory helpers
-// when drilling into a category's transactions.
-export interface ActivityLineData {
-  date: string;
-  amount: number;
-  payee_name: string | null;
-  account_name: string;
-  approved: boolean;
-  parent_id: string;
-  sub_id?: string;
-  note?: string;
-}
-
-export const fmtActivityLine = (
-  a: ActivityLineData,
-  includeIds = false,
-): string => {
-  const payee = a.payee_name ?? "(no payee)";
-  const approval = a.approved ? "" : " (unapproved)";
-  const note = a.note ? ` (${a.note})` : "";
-  const idSuffix = includeIds ? ` — id ${a.sub_id ?? a.parent_id}` : "";
-  return `- ${a.date} ${fmtMoney(a.amount)} ${payee}${note} [${a.account_name}]${approval}${idSuffix}`;
+  return `- ${t.date} ${fmtMoney(t.amount, iso)} ${payee}${cat}${split} [${t.account_name}]${approval}${idSuffix}`;
 };

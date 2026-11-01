@@ -1,147 +1,101 @@
 import { z } from "zod";
-import { planIdParam } from "../schemas";
+import { includeIdsParam, monthParam, planIdParam } from "../schemas";
 import type { McpServer } from "@modelcontextprotocol/server";
-import type {
-  Category,
-  CategoryGroup,
-  MonthDetail,
-  YnabClient,
-} from "../ynab";
-import {
-  result,
-  handleError,
-  fmtMoney,
-  fmtCategoryLine,
-} from "../format";
+import type { Category, CategoryGroup, MonthDetail, YnabClient } from "../ynab";
+import { CategorySchema, MonthSummarySchema } from "../wire";
+import { result, handleError, fmtMoney, fmtCategoryLine } from "../format";
 
-// ---- Result types (zod is the single source of truth; the TS types are
-// inferred and the schema doubles as the tool's outputSchema — see docs/internals/structured-output.md).
-// Money is in milliunits; ageOfMoney is a day count.
+// ---- Result type (zod is the source of truth; see docs/internals/structured-output.md)
 
-// Mirrors the YNAB Category shape (see ynab.ts). Money fields are milliunits.
-const CategorySchema = z.object({
-  id: z.string(),
-  category_group_id: z.string(),
-  category_group_name: z.string().optional(),
-  name: z.string(),
-  hidden: z.boolean(),
-  internal: z.boolean().optional(),
-  deleted: z.boolean().optional(),
-  budgeted: z.number(),
-  activity: z.number(),
-  balance: z.number(),
-  goal_type: z.string().nullable().optional(),
-  goal_target: z.number().nullable().optional(),
-  goal_target_date: z.string().nullable().optional(),
-  goal_cadence: z.number().nullable().optional(),
-  goal_cadence_frequency: z.number().nullable().optional(),
-  goal_months_to_budget: z.number().nullable().optional(),
-  goal_percentage_complete: z.number().nullable().optional(),
-  goal_under_funded: z.number().nullable().optional(),
-  goal_overall_funded: z.number().nullable().optional(),
-  goal_overall_left: z.number().nullable().optional(),
-});
-
-const MonthGroupReportSchema = z.object({
-  name: z.string(),
-  // Categories belonging to this group that have data in the month, in
-  // category_groups order.
-  categories: z.array(CategorySchema),
-});
-export type MonthGroupReport = z.infer<typeof MonthGroupReportSchema>;
-
-export const MonthReportSchema = z.object({
-  // Currency code (e.g. "USD") for formatting the milliunit amounts below.
+// YNAB's month summary, plus its categories grouped in the Plan's order.
+export const MonthReportSchema = MonthSummarySchema.extend({
   iso: z.string(),
-  month: z.string(),
-  income: z.number(),
-  budgeted: z.number(),
-  activity: z.number(),
-  toBeBudgeted: z.number(),
-  ageOfMoney: z.number().nullable(),
-  groups: z.array(MonthGroupReportSchema),
+  groups: z.array(
+    z.object({ name: z.string(), categories: z.array(CategorySchema) }),
+  ),
 });
 export type MonthReport = z.infer<typeof MonthReportSchema>;
 
 // ---- Compute (pure)
 
-export interface ComputeOpts {
-  includeHidden: boolean;
-  // Currency code for the structured payload. Optional for callers (tests)
-  // that don't care; the handler always passes the plan's real code.
-  iso?: string;
-}
-
+// Groups come from each month category's own category_group_id, so a
+// missing or partial GET /categories can't drop rows; that list only supplies
+// the Plan's order and hidden groups (GET /months/{month} is unordered).
+// Internal categories are left out: Inflow: Ready to Assign's balance is a
+// lifetime figure, not this month's.
 export const computeMonthReport = (
   monthDetail: MonthDetail,
   categoryGroups: CategoryGroup[],
-  opts: ComputeOpts,
+  opts: { includeHidden: boolean; iso: string },
 ): MonthReport => {
-  const iso = opts.iso ?? "USD";
-  const byId = new Map(monthDetail.categories.map((cat) => [cat.id, cat]));
-  const groups: MonthGroupReport[] = [];
-  for (const g of categoryGroups) {
-    if (g.hidden && !opts.includeHidden) continue;
-    const categories: Category[] = [];
-    for (const groupCat of g.categories) {
-      if (groupCat.hidden && !opts.includeHidden) continue;
-      const monthCat = byId.get(groupCat.id);
-      if (!monthCat) continue;
-      categories.push(monthCat);
+  const { categories: monthCategories, ...summary } = monthDetail;
+  const groupIndex = new Map(categoryGroups.map((g, i) => [g.id, i]));
+  const groupById = new Map(categoryGroups.map((g) => [g.id, g]));
+  const catIndex = new Map(
+    categoryGroups.flatMap((g) => g.categories ?? []).map((c, i) => [c.id, i]),
+  );
+  const byGroup = new Map<string, { name: string; categories: Category[] }>();
+  for (const c of monthCategories) {
+    const g = groupById.get(c.category_group_id);
+    if (c.deleted || c.internal || g?.deleted) continue;
+    if (!opts.includeHidden && (c.hidden || g?.hidden)) continue;
+    let entry = byGroup.get(c.category_group_id);
+    if (!entry) {
+      entry = {
+        name: c.category_group_name ?? g?.name ?? "(no group)",
+        categories: [],
+      };
+      byGroup.set(c.category_group_id, entry);
     }
-    if (!categories.length) continue;
-    groups.push({ name: g.name, categories });
+    entry.categories.push(c);
   }
-
-  return {
-    iso,
-    month: monthDetail.month,
-    income: monthDetail.income,
-    budgeted: monthDetail.budgeted,
-    activity: monthDetail.activity,
-    toBeBudgeted: monthDetail.to_be_budgeted,
-    ageOfMoney: monthDetail.age_of_money,
-    groups,
-  };
+  const at = (m: Map<string, number>, id: string) => m.get(id) ?? Infinity;
+  const groups = [...byGroup]
+    .sort(([a], [b]) => at(groupIndex, a) - at(groupIndex, b))
+    .map(([, g]) => ({
+      name: g.name,
+      categories: g.categories.sort(
+        (a, b) => at(catIndex, a.id) - at(catIndex, b.id),
+      ),
+    }));
+  return { ...summary, iso: opts.iso, groups };
 };
 
 // ---- Render (pure)
 
-export interface RenderOpts {
-  includeIds: boolean;
-}
-
 export const renderMonthReport = (
   report: MonthReport,
-  opts: RenderOpts,
+  opts: { includeIds: boolean },
 ): string => {
+  const { iso } = report;
   const out: string[] = [];
-  const iso = report.iso;
   out.push(`Month: ${report.month}`);
-  out.push(`Income:         ${fmtMoney(report.income, iso)}`);
-  out.push(`Budgeted:       ${fmtMoney(report.budgeted, iso)}`);
-  out.push(`Activity:       ${fmtMoney(report.activity, iso)}`);
-  out.push(`To be budgeted: ${fmtMoney(report.toBeBudgeted, iso)}`);
-  if (report.ageOfMoney !== null) {
-    out.push(`Age of money:   ${report.ageOfMoney} days`);
+  out.push(`Ready to Assign: ${fmtMoney(report.to_be_budgeted, iso)}`);
+  out.push(`Income:          ${fmtMoney(report.income, iso)}`);
+  out.push(`Assigned:        ${fmtMoney(report.budgeted, iso)}`);
+  out.push(`Activity:        ${fmtMoney(report.activity, iso)}`);
+  if (report.age_of_money != null) {
+    out.push(`Age of money:    ${report.age_of_money} days`);
   }
+  if (report.note) out.push(`Note: ${report.note}`);
   out.push("");
-
   for (const g of report.groups) {
     out.push(`## ${g.name}`);
     for (const c of g.categories) {
-      out.push(fmtCategoryLine(c, report.month, opts.includeIds));
+      out.push(fmtCategoryLine(c, report.month, iso, opts.includeIds));
     }
     out.push("");
   }
-
   return out.join("\n").trimEnd();
 };
 
 // ---- MCP tool registration
 
 const DESCRIPTION =
-  "One month grouped by category group: income, budgeted, activity, to-be-budgeted, and each category's budgeted, activity, balance, and goal. Defaults to the current month.";
+  "One month of a plan: Ready to Assign, income, assigned, activity, and age " +
+  "of money, then each category's budgeted (assigned), activity, balance " +
+  "(available), and goal, grouped by category group. Defaults to the " +
+  "current month. Use list_months for these totals across many months.";
 
 export const registerGetMonth = (
   server: McpServer,
@@ -155,26 +109,20 @@ export const registerGetMonth = (
       annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
         plan_id: planIdParam,
-        month: z
-          .string()
-          .optional()
-          .default("current")
-          .describe("YYYY-MM-01 or 'current'"),
+        month: monthParam.optional().default("current"),
         include_hidden: z.boolean().optional().default(false),
-        include_ids: z.boolean().optional().default(false),
+        include_ids: includeIdsParam,
       },
       outputSchema: MonthReportSchema.shape,
     },
     async ({ plan_id, month, include_hidden, include_ids }) => {
       try {
         const c = getClient();
-        const [monthRes, catsRes, settingsRes] = await Promise.all([
+        const [monthRes, catsRes, iso] = await Promise.all([
           c.getMonth(plan_id, month),
           c.listCategories(plan_id),
-          c.getPlanSettings(plan_id),
+          c.planIso(plan_id),
         ]);
-        const iso =
-          settingsRes.data.settings.currency_format?.iso_code ?? "USD";
         const report = computeMonthReport(
           monthRes.data.month,
           catsRes.data.category_groups,

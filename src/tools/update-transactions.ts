@@ -149,18 +149,19 @@ export const applyUpdateTransactions = async (
 
 export const renderUpdateTransactionsResult = (
   out: UpdateTransactionsResult,
+  iso: string,
 ): string => {
   const okCount = out.results.filter((r) => r.ok).length;
   const errCount = out.results.length - okCount;
   const header = `## Updated ${okCount} / ${out.results.length} transaction${out.results.length === 1 ? "" : "s"}${errCount ? ` (${errCount} error${errCount === 1 ? "" : "s"})` : ""}`;
   const lines = out.results.map((r) => {
     if (!r.ok) return `- [error] tx ${r.transaction_id}: ${r.error}`;
-    return `- [ok] ${renderTxSummary(r.transaction)} — id ${r.transaction.id}`;
+    return `- [ok] ${renderTxSummary(r.transaction, iso)} — id ${r.transaction.id}`;
   });
   return [header, ...lines].join("\n");
 };
 
-const renderTxSummary = (t: Transaction): string => {
+const renderTxSummary = (t: Transaction, iso: string): string => {
   const payee = t.payee_name ?? "(no payee)";
   const cat = t.category_name ?? "(uncategorized)";
   const approval = t.approved ? "approved" : "unapproved";
@@ -169,7 +170,7 @@ const renderTxSummary = (t: Transaction): string => {
     t.subtransactions && t.subtransactions.length > 0
       ? ` (${t.subtransactions.length}-way split)`
       : "";
-  return `${t.date} ${fmtMoney(t.amount)} ${payee} → ${cat}${splitNote}, ${approval}, ${t.cleared}${flag}`;
+  return `${t.date} ${fmtMoney(t.amount, iso)} ${payee} → ${cat}${splitNote}, ${approval}, ${t.cleared}${flag}`;
 };
 
 // ---- MCP tool registration
@@ -242,12 +243,10 @@ export const registerUpdateTransactions = (
     async ({ plan_id, updates }) => {
       if (!getProps().canWrite) return scopeDeniedError();
       try {
-        const out = await applyUpdateTransactions(
-          getClient(),
-          plan_id,
-          updates,
-        );
-        return result(renderUpdateTransactionsResult(out), out);
+        const c = getClient();
+        const iso = await c.planIso(plan_id);
+        const out = await applyUpdateTransactions(c, plan_id, updates);
+        return result(renderUpdateTransactionsResult(out, iso), out);
       } catch (e) {
         return handleError(e);
       }

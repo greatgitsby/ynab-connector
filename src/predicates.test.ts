@@ -6,6 +6,7 @@ import {
   isUncategorizedInternal,
   isInboxableTx,
   isTransferTx,
+  isSavingsCategory,
 } from "./predicates";
 
 const cat = (overrides: Partial<Category>): Category => ({
@@ -13,6 +14,8 @@ const cat = (overrides: Partial<Category>): Category => ({
   category_group_id: "grp-1",
   name: "Groceries",
   hidden: false,
+  internal: false,
+  deleted: false,
   budgeted: 0,
   activity: 0,
   balance: 0,
@@ -34,6 +37,7 @@ const tx = (overrides: Partial<Transaction>): Transaction => ({
   category_name: "Groceries",
   flag_color: null,
   transfer_account_id: null,
+  deleted: false,
   ...overrides,
 });
 
@@ -118,5 +122,25 @@ describe("isTransferTx", () => {
 
   test("false when transfer_account_id is null", () => {
     expect(isTransferTx(tx({}))).toBe(false);
+  });
+});
+
+describe("isSavingsCategory", () => {
+  test("target balances and non-monthly spending targets save; monthly bills don't", () => {
+    const cases: [Partial<Category>, boolean][] = [
+      [{ goal_type: "TB" }, true],
+      [{ goal_type: "TBD" }, true],
+      [{ goal_type: "NEED", goal_cadence: 0 }, true],
+      [{ goal_type: "NEED", goal_cadence: 13, goal_cadence_frequency: 1 }, true],
+      [{ goal_type: "NEED", goal_cadence: 1, goal_cadence_frequency: 3 }, true],
+      [{ goal_type: "NEED", goal_cadence: 1, goal_cadence_frequency: 1 }, false],
+      [{ goal_type: "NEED", goal_cadence: 2 }, false],
+      [{ goal_type: "MF" }, false],
+      [{ goal_type: "DEBT" }, false],
+      [{}, false],
+    ];
+    for (const [overrides, expected] of cases) {
+      expect(isSavingsCategory(cat(overrides)), JSON.stringify(overrides)).toBe(expected);
+    }
   });
 });

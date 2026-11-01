@@ -1,8 +1,12 @@
 import { z } from "zod";
-import { planIdParam } from "../schemas";
+import { includeIdsParam, monthParam, planIdParam } from "../schemas";
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { PlanDetail, Transaction, YnabClient } from "../ynab";
-import { resolveMonthWindow } from "../month-window";
+import {
+  monthEndDate,
+  resolveMonthRange,
+  resolveMonthWindow,
+} from "../month-window";
 import { isInflowRta, isUncategorizedInternal } from "../predicates";
 import { result, handleError, padMoney } from "../format";
 
@@ -24,7 +28,7 @@ export type PayeeIncomeRow = z.infer<typeof PayeeIncomeRowSchema>;
 const ExpenseCategoryRowSchema = z.object({
   id: z.string(),
   label: z.string(),
-  groupName: z.string(),
+  group_name: z.string(),
   monthly: MonthlySchema,
 });
 export type ExpenseCategoryRow = z.infer<typeof ExpenseCategoryRowSchema>;
@@ -38,12 +42,11 @@ const ExpenseGroupSchema = z.object({
 export type ExpenseGroup = z.infer<typeof ExpenseGroupSchema>;
 
 export const IncomeExpensePivotSchema = z.object({
-  planName: z.string(),
+  plan_name: z.string(),
   iso: z.string(),
   // Months actually present in the window, chronological order.
   window: z.array(z.string()),
-  requestedMonths: z.number().int(),
-  truncationNote: z.string().nullable(),
+  truncation_note: z.string().nullable(),
   income: z.object({
     // Sorted by total income desc.
     rows: z.array(PayeeIncomeRowSchema),
@@ -63,7 +66,8 @@ export const IncomeExpensePivotSchema = z.object({
 export type IncomeExpensePivot = z.infer<typeof IncomeExpensePivotSchema>;
 
 export interface ComputeOpts {
-  monthsBack: number;
+  since: string;
+  until: string;
 }
 
 // ---- Compute (pure)
@@ -95,7 +99,7 @@ export const computeIncomeExpensePivot = (
   opts: ComputeOpts,
 ): IncomeExpensePivot => {
   const iso = plan.currency_format?.iso_code ?? "USD";
-  const win = resolveMonthWindow(plan, opts.monthsBack);
+  const win = resolveMonthWindow(plan.months ?? [], opts.since, opts.until);
   const window = win.present;
   const monthsInWindow = win.months;
   const winSet = new Set(window);
@@ -131,11 +135,11 @@ export const computeIncomeExpensePivot = (
       if (t.subtransactions?.length) {
         for (const sub of t.subtransactions) {
           if (sub.category_id === inflowRtaId) {
-            addIncome(sub.payee_name ?? t.payee_name, t.date, sub.amount);
+            addIncome(sub.payee_name ?? t.payee_name ?? null, t.date, sub.amount);
           }
         }
       } else if (t.category_id === inflowRtaId) {
-        addIncome(t.payee_name, t.date, t.amount);
+        addIncome(t.payee_name ?? null, t.date, t.amount);
       }
     }
   }
@@ -255,11 +259,10 @@ export const computeIncomeExpensePivot = (
   }
 
   return {
-    planName: plan.name,
+    plan_name: plan.name,
     iso,
     window,
-    requestedMonths: opts.monthsBack,
-    truncationNote: win.truncationNote,
+    truncation_note: win.truncation_note,
     income: {
       rows: incomeRowsSorted.map((r) => ({
         label: r.label,
@@ -268,14 +271,19 @@ export const computeIncomeExpensePivot = (
       monthly: mapToRecord(incomeTotal),
     },
     uncategorized: uncategorized
-      ? { ...uncategorized, monthly: mapToRecord(uncategorized.monthly) }
+      ? {
+          id: uncategorized.id,
+          label: uncategorized.label,
+          group_name: uncategorized.groupName,
+          monthly: mapToRecord(uncategorized.monthly),
+        }
       : null,
     groups: groups.map((g) => ({
       name: g.name,
       rows: g.rows.map((r) => ({
         id: r.id,
         label: r.label,
-        groupName: r.groupName,
+        group_name: r.groupName,
         monthly: mapToRecord(r.monthly),
       })),
       monthly: mapToRecord(g.monthly),
@@ -317,16 +325,16 @@ export const renderIncomeExpensePivot = (
   pivot: IncomeExpensePivot,
   opts: RenderOpts,
 ): string => {
-  const { window, iso, planName, income, uncategorized, groups, totals } =
+  const { window, iso, plan_name, income, uncategorized, groups, totals } =
     pivot;
   const winStart = window[0] ?? "(none)";
   const winEnd = window[window.length - 1] ?? "(none)";
   const out: string[] = [];
 
   out.push(
-    `Income v Expense: ${planName} — last ${window.length} months (${winStart.slice(0, 7)} to ${winEnd.slice(0, 7)})`,
+    `Income v Expense: ${plan_name} — ${window.length} months (${winStart.slice(0, 7)} to ${winEnd.slice(0, 7)})`,
   );
-  if (pivot.truncationNote) out.push(pivot.truncationNote);
+  if (pivot.truncation_note) out.push(pivot.truncation_note);
   out.push("");
 
   const headerCols =
@@ -378,7 +386,13 @@ export const renderIncomeExpensePivot = (
 // ---- MCP tool registration
 
 const DESCRIPTION =
-  "Reflect: income against expense over the last N months (default 3, YNAB's default). Income rows are payees, taken from transactions categorized as Inflow: Ready to Assign. Expense rows are each non-Inflow category with activity in the window, grouped by category group with subtotals. Each row has Average and Total columns. The Net Income row at the bottom is Total Income plus Total Expense for each month; expense activity is already negative.";
+  "Reflect: income against expense for each month in a range (default the " +
+  "3 months ending with the current month, YNAB's default). Income rows are " +
+  "payees of transactions categorized as Inflow: Ready to Assign. Expense " +
+  "rows are each non-Inflow category with activity in the range, grouped by " +
+  "category group with subtotals. Each row has Average and Total columns. " +
+  "Net Income is Total Income plus Total Expense for each month; expense " +
+  "activity is already negative.";
 
 export const registerReflectIncomeExpense = (
   server: McpServer,
@@ -392,29 +406,27 @@ export const registerReflectIncomeExpense = (
       annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
         plan_id: planIdParam,
-        months_back: z
-          .number()
-          .int()
-          .min(1)
-          .max(24)
-          .optional()
-          .default(3),
-        include_ids: z.boolean().optional().default(false),
+        since_month: monthParam.optional(),
+        until_month: monthParam.optional().default("current"),
+        include_ids: includeIdsParam,
       },
       outputSchema: IncomeExpensePivotSchema.shape,
     },
-    async ({ plan_id, months_back, include_ids }) => {
+    async ({ plan_id, since_month, until_month, include_ids }) => {
       try {
         const c = getClient();
-        const planRes = await c.getPlan(plan_id);
-        const plan = planRes.data.plan;
-        const win = resolveMonthWindow(plan, months_back);
-        const sinceDate = win.present[0] ?? plan.first_month;
-        const txRes = await c.listTransactions(plan_id, { sinceDate });
+        const range = resolveMonthRange(since_month, until_month, 3);
+        const [planRes, txRes] = await Promise.all([
+          c.getPlan(plan_id),
+          c.listTransactions(plan_id, {
+            sinceDate: range.since,
+            untilDate: monthEndDate(range.until),
+          }),
+        ]);
         const pivot = computeIncomeExpensePivot(
-          plan,
+          planRes.data.plan,
           txRes.data.transactions,
-          { monthsBack: months_back },
+          range,
         );
         return result(
           renderIncomeExpensePivot(pivot, { includeIds: include_ids }),

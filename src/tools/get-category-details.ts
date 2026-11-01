@@ -19,7 +19,7 @@ import {
 import { fmtGoalSuffix } from "../goals";
 
 // ---- Result types (zod is the single source of truth; the TS types are
-// inferred and the schema doubles as the tool's outputSchema — see ADR 0002).
+// inferred and the schema doubles as the tool's outputSchema — see docs/internals/structured-output.md).
 // Money is in milliunits; goal cadence/percentage are non-money numbers.
 
 // One expanded activity row (parent tx or split sub allocated to the

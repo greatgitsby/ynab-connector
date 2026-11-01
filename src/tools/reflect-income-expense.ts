@@ -7,7 +7,7 @@ import { isInflowRta, isUncategorizedInternal } from "../predicates";
 import { result, handleError, padMoney } from "../format";
 
 // ---- Result types (zod is the single source of truth; the TS types are
-// inferred and the schema doubles as the tool's outputSchema — see ADR 0002).
+// inferred and the schema doubles as the tool's outputSchema — see docs/internals/structured-output.md).
 // Money is in milliunits; the per-month maps are keyed by month ("YYYY-MM-01")
 // and emitted as JSON objects (z.record) so structuredContent round-trips —
 // a Map would serialize to "{}". Averages stay z.number().

@@ -5,7 +5,7 @@ import type { Payee, YnabClient } from "../ynab";
 import { result, handleError } from "../format";
 
 // ---- Result types (zod is the single source of truth; the TS types are
-// inferred and the schema doubles as the tool's outputSchema — see ADR 0002).
+// inferred and the schema doubles as the tool's outputSchema — see docs/internals/structured-output.md).
 // Payees carry no money amounts, so there is no currency code on this payload.
 
 const PayeeMatchSchema = z.object({

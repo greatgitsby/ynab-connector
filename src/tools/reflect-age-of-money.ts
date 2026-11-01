@@ -6,7 +6,7 @@ import { result, handleError } from "../format";
 import { resolveMonthWindow } from "../month-window";
 
 // ---- Result types (zod is the single source of truth; the TS types are
-// inferred and the schema doubles as the tool's outputSchema — see ADR 0002).
+// inferred and the schema doubles as the tool's outputSchema — see docs/internals/structured-output.md).
 // Age-of-money values are DAY counts (integers), not money — there are no
 // milliunit amounts here, so the report carries no currency code.
 

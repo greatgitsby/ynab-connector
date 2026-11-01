@@ -18,28 +18,46 @@ export type MonthReport = z.infer<typeof MonthReportSchema>;
 
 // ---- Compute (pure)
 
-// GET /months/{month} returns categories in no particular order, so the
-// group order comes from GET /categories. Internal categories are left out:
-// Inflow: Ready to Assign's balance is a lifetime figure, not this month's.
+// Groups come from each month category's own category_group_id, so a
+// missing or partial GET /categories can't drop rows; that list only supplies
+// the Plan's order and hidden groups (GET /months/{month} is unordered).
+// Internal categories are left out: Inflow: Ready to Assign's balance is a
+// lifetime figure, not this month's.
 export const computeMonthReport = (
   monthDetail: MonthDetail,
   categoryGroups: CategoryGroup[],
   opts: { includeHidden: boolean; iso: string },
 ): MonthReport => {
   const { categories: monthCategories, ...summary } = monthDetail;
-  const byId = new Map(monthCategories.map((cat) => [cat.id, cat]));
-  const groups: MonthReport["groups"] = [];
-  for (const g of categoryGroups) {
-    if (g.deleted || g.internal || (g.hidden && !opts.includeHidden)) continue;
-    const categories: Category[] = [];
-    for (const groupCat of g.categories ?? []) {
-      const monthCat = byId.get(groupCat.id);
-      if (!monthCat || monthCat.deleted || monthCat.internal) continue;
-      if (monthCat.hidden && !opts.includeHidden) continue;
-      categories.push(monthCat);
+  const groupIndex = new Map(categoryGroups.map((g, i) => [g.id, i]));
+  const groupById = new Map(categoryGroups.map((g) => [g.id, g]));
+  const catIndex = new Map(
+    categoryGroups.flatMap((g) => g.categories ?? []).map((c, i) => [c.id, i]),
+  );
+  const byGroup = new Map<string, { name: string; categories: Category[] }>();
+  for (const c of monthCategories) {
+    const g = groupById.get(c.category_group_id);
+    if (c.deleted || c.internal || g?.deleted) continue;
+    if (!opts.includeHidden && (c.hidden || g?.hidden)) continue;
+    let entry = byGroup.get(c.category_group_id);
+    if (!entry) {
+      entry = {
+        name: c.category_group_name ?? g?.name ?? "(no group)",
+        categories: [],
+      };
+      byGroup.set(c.category_group_id, entry);
     }
-    if (categories.length) groups.push({ name: g.name, categories });
+    entry.categories.push(c);
   }
+  const at = (m: Map<string, number>, id: string) => m.get(id) ?? Infinity;
+  const groups = [...byGroup]
+    .sort(([a], [b]) => at(groupIndex, a) - at(groupIndex, b))
+    .map(([, g]) => ({
+      name: g.name,
+      categories: g.categories.sort(
+        (a, b) => at(catIndex, a.id) - at(catIndex, b.id),
+      ),
+    }));
   return { ...summary, iso: opts.iso, groups };
 };
 

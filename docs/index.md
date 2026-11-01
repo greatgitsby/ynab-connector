@@ -1,19 +1,25 @@
 ---
-title: Claude for YNAB
+title: YNAB Connector
 ---
 
-# Claude for YNAB
+# YNAB Connector
 
-A remote MCP server that lets the Claude.ai assistant read and edit your
+A remote MCP server that lets your AI assistant read and edit your
 YNAB (You Need A Budget) data — categorize transactions, approve pending
 imports, split receipts across categories, reassign money between
 categories, and run analytical reflections.
 
-**[→ Add to Claude.ai](https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=Claude%20for%20YNAB&connectorUrl=https%3A%2F%2Fynab.mcp.moen.ai%2Fmcp)**
+It works with any MCP client that supports remote servers with OAuth. Add
+this URL as a remote MCP server (often called a custom connector):
 
-Opens Claude.ai's "Add custom connector" dialog with the name and URL
-prefilled. After you confirm, Claude walks you through authorizing the
-connector against your YNAB account.
+```
+https://ynab.mcp.moen.ai/mcp
+```
+
+Your client then walks you through authorizing the connector against your YNAB
+account.
+
+Using Claude.ai? **[→ Add it in one click](https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=YNAB&connectorUrl=https%3A%2F%2Fynab.mcp.moen.ai%2Fmcp)**
 
 - Source: <https://github.com/greatgitsby/ynab-connector>
 - [Privacy policy](./privacy-policy)

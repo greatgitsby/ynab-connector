@@ -1,12 +1,13 @@
-# YNAB Connector for Claude
+# YNAB Connector
 
-A remote MCP server, hosted on Cloudflare Workers, that lets a Claude.ai
-connector read and edit your YNAB (You Need A Budget) data. Multi-user,
-OAuth-protected on both sides: Claude.ai authenticates via OAuth 2.1 (dynamic
-client registration + PKCE), and each user authorizes the connector against
-YNAB via OAuth 2.0 Authorization Code Grant. Per-user YNAB access + refresh
-tokens are encrypted into the bearer token issued back to Claude.ai — the
-connector itself holds no long-lived per-user state.
+A remote MCP server, hosted on Cloudflare Workers, that lets your AI
+assistant read and edit your YNAB (You Need A Budget) data. It works with any
+MCP client that supports remote servers with OAuth. Multi-user,
+OAuth-protected on both sides: the MCP client authenticates via OAuth 2.1
+(dynamic client registration + PKCE), and each user authorizes the connector
+against YNAB via OAuth 2.0 Authorization Code Grant. Per-user YNAB access +
+refresh tokens are encrypted into the bearer token issued back to the client
+— the connector itself holds no long-lived per-user state.
 
 > [!NOTE]
 > ### [→ Project page: greatgitsby.github.io/ynab-connector](https://greatgitsby.github.io/ynab-connector/)
@@ -14,16 +15,15 @@ connector itself holds no long-lived per-user state.
 ## Install
 
 > [!TIP]
-> ### [→ Add Claude for YNAB to Claude.ai](https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=Claude%20for%20YNAB&connectorUrl=https%3A%2F%2Fynab.mcp.moen.ai%2Fmcp)
+> Add `https://ynab.mcp.moen.ai/mcp` as a remote MCP server (often called a
+> custom connector) in your MCP client. The client discovers the OAuth flow
+> and walks you through authorizing the connector against your YNAB account.
 >
-> One click opens Claude.ai's "Add custom connector" dialog with the name and
-> URL prefilled against the hosted deployment at `ynab.mcp.moen.ai`.
-> After you confirm, Claude walks you through authorizing the connector against
-> your YNAB account.
+> Using Claude.ai? [→ Add it in one click](https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=YNAB&connectorUrl=https%3A%2F%2Fynab.mcp.moen.ai%2Fmcp)
 
 Prefer to self-host instead? See [One-time setup](#one-time-setup) below.
 
-## What Claude can do with it
+## What your assistant can do with it
 
 Read tools:
 
@@ -57,7 +57,7 @@ Out of scope by design: creating manual transactions, deleting anything, schedul
 Two OAuth flows are bridged in a single browser handshake when a user
 connects:
 
-1. **Claude.ai → Connector** (inbound). Claude.ai discovers the connector's
+1. **MCP client → Connector** (inbound). The client discovers the connector's
    authorization endpoints via RFC 9728 protected-resource metadata, registers
    itself (dynamic registration per RFC 7591, or a Client ID Metadata
    Document), and starts an OAuth 2.1 authorization-code flow with S256 PKCE. The connector acts as the Authorization Server using
@@ -68,13 +68,13 @@ connects:
    exchanges the code for `{ access_token, refresh_token }` and looks up the
    YNAB user id via `GET /v1/user`.
 
-`completeAuthorization` then encrypts the YNAB tokens into Claude.ai's bearer
+`completeAuthorization` then encrypts the YNAB tokens into the client's bearer
 token via the OAuth provider's `props`. On every MCP request, the provider
 decrypts them and hands them to a fresh, stateless MCP server built for that
-request — so each tool call uses the right user's YNAB credentials. Claude.ai's
-access token is issued to expire just before the YNAB token inside it; when
-Claude.ai refreshes, the connector refreshes the YNAB token and stores the new
-pair in the grant.
+request — so each tool call uses the right user's YNAB credentials. The
+client's access token is issued to expire just before the YNAB token inside it;
+when the client refreshes, the connector refreshes the YNAB token and stores the
+new pair in the grant.
 
 ## One-time setup
 
@@ -110,26 +110,21 @@ npx wrangler deploy
 Wrangler will print the deployed URL — something like
 `https://ynab-connector.<your-account>.workers.dev`.
 
-## Wire it up in Claude
+## Connect a client
 
-For your self-hosted deployment you can share a one-click install link with
-the same format as the hosted one above — just swap in your worker's URL:
+Add `https://ynab-connector.<your-account>.workers.dev/mcp` as a remote MCP
+server in your client (no secret path suffix — OAuth replaces it). The client
+discovers the OAuth flow and walks you through authorizing against YNAB.
+
+For Claude.ai you can share a one-click install link with the same format as
+the hosted one above — just swap in your worker's URL:
 
 ```
 https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=YOUR_NAME&connectorUrl=https%3A%2F%2Fynab-connector.YOUR_ACCOUNT.workers.dev%2Fmcp
 ```
 
-Or manually:
-
-1. Go to claude.ai → Settings → Connectors → **Add custom connector**.
-2. Set the URL to `https://ynab-connector.<your-account>.workers.dev/mcp`
-   (no secret path suffix — OAuth replaces it).
-3. Save. Claude will discover the OAuth flow and walk you through
-   authorizing against YNAB.
-4. In a new chat the connector's tools appear under "Search and tools."
-
-Subsequent users connect by repeating only the Claude.ai step: each one runs
-their own YNAB OAuth handshake when they add the connector.
+Subsequent users connect by repeating only this step: each one runs their own
+YNAB OAuth handshake when they add the connector.
 
 ## Local development
 
@@ -166,7 +161,7 @@ the current (write-capable) flow.
 **Connections established before write support shipped remain effectively
 read-only** — those tokens predate the write-capable scope and write tools
 respond with a "reconnect to grant write access" error message. To opt in to
-writes, disconnect the connector in Claude.ai's settings and add it again;
+writes, disconnect the connector in your MCP client and add it again;
 the YNAB authorization page will request the broader scope.
 
 YNAB itself does not split scope into separate read and write grants — a

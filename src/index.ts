@@ -19,8 +19,9 @@ export interface Env extends AuthEnv {
 
 const MCP_ROUTE = "/mcp";
 
-// Browser Origins allowed to call /mcp. Non-browser clients (Claude.ai's
-// connector backend, Claude Code) send no Origin and are unaffected. An
+// Browser Origins allowed to call /mcp. Non-browser clients (hosted
+// connector backends like Claude.ai's, CLI agents) send no Origin and are
+// unaffected. An
 // explicit list replaces the handler's defaults, so re-include localhost for
 // MCP Inspector.
 const ALLOWED_ORIGIN_HOSTNAMES = [
@@ -55,7 +56,7 @@ const apiHandler = {
   },
 };
 
-// Claude.ai discovers the authorization endpoints via RFC 9728
+// The MCP client discovers the authorization endpoints via RFC 9728
 // protected-resource metadata (served by OAuthProvider), registers itself
 // dynamically, and walks the user through /authorize → YNAB → /callback.
 // completeAuthorization() then issues an MCP bearer with the per-user YNAB

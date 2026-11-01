@@ -1,6 +1,6 @@
-# Claude for YNAB
+# YNAB Connector
 
-A remote MCP server on Cloudflare Workers that lets Claude read and edit a user's YNAB data. Claude.ai authenticates to us with OAuth 2.1; we authenticate to YNAB with OAuth 2.0. Per-user YNAB tokens live inside the bearer token we issue to Claude, never in our storage.
+A remote MCP server on Cloudflare Workers that lets any MCP client read and edit a user's YNAB data. The client authenticates to us with OAuth 2.1; we authenticate to YNAB with OAuth 2.0. Per-user YNAB tokens live inside the bearer token we issue to the client, never in our storage.
 
 It runs in production at `https://ynab.mcp.moen.ai/mcp` against real people's money. Treat writes accordingly.
 

@@ -19,7 +19,7 @@ npm 11 blocks dependency install scripts unless allowed. `allowScripts` in `pack
 After changing `wrangler.jsonc`, run `npx wrangler types` to regenerate
 `worker-configuration.d.ts`.
 
-Driving MCP end to end locally needs Claude.ai-style OAuth 2.1 with PKCE, which is awkward to
+Driving MCP end to end locally needs MCP-client OAuth 2.1 with PKCE, which is awkward to
 script. `npx @modelcontextprotocol/inspector` against `http://localhost:8787/mcp` works, but
 usually the deployed Worker plus a real client is easier. `npx wrangler tail` streams its logs.
 

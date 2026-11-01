@@ -1,11 +1,11 @@
 # Architecture
 
 The connector holds no per-user state. Everything it needs for a request arrives inside the bearer
-token Claude.ai presents, and every request builds its own MCP server.
+token the MCP client presents, and every request builds its own MCP server.
 
 ## Two OAuth flows, one handshake
 
-Claude.ai authenticates to the connector with OAuth 2.1 (dynamic registration or a Client ID
+The MCP client authenticates to the connector with OAuth 2.1 (dynamic registration or a Client ID
 Metadata Document, S256 PKCE). The connector is the authorization server, via
 `@cloudflare/workers-oauth-provider`. Its `/authorize` sends the user on to YNAB, and `/callback`
 exchanges the YNAB code ([`ynab-auth.ts`](../../src/ynab-auth.ts)). `completeAuthorization` then
@@ -23,12 +23,12 @@ in production because existing grants carry it. `wrangler dev` overrides it thro
 
 YNAB refresh tokens rotate, so two concurrent refreshes spend the same token and one loses. The
 connector refreshes only inside the provider's `tokenExchangeCallback`
-([`token-refresh.ts`](../../src/token-refresh.ts)), which Claude.ai's own refresh serializes.
+([`token-refresh.ts`](../../src/token-refresh.ts)), which the client's own refresh serializes.
 
-- At code exchange, Claude's access-token TTL is set to end five minutes before the YNAB token
-  inside it. Claude refreshes first, and we refresh YNAB then (unless more than ten minutes remain)
+- At code exchange, the client's access-token TTL is set to end five minutes before the YNAB token
+  inside it. The client refreshes first, and we refresh YNAB then (unless more than ten minutes remain)
   and store the new pair as the grant's props.
-- A YNAB 400/401 on refresh throws `invalid_grant`. The provider revokes the grant and Claude.ai
+- A YNAB 400/401 on refresh throws `invalid_grant`. The provider revokes the grant and the client
   re-authorizes instead of retrying a dead grant forever. Other failures are
   `temporarily_unavailable`.
 - `YnabClient` never refreshes. A YNAB 401 inside a tool is an ordinary tool error.

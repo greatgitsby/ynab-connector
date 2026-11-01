@@ -43,6 +43,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 const EXPECTED_TOOLS = [
   "assign_to_categories",
+  "get_category",
   "get_month",
   "list_accounts",
   "list_months",

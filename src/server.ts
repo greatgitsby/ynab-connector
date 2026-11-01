@@ -7,6 +7,7 @@ import { registerListMonths } from "./tools/list-months";
 import { registerGetMonth } from "./tools/get-month";
 import { registerGetCategory } from "./tools/get-category";
 import { registerListTransactions } from "./tools/list-transactions";
+import { registerListScheduledTransactions } from "./tools/list-scheduled-transactions";
 import { registerListPayees } from "./tools/list-payees";
 import { registerTriageInbox } from "./tools/triage-inbox";
 import { registerReflectIncomeExpense } from "./tools/reflect-income-expense";
@@ -50,6 +51,7 @@ export const buildServer = (props: Props): McpServer => {
   registerGetMonth(server, getClient);
   registerGetCategory(server, getClient);
   registerListTransactions(server, getClient);
+  registerListScheduledTransactions(server, getClient);
   registerListPayees(server, getClient);
   registerTriageInbox(server, getClient);
   registerReflectIncomeExpense(server, getClient);

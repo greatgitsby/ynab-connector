@@ -49,6 +49,7 @@ const EXPECTED_TOOLS = [
   "list_months",
   "list_payees",
   "list_plans",
+  "list_scheduled_transactions",
   "list_transactions",
   "reconcile_account",
   "reflect_income_expense",

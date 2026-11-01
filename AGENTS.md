@@ -12,7 +12,7 @@ Think of these instructions as good defaults, not hard rules. The developer's pr
 2. **Refreshing YNAB tokens anywhere but `src/token-refresh.ts`.** YNAB refresh tokens rotate. Refreshing inside a tool call races concurrent calls and strands the grant with a spent token.
 3. **Skipping the write gate.** Every write handler checks `getProps().canWrite` before any YNAB call. Tokens from before write support deserialize with `canWrite === undefined`; treat that as `false`.
 4. **Pruning `wrangler.jsonc` migrations.** Keep both migration entries, including the `v2` `deleted_classes` one. Cloudflare replays the history by tag.
-5. **Writing to a real plan.** Smoke-test writes only against the dedicated test plan. See [development](docs/operations/development.md#smoke-testing-writes).
+5. **Writing to a real plan.** Try writes only against a dedicated test plan. See [development](docs/operations/development.md#calling-ynab-directly).
 6. **Widening the write surface quietly.** Manual transaction creation, deletes, scheduled transactions, payee rename/merge, category rename/move, and goal edits are excluded on purpose. See [write tools](docs/internals/write-tools.md).
 
 ## Commands
@@ -24,7 +24,7 @@ npm test             # vitest, plain Node
 npm run deploy       # wrangler deploy
 ```
 
-Local setup, the YNAB token helper, and the write smoke test: [development](docs/operations/development.md).
+Local setup and the YNAB token helper: [development](docs/operations/development.md).
 
 ## Verifying
 
@@ -33,7 +33,6 @@ Local setup, the YNAB token helper, and the write smoke test: [development](docs
 - Extend before you add. Add a fixture row or assertion to the existing case when one fits.
 - Every read tool's compute test parses its fixture result through the tool's zod schema. The SDK throws on a mismatch at call time.
 - New tools go in `EXPECTED_TOOLS` in `src/server.test.ts`, which drives every tool through a real MCP client.
-- Run `scripts/smoke-writes.sh` before any deploy that touches write tools.
 
 ## How it works
 

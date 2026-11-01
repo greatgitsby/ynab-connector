@@ -17,7 +17,7 @@ export interface AuthEnv {
   YNAB_CLIENT_SECRET: string;
 }
 
-// What gets encrypted into the bearer token issued back to Claude.ai and
+// What gets encrypted into the bearer token issued back to the MCP client and
 // surfaces as `this.props` inside YnabMcp.
 export interface Props {
   ynabUserId: string;
@@ -62,7 +62,7 @@ const sha256Hex = async (input: string): Promise<string> => {
     .join("");
 };
 
-// Stash the parsed Claude.ai authorize request in KV under a random state
+// Stash the parsed client authorize request in KV under a random state
 // token, and return the hash of that token so we can bind it to the user's
 // session via cookie. The hash-in-cookie pattern means a leaked state in
 // referrer logs alone can't complete the flow.
@@ -121,7 +121,7 @@ export const ynabAuthHandler = {
     }
     if (url.pathname === "/") {
       return new Response(
-        "YNAB MCP connector. Configure as a custom connector in Claude.ai pointed at /mcp; you'll be walked through YNAB OAuth.",
+        "YNAB MCP connector. Add /mcp as a remote MCP server in your MCP client; you'll be walked through YNAB OAuth.",
         { headers: { "content-type": "text/plain" } },
       );
     }

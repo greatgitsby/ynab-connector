@@ -1,4 +1,4 @@
-# Claude for YNAB docs
+# YNAB Connector docs
 
 ## Using the connector
 

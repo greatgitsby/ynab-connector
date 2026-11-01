@@ -1,5 +1,5 @@
-title: Claude for YNAB
-description: A YNAB connector for the Claude.ai assistant — read budgets, accounts, and transactions, and (optionally) categorize, approve, split, and reassign.
+title: YNAB Connector
+description: A YNAB connector for any MCP-capable AI assistant — read budgets, accounts, and transactions, and (optionally) categorize, approve, split, and reassign.
 theme: jekyll-theme-minimal
 exclude:
   - README.md

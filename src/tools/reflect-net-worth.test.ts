@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from "vitest";
-import type { Account, BudgetDetail, Transaction } from "../ynab";
+import type { Account, PlanDetail, Transaction } from "../ynab";
 import {
   computeNetWorth,
   renderNetWorth,
@@ -36,7 +36,7 @@ const tx = (overrides: Partial<Transaction>): Transaction => ({
   ...overrides,
 });
 
-const budget = (overrides: Partial<BudgetDetail> = {}): BudgetDetail => ({
+const plan = (overrides: Partial<PlanDetail> = {}): PlanDetail => ({
   id: "b-1",
   name: "Test Plan",
   last_modified_on: "2026-05-20",
@@ -54,7 +54,7 @@ afterEach(() => vi.useRealTimers());
 
 describe("computeNetWorth", () => {
   test("current snapshot is sum of open account balances", () => {
-    const b = budget({
+    const b = plan({
       accounts: [
         account({ id: "checking", balance: 5_000_000 }),
         account({ id: "savings", balance: 10_000_000 }),
@@ -71,7 +71,7 @@ describe("computeNetWorth", () => {
   test("historical reconstruction walks balances back through later transactions", () => {
     // Current balance: 1,000,000 in checking. A $100,000 outflow happened on
     // 2026-05-10. So end of April balance = 1,000,000 + 100,000 = 1,100,000.
-    const b = budget({
+    const b = plan({
       accounts: [account({ id: "checking", balance: 1_000_000 })],
     });
     const txs = [
@@ -90,7 +90,7 @@ describe("computeNetWorth", () => {
   });
 
   test("history.delta is null on the first row, then row.net - prev.net", () => {
-    const b = budget({
+    const b = plan({
       accounts: [account({ id: "checking", balance: 1_000_000 })],
     });
     const txs = [
@@ -102,12 +102,12 @@ describe("computeNetWorth", () => {
   });
 
   test("rangeChange is null for < 2 months", () => {
-    const r = computeNetWorth(budget({ accounts: [] }), [], { monthsBack: 1 });
+    const r = computeNetWorth(plan({ accounts: [] }), [], { monthsBack: 1 });
     expect(r.rangeChange).toBeNull();
   });
 
   test("rangeChange surfaces last - first when both snapshots exist", () => {
-    const b = budget({
+    const b = plan({
       accounts: [account({ id: "checking", balance: 1_000_000 })],
     });
     const txs = [
@@ -119,7 +119,7 @@ describe("computeNetWorth", () => {
   });
 
   test("openAccounts sorts by balance desc", () => {
-    const b = budget({
+    const b = plan({
       accounts: [
         account({ id: "a", name: "Small", balance: 100_000 }),
         account({ id: "b", name: "Big", balance: 9_000_000 }),
@@ -131,7 +131,7 @@ describe("computeNetWorth", () => {
   });
 
   test("compute output conforms to the declared outputSchema", () => {
-    const b = budget({
+    const b = plan({
       accounts: [account({ id: "checking", balance: 1_000_000 })],
     });
     const txs = [
@@ -144,7 +144,7 @@ describe("computeNetWorth", () => {
 
 describe("renderNetWorth", () => {
   test("renders title, current snapshot, history header, and per-account list", () => {
-    const b = budget({
+    const b = plan({
       accounts: [account({ id: "checking", balance: 1_000_000 })],
     });
     const report = computeNetWorth(b, [], { monthsBack: 2 });

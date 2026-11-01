@@ -1,6 +1,7 @@
 import { z } from "zod";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { BudgetDetail, YnabClient } from "../ynab";
+import { planIdParam } from "../schemas";
+import type { McpServer } from "@modelcontextprotocol/server";
+import type { PlanDetail, YnabClient } from "../ynab";
 import { result, handleError, fmtMoney, padMoney } from "../format";
 import { resolveMonthWindow } from "../month-window";
 import { isSpendingCategory } from "../predicates";
@@ -40,7 +41,7 @@ const CategoryTrendSchema = z.object({
 export type CategoryTrend = z.infer<typeof CategoryTrendSchema>;
 
 export const SpendingTrendsSchema = z.object({
-  budgetName: z.string(),
+  planName: z.string(),
   iso: z.string(),
   window: z.array(z.string()),
   truncationNote: z.string().nullable(),
@@ -59,11 +60,11 @@ export interface ComputeOpts {
 }
 
 export const computeSpendingTrends = (
-  budget: BudgetDetail,
+  plan: PlanDetail,
   opts: ComputeOpts,
 ): SpendingTrends => {
-  const iso = budget.currency_format?.iso_code ?? "USD";
-  const win = resolveMonthWindow(budget, opts.monthsBack);
+  const iso = plan.currency_format?.iso_code ?? "USD";
+  const win = resolveMonthWindow(plan, opts.monthsBack);
   const window = win.present;
   const monthsInWindow = win.months;
 
@@ -126,7 +127,7 @@ export const computeSpendingTrends = (
     });
 
   return {
-    budgetName: budget.name,
+    planName: plan.name,
     iso,
     window,
     truncationNote: win.truncationNote,
@@ -150,13 +151,13 @@ export const renderSpendingTrends = (
   trends: SpendingTrends,
   opts: RenderOpts,
 ): string => {
-  const { window, iso, budgetName, monthlyNet, avgNet, ranked } = trends;
+  const { window, iso, planName, monthlyNet, avgNet, ranked } = trends;
   const out: string[] = [];
 
   const winStart = window[0] ?? "(none)";
   const winEnd = window[window.length - 1] ?? "(none)";
   out.push(
-    `Spending Trends: ${budgetName} — last ${window.length} months (${winStart.slice(0, 7)} to ${winEnd.slice(0, 7)})`,
+    `Spending Trends: ${planName} — last ${window.length} months (${winStart.slice(0, 7)} to ${winEnd.slice(0, 7)})`,
   );
   if (trends.truncationNote) out.push(trends.truncationNote);
   out.push("");
@@ -240,7 +241,7 @@ export const registerReflectSpendingTrends = (
       description: DESCRIPTION,
       annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
-        budget_id: z.string(),
+        plan_id: planIdParam,
         months_back: z
           .number()
           .int()
@@ -252,11 +253,11 @@ export const registerReflectSpendingTrends = (
       },
       outputSchema: SpendingTrendsSchema.shape,
     },
-    async ({ budget_id, months_back, include_ids }) => {
+    async ({ plan_id, months_back, include_ids }) => {
       try {
         const c = getClient();
-        const { data } = await c.getBudget(budget_id);
-        const trends = computeSpendingTrends(data.budget, {
+        const { data } = await c.getPlan(plan_id);
+        const trends = computeSpendingTrends(data.plan, {
           monthsBack: months_back,
         });
         return result(

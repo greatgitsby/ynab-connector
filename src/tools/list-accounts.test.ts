@@ -61,7 +61,7 @@ describe("renderAccountList", () => {
     ).toBe("No accounts.");
   });
 
-  test("emits one line per account with type, budget tag, and balance", () => {
+  test("emits one line per account with type, plan tag, and balance", () => {
     const r = computeAccountList(
       [
         account({ id: "checking", name: "Checking" }),

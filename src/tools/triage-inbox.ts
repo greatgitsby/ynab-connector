@@ -1,5 +1,6 @@
 import { z } from "zod";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { planIdParam } from "../schemas";
+import type { McpServer } from "@modelcontextprotocol/server";
 import type {
   Category,
   MonthDetail,
@@ -112,7 +113,7 @@ export type TriageInbox = z.infer<typeof TriageInboxSchema>;
 
 export interface ComputeOpts {
   // Currency code for the structured payload. Optional for callers (tests)
-  // that don't care; the handler always passes the budget's real code.
+  // that don't care; the handler always passes the plan's real code.
   iso?: string;
 }
 
@@ -240,7 +241,7 @@ export const registerTriageInbox = (
       description: DESCRIPTION,
       annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
-        budget_id: z.string(),
+        plan_id: planIdParam,
         max_per_section: z
           .number()
           .int()
@@ -252,15 +253,15 @@ export const registerTriageInbox = (
       },
       outputSchema: TriageInboxSchema.shape,
     },
-    async ({ budget_id, max_per_section, include_ids }) => {
+    async ({ plan_id, max_per_section, include_ids }) => {
       try {
         const c = getClient();
         const [uncatRes, unapprovedRes, monthRes, settingsRes] =
           await Promise.all([
-            c.listTransactions(budget_id, { type: "uncategorized" }),
-            c.listTransactions(budget_id, { type: "unapproved" }),
-            c.getMonth(budget_id, "current"),
-            c.getBudgetSettings(budget_id),
+            c.listTransactions(plan_id, { type: "uncategorized" }),
+            c.listTransactions(plan_id, { type: "unapproved" }),
+            c.getMonth(plan_id, "current"),
+            c.getPlanSettings(plan_id),
           ]);
         const iso =
           settingsRes.data.settings.currency_format?.iso_code ?? "USD";

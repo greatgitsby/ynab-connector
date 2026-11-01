@@ -1,2 +1,5 @@
 YNAB_CLIENT_ID=your_ynab_oauth_client_id
 YNAB_CLIENT_SECRET=your_ynab_oauth_client_secret
+
+# wrangler dev serves on localhost, so tokens must be bound to the local URL.
+MCP_RESOURCE=http://localhost:8787/mcp

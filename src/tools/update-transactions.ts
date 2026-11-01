@@ -1,5 +1,6 @@
 import { z } from "zod";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { planIdParam } from "../schemas";
+import type { McpServer } from "@modelcontextprotocol/server";
 import type {
   SaveSubTransaction,
   SaveTransactionWithId,
@@ -118,12 +119,12 @@ export const interpretBulkResponse = (
 
 export const applyUpdateTransactions = async (
   client: YnabClient,
-  budgetId: string,
+  planId: string,
   inputs: UpdateTransactionInput[],
 ): Promise<UpdateTransactionsResult> => {
   const body = { transactions: inputs.map(buildBulkRow) };
   try {
-    const resp = await client.updateTransactionsBulk(budgetId, body);
+    const resp = await client.updateTransactionsBulk(planId, body);
     return interpretBulkResponse(inputs, resp.data.transactions);
   } catch (e) {
     // Whole-batch failure (e.g., 401, 5xx) — surface as a per-item error so
@@ -235,16 +236,16 @@ export const registerUpdateTransactions = (
         openWorldHint: true,
       },
       inputSchema: {
-        budget_id: z.string(),
+        plan_id: planIdParam,
         updates: z.array(updateSchema).min(1),
       },
     },
-    async ({ budget_id, updates }) => {
+    async ({ plan_id, updates }) => {
       if (!getProps().canWrite) return scopeDeniedError();
       try {
         const out = await applyUpdateTransactions(
           getClient(),
-          budget_id,
+          plan_id,
           updates,
         );
         return result(renderUpdateTransactionsResult(out), out);

@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from "vitest";
-import type { BudgetDetail, Category, MonthDetail } from "../ynab";
+import type { PlanDetail, Category, MonthDetail } from "../ynab";
 import {
   computeSpendingTrends,
   renderSpendingTrends,
@@ -31,7 +31,7 @@ const month = (
   categories,
 });
 
-const budget = (months: MonthDetail[]): BudgetDetail => ({
+const plan = (months: MonthDetail[]): PlanDetail => ({
   id: "b-1",
   name: "Test Plan",
   last_modified_on: "2026-05-01",
@@ -49,7 +49,7 @@ afterEach(() => vi.useRealTimers());
 
 describe("computeSpendingTrends", () => {
   test("monthlyNet is -month.activity per month", () => {
-    const b = budget([
+    const b = plan([
       month("2026-03-01", -1_000_000, []),
       month("2026-04-01", -1_500_000, []),
       month("2026-05-01", -2_000_000, []),
@@ -64,7 +64,7 @@ describe("computeSpendingTrends", () => {
   test("compute output conforms to the declared outputSchema", () => {
     const groceries = (mag: number) =>
       cat({ id: "groceries", name: "Groceries", activity: -mag });
-    const b = budget([
+    const b = plan([
       month("2026-03-01", -300_000, [groceries(300_000)]),
       month("2026-04-01", 0, []),
       month("2026-05-01", -350_000, [groceries(350_000)]),
@@ -78,7 +78,7 @@ describe("computeSpendingTrends", () => {
       cat({ id: "groceries", name: "Groceries", activity: -mag });
     const rent = (mag: number) =>
       cat({ id: "rent", name: "Rent", activity: -mag });
-    const b = budget([
+    const b = plan([
       month("2026-03-01", 0, [groceries(300_000), rent(2_000_000)]),
       month("2026-04-01", 0, [groceries(400_000), rent(2_000_000)]),
       month("2026-05-01", 0, [groceries(350_000), rent(2_000_000)]),
@@ -90,7 +90,7 @@ describe("computeSpendingTrends", () => {
 
   test("stats are computed only over present months (months with outflow)", () => {
     // Groceries appears in 2 of 3 months.
-    const b = budget([
+    const b = plan([
       month("2026-03-01", 0, [
         cat({ id: "groceries", name: "Groceries", activity: -300_000 }),
       ]),
@@ -110,7 +110,7 @@ describe("computeSpendingTrends", () => {
   });
 
   test("skips hidden / internal / deleted categories", () => {
-    const b = budget([
+    const b = plan([
       month("2026-05-01", 0, [
         cat({ id: "groceries", name: "Groceries", activity: -100_000 }),
         cat({
@@ -134,7 +134,7 @@ describe("computeSpendingTrends", () => {
 
 describe("renderSpendingTrends", () => {
   test("emits header, monthly table, and top-categories section", () => {
-    const b = budget([
+    const b = plan([
       month("2026-04-01", -500_000, [
         cat({ id: "groceries", name: "Groceries", activity: -500_000 }),
       ]),
@@ -154,7 +154,7 @@ describe("renderSpendingTrends", () => {
     const cats = Array.from({ length: 8 }, (_, i) =>
       cat({ id: `c${i}`, name: `Cat${i}`, activity: -(100_000 - i * 1_000) }),
     );
-    const b = budget([month("2026-05-01", 0, cats)]);
+    const b = plan([month("2026-05-01", 0, cats)]);
     const trends = computeSpendingTrends(b, { monthsBack: 1 });
     const out = renderSpendingTrends(trends, { includeIds: false, topN: 3 });
     expect(out).toContain("showing 3 of 8");

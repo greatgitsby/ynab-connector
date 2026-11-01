@@ -12,7 +12,7 @@ personal-use OAuth application that lets the Claude.ai assistant
 When you authorize the Connector against your YNAB account, it requests
 full access (read + write). This grants the Connector access to:
 
-- Your budgets (names, IDs, currency) — read
+- Your plans (names, IDs, currency) — read
 - Accounts and balances — read
 - Categories, category groups, and goal data — read
 - Transactions and split transactions — read; edit (categorize, approve,

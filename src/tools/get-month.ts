@@ -1,5 +1,6 @@
 import { z } from "zod";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { planIdParam } from "../schemas";
+import type { McpServer } from "@modelcontextprotocol/server";
 import type {
   Category,
   CategoryGroup,
@@ -67,7 +68,7 @@ export type MonthReport = z.infer<typeof MonthReportSchema>;
 export interface ComputeOpts {
   includeHidden: boolean;
   // Currency code for the structured payload. Optional for callers (tests)
-  // that don't care; the handler always passes the budget's real code.
+  // that don't care; the handler always passes the plan's real code.
   iso?: string;
 }
 
@@ -153,7 +154,7 @@ export const registerGetMonth = (
       description: DESCRIPTION,
       annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
-        budget_id: z.string(),
+        plan_id: planIdParam,
         month: z
           .string()
           .optional()
@@ -164,13 +165,13 @@ export const registerGetMonth = (
       },
       outputSchema: MonthReportSchema.shape,
     },
-    async ({ budget_id, month, include_hidden, include_ids }) => {
+    async ({ plan_id, month, include_hidden, include_ids }) => {
       try {
         const c = getClient();
         const [monthRes, catsRes, settingsRes] = await Promise.all([
-          c.getMonth(budget_id, month),
-          c.listCategories(budget_id),
-          c.getBudgetSettings(budget_id),
+          c.getMonth(plan_id, month),
+          c.listCategories(plan_id),
+          c.getPlanSettings(plan_id),
         ]);
         const iso =
           settingsRes.data.settings.currency_format?.iso_code ?? "USD";

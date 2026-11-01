@@ -2,25 +2,33 @@
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "ynab-connector",
 	"main": "src/index.ts",
-	"compatibility_date": "2025-03-10",
+	"compatibility_date": "2026-10-01",
 	"compatibility_flags": [
-		"nodejs_compat"
+		"nodejs_compat",
+		// Lets workers-oauth-provider accept Client ID Metadata Document
+		// (CIMD) clients, the MCP auth spec's preferred registration method.
+		"global_fetch_strictly_public"
 	],
+	// v1 created the McpAgent Durable Object. The MCP server is now stateless
+	// (createMcpHandler), so v2 deletes the class and its storage.
 	"migrations": [
 		{
 			"new_sqlite_classes": [
 				"YnabMcp"
 			],
 			"tag": "v1"
+		},
+		{
+			"deleted_classes": [
+				"YnabMcp"
+			],
+			"tag": "v2"
 		}
 	],
-	"durable_objects": {
-		"bindings": [
-			{
-				"class_name": "YnabMcp",
-				"name": "MCP_OBJECT"
-			}
-		]
+	"vars": {
+		// Canonical MCP resource URL; every OAuth token's audience is bound to it.
+		// Must match what existing grants carry — don't change it casually.
+		"MCP_RESOURCE": "https://claude-for-ynab.moen.ai/mcp"
 	},
 	"kv_namespaces": [
 		{

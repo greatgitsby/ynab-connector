@@ -27,9 +27,14 @@ export const result = <S>(s: string, structured: S) => ({
   structuredContent: structured as S,
 });
 
+// Tool execution error (isError: true), so the client and model can tell a
+// failed call from a successful one that happens to contain prose.
 export const handleError = (e: unknown) => {
-  if (e instanceof YnabError) return text(`YNAB error ${e.status}: ${e.body}`);
-  return text(`Error: ${e instanceof Error ? e.message : String(e)}`);
+  const message =
+    e instanceof YnabError
+      ? `YNAB error ${e.status}: ${e.body}`
+      : `Error: ${e instanceof Error ? e.message : String(e)}`;
+  return { ...text(message), isError: true as const };
 };
 
 // Returned by write tools when the active token wasn't issued with write
@@ -41,7 +46,7 @@ export const scopeDeniedError = () => ({
       type: "text" as const,
       text:
         "Write access denied: this YNAB connection was granted read-only " +
-        "access. To enable budget edits, disconnect and reconnect the YNAB " +
+        "access. To enable plan edits, disconnect and reconnect the YNAB " +
         "connector in Claude.ai's settings — accept the broader permission " +
         "scope on the YNAB authorization page.",
     },

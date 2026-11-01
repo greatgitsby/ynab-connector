@@ -27,7 +27,7 @@ export const isInboxableTx = (t: Transaction): boolean =>
   t.transfer_account_id == null || !t.approved;
 
 // True when a Transaction is a transfer between two accounts in the same
-// budget. Transfers are excluded from spending stats — moving money between
+// plan. Transfers are excluded from spending stats — moving money between
 // accounts isn't spending even though one side is negative.
 export const isTransferTx = (t: Transaction): boolean =>
   t.transfer_account_id != null;

@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from "vitest";
-import { YnabClient, YnabError } from "./ynab";
+import { ALL_TIME, YnabClient, YnabError } from "./ynab";
 
 // Captures the args of each fetch call so we can assert on URL / method / body.
 type FetchCall = { url: string; init: RequestInit };
@@ -54,7 +54,7 @@ describe("YnabClient", () => {
       expect(stub.calls).toHaveLength(1);
       const [{ url, init }] = stub.calls;
       expect(url).toBe(
-        "https://api.ynab.com/v1/budgets/bud-1/months/2026-05-01/categories/cat-1",
+        "https://api.ynab.com/v1/plans/bud-1/months/2026-05-01/categories/cat-1",
       );
       expect(init.method).toBe("PATCH");
       const headers = init.headers as Record<string, string>;
@@ -80,7 +80,7 @@ describe("YnabClient", () => {
 
       const [{ url, init }] = stub.calls;
       expect(url).toBe(
-        "https://api.ynab.com/v1/budgets/bud-1/transactions/tx-1",
+        "https://api.ynab.com/v1/plans/bud-1/transactions/tx-1",
       );
       expect(init.method).toBe("PUT");
       expect(JSON.parse(init.body as string)).toEqual({
@@ -111,7 +111,7 @@ describe("YnabClient", () => {
       });
 
       const [{ url, init }] = stub.calls;
-      expect(url).toBe("https://api.ynab.com/v1/budgets/bud-1/transactions");
+      expect(url).toBe("https://api.ynab.com/v1/plans/bud-1/transactions");
       expect(init.method).toBe("PATCH");
       expect(JSON.parse(init.body as string)).toEqual({
         transactions: [
@@ -143,10 +143,72 @@ describe("YnabClient", () => {
       const res = await client.listPayees("bud-1");
 
       const [{ url, init }] = stub.calls;
-      expect(url).toBe("https://api.ynab.com/v1/budgets/bud-1/payees");
+      expect(url).toBe("https://api.ynab.com/v1/plans/bud-1/payees");
       expect(init.method).toBe("GET");
       expect(init.body).toBeUndefined();
       expect(res.data.payees).toHaveLength(1);
+    });
+  });
+
+  describe("plans", () => {
+    test("listPlans hits /plans and returns the plans key", async () => {
+      stub = stubFetch(() =>
+        okResponse({ data: { plans: [{ id: "p1", name: "Home" }], default_plan: null } }),
+      );
+      const res = await new YnabClient("tok").listPlans();
+      expect(stub.calls[0].url).toBe("https://api.ynab.com/v1/plans");
+      expect(res.data.plans[0].id).toBe("p1");
+    });
+
+    test("getPlan hits /plans/{id} and forwards last_knowledge_of_server", async () => {
+      stub = stubFetch(() =>
+        okResponse({ data: { plan: { id: "p1", name: "Home" }, server_knowledge: 7 } }),
+      );
+      const res = await new YnabClient("tok").getPlan("p1", 5);
+      expect(stub.calls[0].url).toBe(
+        "https://api.ynab.com/v1/plans/p1?last_knowledge_of_server=5",
+      );
+      expect(res.data.plan.name).toBe("Home");
+    });
+
+    test("accepts YNAB's last-used plan alias verbatim", async () => {
+      stub = stubFetch(() => okResponse({ data: { accounts: [] } }));
+      await new YnabClient("tok").listAccounts("last-used");
+      expect(stub.calls[0].url).toBe(
+        "https://api.ynab.com/v1/plans/last-used/accounts",
+      );
+    });
+  });
+
+  describe("transaction listings", () => {
+    // YNAB v1.85 defaults since_date to one year ago when omitted, so the
+    // client must always send an explicit lower bound.
+    test("listTransactions sends since_date=ALL_TIME when none is given", async () => {
+      stub = stubFetch(() => okResponse({ data: { transactions: [] } }));
+      await new YnabClient("tok").listTransactions("p1", { type: "unapproved" });
+      const url = new URL(stub.calls[0].url);
+      expect(url.pathname).toBe("/v1/plans/p1/transactions");
+      expect(url.searchParams.get("since_date")).toBe(ALL_TIME);
+      expect(url.searchParams.get("type")).toBe("unapproved");
+    });
+
+    test("listTransactions forwards since_date and until_date", async () => {
+      stub = stubFetch(() => okResponse({ data: { transactions: [] } }));
+      await new YnabClient("tok").listTransactions("p1", {
+        sinceDate: "2026-01-01",
+        untilDate: "2026-01-31",
+      });
+      const url = new URL(stub.calls[0].url);
+      expect(url.searchParams.get("since_date")).toBe("2026-01-01");
+      expect(url.searchParams.get("until_date")).toBe("2026-01-31");
+    });
+
+    test("listAccountTransactions sends since_date=ALL_TIME by default", async () => {
+      stub = stubFetch(() => okResponse({ data: { transactions: [] } }));
+      await new YnabClient("tok").listAccountTransactions("p1", "a1");
+      const url = new URL(stub.calls[0].url);
+      expect(url.pathname).toBe("/v1/plans/p1/accounts/a1/transactions");
+      expect(url.searchParams.get("since_date")).toBe(ALL_TIME);
     });
   });
 
@@ -162,26 +224,11 @@ describe("YnabClient", () => {
       });
     });
 
-    test("refreshes the token on 401 and retries once", async () => {
-      let firstCall = true;
-      stub = stubFetch(() => {
-        if (firstCall) {
-          firstCall = false;
-          return errResponse(401, "expired");
-        }
-        return okResponse({ data: { payees: [] } });
-      });
-      const refresh = vi.fn().mockResolvedValue("new-tok");
-      const client = new YnabClient("old-tok", refresh);
-      await client.listPayees("bud-1");
-
-      expect(refresh).toHaveBeenCalledTimes(1);
-      expect(stub.calls).toHaveLength(2);
-      const [first, second] = stub.calls;
-      expect((first.init.headers as Record<string, string>)["Authorization"])
-        .toBe("Bearer old-tok");
-      expect((second.init.headers as Record<string, string>)["Authorization"])
-        .toBe("Bearer new-tok");
+    test("does not retry on 401 — token rotation lives in the OAuth layer", async () => {
+      stub = stubFetch(() => errResponse(401, "expired"));
+      const client = new YnabClient("old-tok");
+      await expect(client.listPayees("bud-1")).rejects.toMatchObject({ status: 401 });
+      expect(stub.calls).toHaveLength(1);
     });
   });
 });

@@ -1,5 +1,6 @@
 import { z } from "zod";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { planIdParam } from "../schemas";
+import type { McpServer } from "@modelcontextprotocol/server";
 import type { Payee, YnabClient } from "../ynab";
 import { result, handleError } from "../format";
 
@@ -87,15 +88,15 @@ export const registerSearchPayees = (
       description: DESCRIPTION,
       annotations: { readOnlyHint: true, openWorldHint: true },
       inputSchema: {
-        budget_id: z.string(),
+        plan_id: planIdParam,
         query: z.string(),
         limit: z.number().int().min(1).max(50).optional().default(20),
       },
       outputSchema: PayeeSearchResultSchema.shape,
     },
-    async ({ budget_id, query, limit }) => {
+    async ({ plan_id, query, limit }) => {
       try {
-        const { data } = await getClient().listPayees(budget_id);
+        const { data } = await getClient().listPayees(plan_id);
         const searchResult = computePayeeSearch(data.payees, query, limit);
         return result(renderPayeeSearch(searchResult, query), searchResult);
       } catch (e) {

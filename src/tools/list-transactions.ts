@@ -1,5 +1,6 @@
 import { z } from "zod";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { planIdParam } from "../schemas";
+import type { McpServer } from "@modelcontextprotocol/server";
 import type { Transaction, YnabClient } from "../ynab";
 import { result, handleError, fmtTxLine } from "../format";
 
@@ -51,7 +52,7 @@ export type TransactionList = z.infer<typeof TransactionListSchema>;
 export interface ComputeOpts {
   limit: number;
   // Currency code for the structured payload. Optional for callers (tests)
-  // that don't care; the handler always passes the budget's real code.
+  // that don't care; the handler always passes the plan's real code.
   iso?: string;
 }
 
@@ -84,7 +85,14 @@ export const renderTransactionList = (
 // ---- MCP tool registration
 
 const DESCRIPTION =
-  "List transactions in a budget. Optionally filter by since_date (YYYY-MM-DD) and/or type ('uncategorized' or 'unapproved').";
+  "List transactions in a plan, most recent first. Optionally bound the date " +
+  "range with since_date and/or until_date (YYYY-MM-DD, inclusive) and filter " +
+  "by type ('uncategorized' or 'unapproved'). Without since_date, searches " +
+  "the plan's full history.";
+
+const isoDate = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, { message: "date must be YYYY-MM-DD" });
 
 export const registerListTransactions = (
   server: McpServer,
@@ -97,20 +105,25 @@ export const registerListTransactions = (
       description: DESCRIPTION,
       annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
-        budget_id: z.string(),
-        since_date: z.string().optional(),
+        plan_id: planIdParam,
+        since_date: isoDate.optional(),
+        until_date: isoDate.optional(),
         type: z.enum(["uncategorized", "unapproved"]).optional(),
         limit: z.number().int().positive().max(500).optional().default(100),
         include_ids: z.boolean().optional().default(false),
       },
       outputSchema: TransactionListSchema.shape,
     },
-    async ({ budget_id, since_date, type, limit, include_ids }) => {
+    async ({ plan_id, since_date, until_date, type, limit, include_ids }) => {
       try {
         const c = getClient();
         const [{ data }, settingsRes] = await Promise.all([
-          c.listTransactions(budget_id, { sinceDate: since_date, type }),
-          c.getBudgetSettings(budget_id),
+          c.listTransactions(plan_id, {
+            sinceDate: since_date,
+            untilDate: until_date,
+            type,
+          }),
+          c.getPlanSettings(plan_id),
         ]);
         const iso =
           settingsRes.data.settings.currency_format?.iso_code ?? "USD";

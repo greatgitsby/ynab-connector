@@ -44,6 +44,7 @@ describe("scopeDeniedError", () => {
 describe("handleError", () => {
   test("formats YnabError with status and body", () => {
     const result = handleError(new YnabError(404, "Not found"));
+    expect(result.isError).toBe(true);
     expect(result.content[0].text).toBe("YNAB error 404: Not found");
   });
 

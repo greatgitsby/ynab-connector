@@ -7,7 +7,7 @@ import {
 } from "../ynab";
 import {
   applyReconcile,
-  computeReconcilePlan,
+  computeReconciliation,
   renderReconcile,
 } from "./reconcile-account";
 
@@ -41,9 +41,9 @@ const tx = (over: Partial<Transaction> & { id: string }): Transaction =>
     ...over,
   }) as Transaction;
 
-describe("computeReconcilePlan", () => {
+describe("computeReconciliation", () => {
   test("verified + matching: only cleared (non-reconciled) txns are lockable", () => {
-    const plan = computeReconcilePlan(
+    const reconciliation = computeReconciliation(
       account({ cleared_balance: 950_000 }),
       [
         tx({ id: "c1", cleared: "cleared" }),
@@ -53,26 +53,26 @@ describe("computeReconcilePlan", () => {
       ],
       950_000,
     );
-    expect(plan.verified).toBe(true);
-    expect(plan.matches).toBe(true);
-    expect(plan.delta).toBe(0);
-    expect(plan.toReconcile.map((t) => t.id)).toEqual(["c1", "c2"]);
-    expect(plan.uncleared.map((t) => t.id)).toEqual(["u1"]);
+    expect(reconciliation.verified).toBe(true);
+    expect(reconciliation.matches).toBe(true);
+    expect(reconciliation.delta).toBe(0);
+    expect(reconciliation.toReconcile.map((t) => t.id)).toEqual(["c1", "c2"]);
+    expect(reconciliation.uncleared.map((t) => t.id)).toEqual(["u1"]);
   });
 
   test("mismatch: matches=false, signed delta, uncleared listed", () => {
-    const plan = computeReconcilePlan(
+    const reconciliation = computeReconciliation(
       account({ cleared_balance: 950_000 }),
       [tx({ id: "u1", cleared: "uncleared" })],
       900_000,
     );
-    expect(plan.matches).toBe(false);
-    expect(plan.delta).toBe(-50_000); // statement - cleared
-    expect(plan.uncleared.map((t) => t.id)).toEqual(["u1"]);
+    expect(reconciliation.matches).toBe(false);
+    expect(reconciliation.delta).toBe(-50_000); // statement - cleared
+    expect(reconciliation.uncleared.map((t) => t.id)).toEqual(["u1"]);
   });
 
   test("unapproved and uncategorized txns block; transfers and splits don't", () => {
-    const plan = computeReconcilePlan(
+    const reconciliation = computeReconciliation(
       account({}),
       [
         tx({ id: "unappr", approved: false }),
@@ -99,9 +99,9 @@ describe("computeReconcilePlan", () => {
       ],
       950_000,
     );
-    expect(plan.verified).toBe(false);
+    expect(reconciliation.verified).toBe(false);
     expect(
-      plan.unverified.map((u) => [u.tx.id, u.reason]),
+      reconciliation.unverified.map((u) => [u.tx.id, u.reason]),
     ).toEqual([
       ["unappr", "unapproved"],
       ["uncat", "uncategorized"],
@@ -109,7 +109,7 @@ describe("computeReconcilePlan", () => {
   });
 
   test("already-reconciled and deleted rows are ignored for verification", () => {
-    const plan = computeReconcilePlan(
+    const reconciliation = computeReconciliation(
       account({}),
       [
         tx({ id: "r1", cleared: "reconciled", approved: false }),
@@ -117,12 +117,12 @@ describe("computeReconcilePlan", () => {
       ],
       950_000,
     );
-    expect(plan.verified).toBe(true);
-    expect(plan.toReconcile).toHaveLength(0);
+    expect(reconciliation.verified).toBe(true);
+    expect(reconciliation.toReconcile).toHaveLength(0);
   });
 
   test("surfaces link-health fields from the account", () => {
-    const plan = computeReconcilePlan(
+    const reconciliation = computeReconciliation(
       account({
         direct_import_linked: true,
         direct_import_in_error: true,
@@ -131,9 +131,9 @@ describe("computeReconcilePlan", () => {
       [],
       950_000,
     );
-    expect(plan.directImportLinked).toBe(true);
-    expect(plan.directImportInError).toBe(true);
-    expect(plan.lastReconciledAt).toBe("2026-04-30T00:00:00+00:00");
+    expect(reconciliation.directImportLinked).toBe(true);
+    expect(reconciliation.directImportInError).toBe(true);
+    expect(reconciliation.lastReconciledAt).toBe("2026-04-30T00:00:00+00:00");
   });
 });
 
@@ -146,7 +146,7 @@ describe("applyReconcile", () => {
   } => {
     const bodies: unknown[] = [];
     const updateTransactionsBulk = vi.fn(
-      async (_budgetId: string, body: unknown) => {
+      async (_planId: string, body: unknown) => {
         bodies.push(body);
         const r = responder(body);
         if (r instanceof YnabError) throw r;
@@ -168,13 +168,13 @@ describe("applyReconcile", () => {
       tx({ id: "c1", cleared: "reconciled" }),
       tx({ id: "c2", cleared: "reconciled" }),
     ]);
-    const plan = computeReconcilePlan(
+    const reconciliation = computeReconciliation(
       account({ cleared_balance: 950_000 }),
       [tx({ id: "c1" }), tx({ id: "c2" })],
       950_000,
     );
 
-    const out = await applyReconcile(client as YnabClient, "bud-1", plan);
+    const out = await applyReconcile(client as YnabClient, "bud-1", reconciliation);
 
     expect(bodies).toHaveLength(1);
     expect(bodies[0]).toEqual({
@@ -188,13 +188,13 @@ describe("applyReconcile", () => {
 
   test("mismatch: no YNAB call, nothing locked", async () => {
     const { client, bodies } = stub(() => []);
-    const plan = computeReconcilePlan(
+    const reconciliation = computeReconciliation(
       account({ cleared_balance: 950_000 }),
       [tx({ id: "c1" })],
       900_000, // mismatch
     );
 
-    const out = await applyReconcile(client as YnabClient, "bud-1", plan);
+    const out = await applyReconcile(client as YnabClient, "bud-1", reconciliation);
 
     expect(bodies).toHaveLength(0);
     expect(out.locked).toHaveLength(0);
@@ -202,14 +202,14 @@ describe("applyReconcile", () => {
 
   test("unverified: no YNAB call even when the balance would match", async () => {
     const { client, bodies } = stub(() => []);
-    const plan = computeReconcilePlan(
+    const reconciliation = computeReconciliation(
       account({ cleared_balance: 950_000 }),
       [tx({ id: "c1", approved: false })], // unverified
       950_000, // would match
     );
-    expect(plan.matches).toBe(true);
+    expect(reconciliation.matches).toBe(true);
 
-    const out = await applyReconcile(client as YnabClient, "bud-1", plan);
+    const out = await applyReconcile(client as YnabClient, "bud-1", reconciliation);
 
     expect(bodies).toHaveLength(0);
     expect(out.locked).toHaveLength(0);
@@ -217,13 +217,13 @@ describe("applyReconcile", () => {
 
   test("nothing to lock: no YNAB call", async () => {
     const { client, bodies } = stub(() => []);
-    const plan = computeReconcilePlan(
+    const reconciliation = computeReconciliation(
       account({ cleared_balance: 950_000 }),
       [tx({ id: "u1", cleared: "uncleared" })],
       950_000,
     );
 
-    const out = await applyReconcile(client as YnabClient, "bud-1", plan);
+    const out = await applyReconcile(client as YnabClient, "bud-1", reconciliation);
 
     expect(bodies).toHaveLength(0);
     expect(out.locked).toHaveLength(0);
@@ -231,13 +231,13 @@ describe("applyReconcile", () => {
 
   test("whole-batch YnabError surfaces as per-item errors", async () => {
     const { client } = stub(() => new YnabError(401, "expired"));
-    const plan = computeReconcilePlan(
+    const reconciliation = computeReconciliation(
       account({ cleared_balance: 950_000 }),
       [tx({ id: "c1" }), tx({ id: "c2" })],
       950_000,
     );
 
-    const out = await applyReconcile(client as YnabClient, "bud-1", plan);
+    const out = await applyReconcile(client as YnabClient, "bud-1", reconciliation);
 
     expect(out.locked.map((r) => r.ok)).toEqual([false, false]);
     if (!out.locked[0].ok) {
@@ -247,53 +247,53 @@ describe("applyReconcile", () => {
 });
 
 describe("renderReconcile", () => {
-  const planFor = (
+  const reconciliationFor = (
     acc: Partial<Account>,
     txns: Transaction[],
     statement: number,
-  ) => computeReconcilePlan(account(acc), txns, statement);
+  ) => computeReconciliation(account(acc), txns, statement);
 
   test("blocked branch lists offenders with reasons", () => {
-    const plan = planFor({}, [
+    const reconciliation = reconciliationFor({}, [
       tx({ id: "unappr", approved: false }),
       tx({ id: "uncat", category_id: null }),
     ], 950_000);
-    const out = renderReconcile({ plan, locked: [] });
+    const out = renderReconcile({ reconciliation, locked: [] });
     expect(out).toContain("Cannot reconcile Checking — 2 transactions need review");
     expect(out).toContain("[unapproved]");
     expect(out).toContain("[uncategorized]");
   });
 
   test("mismatch branch shows the delta and balances", () => {
-    const plan = planFor(
+    const reconciliation = reconciliationFor(
       { cleared_balance: 950_000 },
       [tx({ id: "u1", cleared: "uncleared" })],
       900_000,
     );
-    const out = renderReconcile({ plan, locked: [] });
+    const out = renderReconcile({ reconciliation, locked: [] });
     expect(out).toContain("off by -$50.00");
     expect(out).toContain("Statement balance: $900.00");
     expect(out).toContain("YNAB cleared balance: $950.00");
   });
 
   test("already-reconciled branch when verified+match but nothing to lock", () => {
-    const plan = planFor(
+    const reconciliation = reconciliationFor(
       { cleared_balance: 950_000 },
       [tx({ id: "u1", cleared: "uncleared" })],
       950_000,
     );
-    const out = renderReconcile({ plan, locked: [] });
+    const out = renderReconcile({ reconciliation, locked: [] });
     expect(out).toContain("already reconciled — nothing to lock");
   });
 
   test("locked branch reports count and per-item lines", () => {
-    const plan = planFor(
+    const reconciliation = reconciliationFor(
       { cleared_balance: 950_000 },
       [tx({ id: "c1" })],
       950_000,
     );
     const out = renderReconcile({
-      plan,
+      reconciliation,
       locked: [
         { ok: true, transaction_id: "c1", transaction: tx({ id: "c1", cleared: "reconciled" }) },
       ],
@@ -303,7 +303,7 @@ describe("renderReconcile", () => {
   });
 
   test("health header reflects link status", () => {
-    const plan = planFor(
+    const reconciliation = reconciliationFor(
       {
         direct_import_linked: true,
         last_reconciled_at: "2026-04-30T00:00:00+00:00",
@@ -311,7 +311,7 @@ describe("renderReconcile", () => {
       [],
       950_000,
     );
-    const out = renderReconcile({ plan, locked: [] });
+    const out = renderReconcile({ reconciliation, locked: [] });
     expect(out).toContain("Account: Checking — linked ✓, last reconciled 2026-04-30");
   });
 });

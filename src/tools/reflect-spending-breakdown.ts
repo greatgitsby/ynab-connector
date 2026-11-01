@@ -1,7 +1,8 @@
 import { z } from "zod";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { planIdParam } from "../schemas";
+import type { McpServer } from "@modelcontextprotocol/server";
 import type {
-  BudgetDetail,
+  PlanDetail,
   MonthDetail,
   Transaction,
   YnabClient,
@@ -148,7 +149,7 @@ export interface ComputeOpts {
   start: string;
   end: string;
   // Currency code for the structured payload. Optional for callers (tests)
-  // that don't care; the handler always passes the budget's real code.
+  // that don't care; the handler always passes the plan's real code.
   iso?: string;
 }
 
@@ -300,7 +301,7 @@ export const registerReflectSpendingBreakdown = (
       description: DESCRIPTION,
       annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
-        budget_id: z.string(),
+        plan_id: planIdParam,
         start_month: z
           .string()
           .optional()
@@ -316,7 +317,7 @@ export const registerReflectSpendingBreakdown = (
       },
       outputSchema: SpendingBreakdownSchema.shape,
     },
-    async ({ budget_id, start_month, end_month, include_ids }) => {
+    async ({ plan_id, start_month, end_month, include_ids }) => {
       try {
         const c = getClient();
         const start = resolveMonthSpec(start_month);
@@ -326,22 +327,22 @@ export const registerReflectSpendingBreakdown = (
             `Error: start_month (${start.slice(0, 7)}) is after end_month (${end.slice(0, 7)}).`,
           );
         }
-        const budgetRes = await c.getBudget(budget_id);
-        const budget: BudgetDetail = budgetRes.data.budget;
-        const monthsInRange = (budget.months ?? []).filter(
+        const planRes = await c.getPlan(plan_id);
+        const plan: PlanDetail = planRes.data.plan;
+        const monthsInRange = (plan.months ?? []).filter(
           (m) => m.month >= start && m.month <= end,
         );
         if (!monthsInRange.length) {
           return text(
-            `No month data in ${start.slice(0, 7)} to ${end.slice(0, 7)} (budget starts ${budget.first_month}).`,
+            `No month data in ${start.slice(0, 7)} to ${end.slice(0, 7)} (plan starts ${plan.first_month}).`,
           );
         }
         const endDate = monthEndDate(end);
-        const txRes = await c.listTransactions(budget_id, { sinceDate: start });
+        const txRes = await c.listTransactions(plan_id, { sinceDate: start });
         const txs = txRes.data.transactions.filter(
           (t) => t.date >= start && t.date <= endDate,
         );
-        const iso = budget.currency_format?.iso_code ?? "USD";
+        const iso = plan.currency_format?.iso_code ?? "USD";
         const breakdown = computeSpendingBreakdown(monthsInRange, txs, {
           start,
           end,

@@ -1,21 +1,21 @@
-import type { BudgetDetail, MonthDetail } from "./ynab";
+import type { PlanDetail, MonthDetail } from "./ynab";
 
 // Resolved window of months a Reflect tool operates over. Folds together the
 // "requested vs available" intersection and the truncation note that every
 // multi-month tool would otherwise compute and format itself.
 export interface MonthWindow {
   // Months requested by monthsBack, ending at the current calendar month,
-  // clamped to >= budget.first_month. Chronological (oldest first).
+  // clamped to >= plan.first_month. Chronological (oldest first).
   requested: string[];
-  // Subset of `requested` for which the Budget has a MonthDetail.
+  // Subset of `requested` for which the Plan has a MonthDetail.
   present: string[];
   // MonthDetail objects parallel to `present`.
   months: MonthDetail[];
-  // Indexed view of every MonthDetail in the Budget. Convenient for direct
+  // Indexed view of every MonthDetail in the Plan. Convenient for direct
   // lookups (e.g. age_of_money pulls the latest month).
   monthsByKey: Map<string, MonthDetail>;
   // Pre-formatted truncation message, or null when no truncation occurred.
-  // Example: "(Budget starts 2025-09-01; window truncated to 4 of 6 requested months.)"
+  // Example: "(Plan starts 2025-09-01; window truncated to 4 of 6 requested months.)"
   truncationNote: string | null;
 }
 
@@ -27,7 +27,7 @@ const addMonths = (year: number, month1: number, delta: number) => {
 // Builds an array of YYYY-MM-01 strings ending at the current calendar month,
 // length monthsBack, clamped to >= firstMonth. End is the current month (not
 // +1) because YNAB returns the current month with zeroed activity for
-// forward-looking budget rows we don't want to render.
+// forward-looking plan rows we don't want to render.
 const windowMonths = (monthsBack: number, firstMonth: string): string[] => {
   const today = new Date();
   const endY = today.getUTCFullYear();
@@ -43,17 +43,17 @@ const windowMonths = (monthsBack: number, firstMonth: string): string[] => {
 };
 
 export const resolveMonthWindow = (
-  budget: BudgetDetail,
+  plan: PlanDetail,
   monthsBack: number,
 ): MonthWindow => {
-  const allMonths = budget.months ?? [];
+  const allMonths = plan.months ?? [];
   const monthsByKey = new Map(allMonths.map((m) => [m.month, m]));
-  const requested = windowMonths(monthsBack, budget.first_month);
+  const requested = windowMonths(monthsBack, plan.first_month);
   const present = requested.filter((k) => monthsByKey.has(k));
   const months = present.map((k) => monthsByKey.get(k)!);
   const truncationNote =
     present.length < monthsBack
-      ? `(Budget starts ${budget.first_month}; window truncated to ${present.length} of ${monthsBack} requested months.)`
+      ? `(Plan starts ${plan.first_month}; window truncated to ${present.length} of ${monthsBack} requested months.)`
       : null;
   return { requested, present, months, monthsByKey, truncationNote };
 };

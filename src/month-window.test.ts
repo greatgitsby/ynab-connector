@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from "vitest";
-import type { BudgetDetail, MonthDetail } from "./ynab";
+import type { PlanDetail, MonthDetail } from "./ynab";
 import {
   resolveMonthWindow,
   resolveMonthSpec,
@@ -18,9 +18,9 @@ const month = (m: string, overrides: Partial<MonthDetail> = {}): MonthDetail => 
   ...overrides,
 });
 
-const budget = (overrides: Partial<BudgetDetail> = {}): BudgetDetail => ({
+const plan = (overrides: Partial<PlanDetail> = {}): PlanDetail => ({
   id: "b-1",
-  name: "Test Budget",
+  name: "Test Plan",
   last_modified_on: "2026-05-01",
   first_month: "2024-01-01",
   last_month: "2026-05-01",
@@ -77,8 +77,8 @@ describe("resolveMonthWindow", () => {
   });
   afterEach(() => vi.useRealTimers());
 
-  test("returns the requested span when the Budget has every month", () => {
-    const b = budget({
+  test("returns the requested span when the Plan has every month", () => {
+    const b = plan({
       first_month: "2024-01-01",
       months: [
         month("2026-03-01"),
@@ -93,8 +93,8 @@ describe("resolveMonthWindow", () => {
     expect(w.truncationNote).toBeNull();
   });
 
-  test("clamps to budget.first_month and emits a truncation note", () => {
-    const b = budget({
+  test("clamps to plan.first_month and emits a truncation note", () => {
+    const b = plan({
       first_month: "2026-04-01",
       months: [month("2026-04-01"), month("2026-05-01")],
     });
@@ -102,12 +102,12 @@ describe("resolveMonthWindow", () => {
     expect(w.requested).toEqual(["2026-04-01", "2026-05-01"]);
     expect(w.present).toEqual(["2026-04-01", "2026-05-01"]);
     expect(w.truncationNote).toBe(
-      "(Budget starts 2026-04-01; window truncated to 2 of 6 requested months.)",
+      "(Plan starts 2026-04-01; window truncated to 2 of 6 requested months.)",
     );
   });
 
   test("present is a subset when a requested month is missing", () => {
-    const b = budget({
+    const b = plan({
       first_month: "2024-01-01",
       // 2026-04 is missing.
       months: [month("2026-03-01"), month("2026-05-01")],
@@ -117,12 +117,12 @@ describe("resolveMonthWindow", () => {
     expect(w.present).toEqual(["2026-03-01", "2026-05-01"]);
     expect(w.months).toHaveLength(2);
     expect(w.truncationNote).toBe(
-      "(Budget starts 2024-01-01; window truncated to 2 of 3 requested months.)",
+      "(Plan starts 2024-01-01; window truncated to 2 of 3 requested months.)",
     );
   });
 
   test("indexes every MonthDetail in monthsByKey, not just the window", () => {
-    const b = budget({
+    const b = plan({
       months: [
         month("2025-12-01"),
         month("2026-03-01"),

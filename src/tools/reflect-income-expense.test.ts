@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from "vitest";
 import type {
-  BudgetDetail,
+  PlanDetail,
   Category,
   CategoryGroup,
   MonthDetail,
@@ -61,11 +61,11 @@ const tx = (overrides: Partial<Transaction>): Transaction => ({
   ...overrides,
 });
 
-// A budget with three months (March/April/May 2026), two visible groups
+// A plan with three months (March/April/May 2026), two visible groups
 // ("Monthly Bills" and "Fun"), one hidden group ("Old Stuff"), an Inflow:RTA
 // category, and an Uncategorized internal category.
-const fixtureBudget = (): BudgetDetail => ({
-  id: "budget-1",
+const fixturePlan = (): PlanDetail => ({
+  id: "plan-1",
   name: "Test Plan",
   last_modified_on: "2026-05-01",
   first_month: "2025-01-01",
@@ -229,7 +229,7 @@ afterEach(() => vi.useRealTimers());
 
 describe("computeIncomeExpensePivot", () => {
   test("aggregates income by payee, sorted by total desc", () => {
-    const r = computeIncomeExpensePivot(fixtureBudget(), fixtureTxs(), {
+    const r = computeIncomeExpensePivot(fixturePlan(), fixtureTxs(), {
       monthsBack: 3,
     });
     expect(r.income.rows).toHaveLength(2);
@@ -241,7 +241,7 @@ describe("computeIncomeExpensePivot", () => {
   });
 
   test("monthly income totals sum across payees", () => {
-    const r = computeIncomeExpensePivot(fixtureBudget(), fixtureTxs(), {
+    const r = computeIncomeExpensePivot(fixturePlan(), fixtureTxs(), {
       monthsBack: 3,
     });
     expect(r.income.monthly["2026-03-01"]).toBe(5_000_000);
@@ -250,7 +250,7 @@ describe("computeIncomeExpensePivot", () => {
   });
 
   test("hoists internal Uncategorized as a separate row, only when it has activity", () => {
-    const r = computeIncomeExpensePivot(fixtureBudget(), fixtureTxs(), {
+    const r = computeIncomeExpensePivot(fixturePlan(), fixtureTxs(), {
       monthsBack: 3,
     });
     expect(r.uncategorized).not.toBeNull();
@@ -262,15 +262,15 @@ describe("computeIncomeExpensePivot", () => {
   });
 
   test("drops hidden groups", () => {
-    const r = computeIncomeExpensePivot(fixtureBudget(), fixtureTxs(), {
+    const r = computeIncomeExpensePivot(fixturePlan(), fixtureTxs(), {
       monthsBack: 3,
     });
     const names = r.groups.map((g) => g.name);
     expect(names).not.toContain("Old Stuff");
   });
 
-  test("groups expense rows by category_group, in budget order, most-negative first", () => {
-    const r = computeIncomeExpensePivot(fixtureBudget(), fixtureTxs(), {
+  test("groups expense rows by category_group, in plan order, most-negative first", () => {
+    const r = computeIncomeExpensePivot(fixturePlan(), fixtureTxs(), {
       monthsBack: 3,
     });
     expect(r.groups.map((g) => g.name)).toEqual(["Monthly Bills", "Fun"]);
@@ -280,7 +280,7 @@ describe("computeIncomeExpensePivot", () => {
   });
 
   test("group monthly totals sum the rows", () => {
-    const r = computeIncomeExpensePivot(fixtureBudget(), fixtureTxs(), {
+    const r = computeIncomeExpensePivot(fixturePlan(), fixtureTxs(), {
       monthsBack: 3,
     });
     const bills = r.groups[0];
@@ -289,7 +289,7 @@ describe("computeIncomeExpensePivot", () => {
   });
 
   test("totals.expense includes Uncategorized + every group", () => {
-    const r = computeIncomeExpensePivot(fixtureBudget(), fixtureTxs(), {
+    const r = computeIncomeExpensePivot(fixturePlan(), fixtureTxs(), {
       monthsBack: 3,
     });
     // March expense = -2,000,000 (rent) - 300,000 (groceries) - 50,000 (games) - 25,000 (uncat) = -2,375,000.
@@ -297,7 +297,7 @@ describe("computeIncomeExpensePivot", () => {
   });
 
   test("totals.net is income + expense per month (expense already negative)", () => {
-    const r = computeIncomeExpensePivot(fixtureBudget(), fixtureTxs(), {
+    const r = computeIncomeExpensePivot(fixturePlan(), fixtureTxs(), {
       monthsBack: 3,
     });
     expect(r.totals.net["2026-03-01"]).toBe(5_000_000 - 2_375_000);
@@ -305,19 +305,19 @@ describe("computeIncomeExpensePivot", () => {
   });
 
   test("excludes Inflow:RTA from expense rows", () => {
-    const r = computeIncomeExpensePivot(fixtureBudget(), fixtureTxs(), {
+    const r = computeIncomeExpensePivot(fixturePlan(), fixtureTxs(), {
       monthsBack: 3,
     });
     const allLabels = r.groups.flatMap((g) => g.rows.map((row) => row.label));
     expect(allLabels).not.toContain("Inflow: Ready to Assign");
   });
 
-  test("emits a truncation note when the budget is younger than the window", () => {
-    const b = fixtureBudget();
+  test("emits a truncation note when the plan is younger than the window", () => {
+    const b = fixturePlan();
     b.first_month = "2026-03-01";
     const r = computeIncomeExpensePivot(b, fixtureTxs(), { monthsBack: 6 });
     expect(r.truncationNote).toBe(
-      "(Budget starts 2026-03-01; window truncated to 3 of 6 requested months.)",
+      "(Plan starts 2026-03-01; window truncated to 3 of 6 requested months.)",
     );
   });
 
@@ -353,7 +353,7 @@ describe("computeIncomeExpensePivot", () => {
         ],
       }),
     ];
-    const r = computeIncomeExpensePivot(fixtureBudget(), txs, {
+    const r = computeIncomeExpensePivot(fixturePlan(), txs, {
       monthsBack: 3,
     });
     const labels = r.income.rows.map((row) => row.label);
@@ -362,7 +362,7 @@ describe("computeIncomeExpensePivot", () => {
   });
 
   test("result conforms to IncomeExpensePivotSchema", () => {
-    const r = computeIncomeExpensePivot(fixtureBudget(), fixtureTxs(), {
+    const r = computeIncomeExpensePivot(fixturePlan(), fixtureTxs(), {
       monthsBack: 3,
     });
     expect(() => IncomeExpensePivotSchema.parse(r)).not.toThrow();
@@ -370,8 +370,8 @@ describe("computeIncomeExpensePivot", () => {
 });
 
 describe("renderIncomeExpensePivot", () => {
-  test("includes the budget name, range header, and net income row", () => {
-    const pivot = computeIncomeExpensePivot(fixtureBudget(), fixtureTxs(), {
+  test("includes the plan name, range header, and net income row", () => {
+    const pivot = computeIncomeExpensePivot(fixturePlan(), fixtureTxs(), {
       monthsBack: 3,
     });
     const out = renderIncomeExpensePivot(pivot, { includeIds: false });
@@ -383,7 +383,7 @@ describe("renderIncomeExpensePivot", () => {
   });
 
   test("includes ids when includeIds is true", () => {
-    const pivot = computeIncomeExpensePivot(fixtureBudget(), fixtureTxs(), {
+    const pivot = computeIncomeExpensePivot(fixturePlan(), fixtureTxs(), {
       monthsBack: 3,
     });
     const out = renderIncomeExpensePivot(pivot, { includeIds: true });
@@ -392,7 +392,7 @@ describe("renderIncomeExpensePivot", () => {
   });
 
   test("includes the truncation note in the rendered output", () => {
-    const b = fixtureBudget();
+    const b = fixturePlan();
     b.first_month = "2026-03-01";
     const pivot = computeIncomeExpensePivot(b, fixtureTxs(), { monthsBack: 6 });
     const out = renderIncomeExpensePivot(pivot, { includeIds: false });

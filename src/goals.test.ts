@@ -1,4 +1,4 @@
-import { describe, test, expect } from "vitest";
+import { describe, test, expect, beforeAll, afterAll, vi } from "vitest";
 import type { Category } from "./ynab";
 import { interpretGoal, fmtGoalSuffix } from "./goals";
 
@@ -11,6 +11,16 @@ const cat = (overrides: Partial<Category>): Category => ({
   activity: 0,
   balance: 0,
   ...overrides,
+});
+
+// nextGoalDate rolls recurring goals forward past "today", so pin the clock to
+// a date consistent with the fixtures' refMonth (2026-05).
+beforeAll(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-05-15T12:00:00Z"));
+});
+afterAll(() => {
+  vi.useRealTimers();
 });
 
 describe("interpretGoal", () => {
@@ -126,6 +136,37 @@ describe("interpretGoal", () => {
     );
     expect(view?.underfundedThisMonth).toBe(0);
     expect(view?.label).not.toContain("needs");
+  });
+});
+
+describe("snoozed goals", () => {
+  test("a goal snoozed during the reference month is flagged and labelled", () => {
+    const view = interpretGoal(
+      cat({
+        goal_type: "NEED",
+        goal_target: 100_000,
+        goal_under_funded: 40_000,
+        goal_snoozed_at: "2026-05-03T10:00:00Z",
+      }),
+      "2026-05-01",
+    );
+    expect(view?.snoozed).toBe(true);
+    expect(view?.label).toContain("snoozed this month");
+    // YNAB's own underfunded figure is passed through untouched.
+    expect(view?.underfundedThisMonth).toBe(40_000);
+  });
+
+  test("a snooze from an earlier month doesn't carry over", () => {
+    const view = interpretGoal(
+      cat({
+        goal_type: "NEED",
+        goal_target: 100_000,
+        goal_snoozed_at: "2026-04-20T10:00:00Z",
+      }),
+      "2026-05-01",
+    );
+    expect(view?.snoozed).toBe(false);
+    expect(view?.label).not.toContain("snoozed");
   });
 });
 

@@ -1,8 +1,9 @@
 import { z } from "zod";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { planIdParam } from "../schemas";
+import type { McpServer } from "@modelcontextprotocol/server";
 import type {
   Account,
-  BudgetDetail,
+  PlanDetail,
   Transaction,
   YnabClient,
 } from "../ynab";
@@ -52,7 +53,7 @@ const AccountSchema = z.object({
 });
 
 export const NetWorthReportSchema = z.object({
-  budgetName: z.string(),
+  planName: z.string(),
   iso: z.string(),
   requested: z.array(z.string()),
   current: NetWorthSnapshotSchema,
@@ -109,13 +110,13 @@ export interface ComputeOpts {
 }
 
 export const computeNetWorth = (
-  budget: BudgetDetail,
+  plan: PlanDetail,
   transactions: Transaction[],
   opts: ComputeOpts,
 ): NetWorthReport => {
-  const iso = budget.currency_format?.iso_code ?? "USD";
-  const accounts = budget.accounts ?? [];
-  const requested = resolveMonthWindow(budget, opts.monthsBack).requested;
+  const iso = plan.currency_format?.iso_code ?? "USD";
+  const accounts = plan.accounts ?? [];
+  const requested = resolveMonthWindow(plan, opts.monthsBack).requested;
   const snapshots = historicalNetWorth(accounts, transactions, requested);
 
   const open = accounts.filter((a) => !a.closed && !a.deleted);
@@ -146,7 +147,7 @@ export const computeNetWorth = (
   }
 
   return {
-    budgetName: budget.name,
+    planName: plan.name,
     iso,
     requested,
     current: {
@@ -173,13 +174,13 @@ export const renderNetWorth = (
   report: NetWorthReport,
   opts: RenderOpts,
 ): string => {
-  const { requested, iso, budgetName, current, history, openAccounts } = report;
+  const { requested, iso, planName, current, history, openAccounts } = report;
   const out: string[] = [];
 
   const winStart = requested[0] ?? "(none)";
   const winEnd = requested[requested.length - 1] ?? "(none)";
   out.push(
-    `Net Worth: ${budgetName} — last ${requested.length} months (${winStart.slice(0, 7)} to ${winEnd.slice(0, 7)})`,
+    `Net Worth: ${planName} — last ${requested.length} months (${winStart.slice(0, 7)} to ${winEnd.slice(0, 7)})`,
   );
   out.push("");
 
@@ -252,7 +253,7 @@ export const registerReflectNetWorth = (
       description: DESCRIPTION,
       annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
-        budget_id: z.string(),
+        plan_id: planIdParam,
         months_back: z
           .number()
           .int()
@@ -264,15 +265,15 @@ export const registerReflectNetWorth = (
       },
       outputSchema: NetWorthReportSchema.shape,
     },
-    async ({ budget_id, months_back, include_ids }) => {
+    async ({ plan_id, months_back, include_ids }) => {
       try {
         const c = getClient();
-        const budgetRes = await c.getBudget(budget_id);
-        const budget = budgetRes.data.budget;
-        const requested = resolveMonthWindow(budget, months_back).requested;
-        const sinceDate = requested[0] ?? budget.first_month;
-        const txRes = await c.listTransactions(budget_id, { sinceDate });
-        const report = computeNetWorth(budget, txRes.data.transactions, {
+        const planRes = await c.getPlan(plan_id);
+        const plan = planRes.data.plan;
+        const requested = resolveMonthWindow(plan, months_back).requested;
+        const sinceDate = requested[0] ?? plan.first_month;
+        const txRes = await c.listTransactions(plan_id, { sinceDate });
+        const report = computeNetWorth(plan, txRes.data.transactions, {
           monthsBack: months_back,
         });
         return result(

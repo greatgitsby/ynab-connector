@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from "vitest";
-import type { BudgetDetail, MonthDetail } from "../ynab";
+import type { PlanDetail, MonthDetail } from "../ynab";
 import {
   computeAgeOfMoneyTrend,
   renderAgeOfMoneyTrend,
@@ -16,7 +16,7 @@ const month = (m: string, aom: number | null): MonthDetail => ({
   categories: [],
 });
 
-const budget = (months: MonthDetail[]): BudgetDetail => ({
+const plan = (months: MonthDetail[]): PlanDetail => ({
   id: "b-1",
   name: "Test Plan",
   last_modified_on: "2026-05-01",
@@ -33,7 +33,7 @@ afterEach(() => vi.useRealTimers());
 
 describe("computeAgeOfMoneyTrend", () => {
   test("history entries match the window with per-month status", () => {
-    const b = budget([
+    const b = plan([
       month("2026-01-01", 12),
       month("2026-02-01", null), // n/a
       month("2026-03-01", 18),
@@ -45,7 +45,7 @@ describe("computeAgeOfMoneyTrend", () => {
   });
 
   test("missing month surfaces as 'no_data'", () => {
-    const b = budget([
+    const b = plan([
       month("2026-04-01", 21),
       month("2026-05-01", 25),
       // March missing.
@@ -56,13 +56,13 @@ describe("computeAgeOfMoneyTrend", () => {
   });
 
   test("current reads the latest month's age_of_money", () => {
-    const b = budget([month("2026-05-01", 25)]);
+    const b = plan([month("2026-05-01", 25)]);
     const r = computeAgeOfMoneyTrend(b, { monthsBack: 1 });
     expect(r.current).toBe(25);
   });
 
   test("average is over reported months only", () => {
-    const b = budget([
+    const b = plan([
       month("2026-04-01", 20),
       month("2026-05-01", 30),
     ]);
@@ -71,7 +71,7 @@ describe("computeAgeOfMoneyTrend", () => {
   });
 
   test("delta is last - first across reported months", () => {
-    const b = budget([
+    const b = plan([
       month("2026-04-01", 20),
       month("2026-05-01", 30),
     ]);
@@ -80,19 +80,19 @@ describe("computeAgeOfMoneyTrend", () => {
   });
 
   test("delta is null when only one reported month", () => {
-    const b = budget([month("2026-05-01", 30)]);
+    const b = plan([month("2026-05-01", 30)]);
     const r = computeAgeOfMoneyTrend(b, { monthsBack: 1 });
     expect(r.delta).toBeNull();
   });
 
   test("average is null when no months report age_of_money", () => {
-    const b = budget([month("2026-05-01", null)]);
+    const b = plan([month("2026-05-01", null)]);
     const r = computeAgeOfMoneyTrend(b, { monthsBack: 1 });
     expect(r.average).toBeNull();
   });
 
   test("compute output conforms to the declared outputSchema", () => {
-    const b = budget([
+    const b = plan([
       month("2026-01-01", 12),
       month("2026-02-01", null),
       month("2026-03-01", 18),
@@ -106,7 +106,7 @@ describe("computeAgeOfMoneyTrend", () => {
 
 describe("renderAgeOfMoneyTrend", () => {
   test("renders Current, monthly lines, Average, and Trend", () => {
-    const b = budget([
+    const b = plan([
       month("2026-04-01", 20),
       month("2026-05-01", 30),
     ]);
@@ -120,7 +120,7 @@ describe("renderAgeOfMoneyTrend", () => {
   });
 
   test("falls back to '(age of money not yet available)' when none reported", () => {
-    const b = budget([month("2026-05-01", null)]);
+    const b = plan([month("2026-05-01", null)]);
     const out = renderAgeOfMoneyTrend(
       computeAgeOfMoneyTrend(b, { monthsBack: 1 }),
     );

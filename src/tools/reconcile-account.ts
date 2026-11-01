@@ -1,5 +1,6 @@
 import { z } from "zod";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { planIdParam } from "../schemas";
+import type { McpServer } from "@modelcontextprotocol/server";
 import type { Account, Transaction, YnabClient } from "../ynab";
 import { YnabError } from "../ynab";
 import { isTransferTx } from "../predicates";
@@ -21,7 +22,7 @@ export interface Unverified {
   reason: "unapproved" | "uncategorized";
 }
 
-export interface ReconcilePlan {
+export interface Reconciliation {
   accountId: string;
   accountName: string;
   // Link-health fields surfaced from the account (see CONTEXT.md note: YNAB's
@@ -40,7 +41,7 @@ export interface ReconcilePlan {
 }
 
 export interface ReconcileResult {
-  plan: ReconcilePlan;
+  reconciliation: Reconciliation;
   locked: UpdateTransactionResult[]; // empty unless verified && matches
 }
 
@@ -54,11 +55,11 @@ const isUncategorizedTx = (t: Transaction): boolean =>
   !isTransferTx(t) &&
   !(t.subtransactions && t.subtransactions.length > 0);
 
-export const computeReconcilePlan = (
+export const computeReconciliation = (
   account: Account,
   transactions: Transaction[],
   statementBalanceMilli: number,
-): ReconcilePlan => {
+): Reconciliation => {
   // Only consider active rows that aren't already locked. Reconciled rows are
   // immutable and were verified when previously locked.
   const active = transactions.filter(
@@ -97,16 +98,16 @@ export const computeReconcilePlan = (
 
 export const applyReconcile = async (
   client: YnabClient,
-  budgetId: string,
-  plan: ReconcilePlan,
+  planId: string,
+  reconciliation: Reconciliation,
 ): Promise<ReconcileResult> => {
   // No write unless the account is fully verified, the statement balance
   // matches, and there is actually something to lock.
-  if (!plan.verified || !plan.matches || plan.toReconcile.length === 0) {
-    return { plan, locked: [] };
+  if (!reconciliation.verified || !reconciliation.matches || reconciliation.toReconcile.length === 0) {
+    return { reconciliation, locked: [] };
   }
 
-  const inputs = plan.toReconcile.map((t) => ({
+  const inputs = reconciliation.toReconcile.map((t) => ({
     transaction_id: t.id,
     cleared: "reconciled" as const,
   }));
@@ -118,9 +119,9 @@ export const applyReconcile = async (
   };
 
   try {
-    const resp = await client.updateTransactionsBulk(budgetId, body);
+    const resp = await client.updateTransactionsBulk(planId, body);
     const out = interpretBulkResponse(inputs, resp.data.transactions);
-    return { plan, locked: out.results };
+    return { reconciliation, locked: out.results };
   } catch (e) {
     // Whole-batch failure (401, 5xx, ...) — surface as per-item errors so the
     // response shape is stable.
@@ -131,8 +132,8 @@ export const applyReconcile = async (
           ? e.message
           : String(e);
     return {
-      plan,
-      locked: plan.toReconcile.map((t) => ({
+      reconciliation,
+      locked: reconciliation.toReconcile.map((t) => ({
         ok: false,
         transaction_id: t.id,
         error: message,
@@ -143,54 +144,54 @@ export const applyReconcile = async (
 
 // ---- Render (pure)
 
-const fmtHealthHeader = (plan: ReconcilePlan): string => {
-  const link = plan.directImportInError
+const fmtHealthHeader = (reconciliation: Reconciliation): string => {
+  const link = reconciliation.directImportInError
     ? "linked ⚠ (connection error)"
-    : plan.directImportLinked
+    : reconciliation.directImportLinked
       ? "linked ✓"
       : "not linked";
-  const lastRecon = plan.lastReconciledAt
-    ? `, last reconciled ${plan.lastReconciledAt.slice(0, 10)}`
+  const lastRecon = reconciliation.lastReconciledAt
+    ? `, last reconciled ${reconciliation.lastReconciledAt.slice(0, 10)}`
     : "";
-  return `Account: ${plan.accountName} — ${link}${lastRecon}`;
+  return `Account: ${reconciliation.accountName} — ${link}${lastRecon}`;
 };
 
 export const renderReconcile = (out: ReconcileResult): string => {
-  const { plan } = out;
-  const lines: string[] = [fmtHealthHeader(plan), ""];
+  const { reconciliation } = out;
+  const lines: string[] = [fmtHealthHeader(reconciliation), ""];
 
   // Blocked: unverified transactions take priority over the balance branches.
-  if (!plan.verified) {
-    const n = plan.unverified.length;
+  if (!reconciliation.verified) {
+    const n = reconciliation.unverified.length;
     lines.push(
-      `## Cannot reconcile ${plan.accountName} — ${n} transaction${n === 1 ? "" : "s"} need review`,
+      `## Cannot reconcile ${reconciliation.accountName} — ${n} transaction${n === 1 ? "" : "s"} need review`,
     );
     lines.push(
       "Reconciliation requires every transaction to be approved and " +
         "categorized. Resolve these (e.g. via triage_inbox + " +
         "update_transactions), then re-run:",
     );
-    for (const u of plan.unverified) {
+    for (const u of reconciliation.unverified) {
       lines.push(`${fmtTxLine(u.tx, { includeIds: true })} [${u.reason}]`);
     }
     return lines.join("\n");
   }
 
   // Mismatch: balances disagree — report and list uncleared txns, no write.
-  if (!plan.matches) {
+  if (!reconciliation.matches) {
     lines.push(
-      `## Cannot reconcile ${plan.accountName} — off by ${fmtMoney(plan.delta)}`,
+      `## Cannot reconcile ${reconciliation.accountName} — off by ${fmtMoney(reconciliation.delta)}`,
     );
-    lines.push(`Statement balance: ${fmtMoney(plan.statementBalance)}`);
-    lines.push(`YNAB cleared balance: ${fmtMoney(plan.clearedBalance)}`);
+    lines.push(`Statement balance: ${fmtMoney(reconciliation.statementBalance)}`);
+    lines.push(`YNAB cleared balance: ${fmtMoney(reconciliation.clearedBalance)}`);
     lines.push(
       "Clear or correct the transactions below so the cleared balance matches " +
         "your statement — or add a reconciliation adjustment in the YNAB app — " +
         "then re-run.",
     );
-    if (plan.uncleared.length) {
-      lines.push("", `Uncleared transactions (${plan.uncleared.length}):`);
-      for (const t of plan.uncleared) {
+    if (reconciliation.uncleared.length) {
+      lines.push("", `Uncleared transactions (${reconciliation.uncleared.length}):`);
+      for (const t of reconciliation.uncleared) {
         lines.push(fmtTxLine(t, { includeIds: true }));
       }
     }
@@ -198,12 +199,12 @@ export const renderReconcile = (out: ReconcileResult): string => {
   }
 
   // Verified + matches, but nothing left to lock.
-  if (plan.toReconcile.length === 0) {
+  if (reconciliation.toReconcile.length === 0) {
     lines.push(
-      `## ${plan.accountName} already reconciled — nothing to lock`,
+      `## ${reconciliation.accountName} already reconciled — nothing to lock`,
     );
     lines.push(
-      `Cleared balance ${fmtMoney(plan.clearedBalance)} matches your statement.`,
+      `Cleared balance ${fmtMoney(reconciliation.clearedBalance)} matches your statement.`,
     );
     return lines.join("\n");
   }
@@ -212,10 +213,10 @@ export const renderReconcile = (out: ReconcileResult): string => {
   const okCount = out.locked.filter((r) => r.ok).length;
   const errCount = out.locked.length - okCount;
   lines.push(
-    `## Reconciled ${plan.accountName} — locked ${okCount} / ${out.locked.length} transaction${out.locked.length === 1 ? "" : "s"}${errCount ? ` (${errCount} error${errCount === 1 ? "" : "s"})` : ""}`,
+    `## Reconciled ${reconciliation.accountName} — locked ${okCount} / ${out.locked.length} transaction${out.locked.length === 1 ? "" : "s"}${errCount ? ` (${errCount} error${errCount === 1 ? "" : "s"})` : ""}`,
   );
   lines.push(
-    `Cleared balance ${fmtMoney(plan.clearedBalance)} matches your statement.`,
+    `Cleared balance ${fmtMoney(reconciliation.clearedBalance)} matches your statement.`,
   );
   for (const r of out.locked) {
     if (!r.ok) {
@@ -259,25 +260,25 @@ export const registerReconcileAccount = (
         openWorldHint: true,
       },
       inputSchema: {
-        budget_id: z.string(),
+        plan_id: planIdParam,
         account_id: z.string(),
         statement_balance_milliunits: z.number().int(),
       },
     },
-    async ({ budget_id, account_id, statement_balance_milliunits }) => {
+    async ({ plan_id, account_id, statement_balance_milliunits }) => {
       if (!getProps().canWrite) return scopeDeniedError();
       try {
         const client = getClient();
         const [accountRes, txRes] = await Promise.all([
-          client.getAccount(budget_id, account_id),
-          client.listAccountTransactions(budget_id, account_id),
+          client.getAccount(plan_id, account_id),
+          client.listAccountTransactions(plan_id, account_id),
         ]);
-        const plan = computeReconcilePlan(
+        const reconciliation = computeReconciliation(
           accountRes.data.account,
           txRes.data.transactions,
           statement_balance_milliunits,
         );
-        const out = await applyReconcile(client, budget_id, plan);
+        const out = await applyReconcile(client, plan_id, reconciliation);
         return result(renderReconcile(out), out);
       } catch (e) {
         return handleError(e);

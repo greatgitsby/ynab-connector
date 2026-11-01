@@ -1,5 +1,6 @@
 import { z } from "zod";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { planIdParam } from "../schemas";
+import type { McpServer } from "@modelcontextprotocol/server";
 import type { Category, YnabClient } from "../ynab";
 import { YnabError } from "../ynab";
 import {
@@ -45,7 +46,7 @@ export interface AssignToCategoriesResult {
 
 export const applyAssignToCategories = async (
   client: YnabClient,
-  budgetId: string,
+  planId: string,
   moves: AssignMoveInput[],
 ): Promise<AssignToCategoriesResult> => {
   const results: AssignMoveResult[] = [];
@@ -54,9 +55,9 @@ export const applyAssignToCategories = async (
       // Read current value first so we can report before/after in the
       // summary. The read is cheap (single category endpoint) and isolated
       // per-move — if it fails, we record the failure and continue.
-      const before = await client.getCategory(budgetId, move.category_id);
+      const before = await client.getCategory(planId, move.category_id);
       const updated = await client.updateCategoryMonth(
-        budgetId,
+        planId,
         move.month,
         move.category_id,
         { budgeted: move.set_budgeted_milliunits },
@@ -136,7 +137,7 @@ export const registerAssignToCategories = (
         openWorldHint: true,
       },
       inputSchema: {
-        budget_id: z.string(),
+        plan_id: planIdParam,
         moves: z
           .array(
             z.object({
@@ -152,10 +153,10 @@ export const registerAssignToCategories = (
           .min(1),
       },
     },
-    async ({ budget_id, moves }) => {
+    async ({ plan_id, moves }) => {
       if (!getProps().canWrite) return scopeDeniedError();
       try {
-        const out = await applyAssignToCategories(getClient(), budget_id, moves);
+        const out = await applyAssignToCategories(getClient(), plan_id, moves);
         return result(renderAssignToCategoriesResult(out), out);
       } catch (e) {
         return handleError(e);

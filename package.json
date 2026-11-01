@@ -1,26 +1,33 @@
 {
   "name": "ynab-connector",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "deploy": "wrangler deploy",
-    "dev": "wrangler dev",
-    "start": "wrangler dev",
+    "dev": "wrangler dev --local-upstream localhost:8787",
+    "start": "wrangler dev --local-upstream localhost:8787",
     "cf-typegen": "wrangler types",
     "type-check": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@cloudflare/workers-oauth-provider": "^0.7.0",
-    "@modelcontextprotocol/sdk": "^1.0.0",
-    "agents": "^0.9.0",
-    "zod": "^4.3.6"
+    "@cloudflare/workers-oauth-provider": "^1.2.4",
+    "@modelcontextprotocol/server": "2.4.0",
+    "agents": "^0.32.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@types/node": "^22.19.19",
-    "typescript": "^5.6.0",
-    "vitest": "^4.1.7",
-    "wrangler": "^4.79.0"
+    "@modelcontextprotocol/client": "2.4.0",
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5",
+    "wrangler": "^4.156.0"
+  },
+  "allowScripts": {
+    "esbuild": true,
+    "workerd": true,
+    "core-js-pure": false
   }
 }

@@ -29,8 +29,8 @@ Read tools:
 
 | Tool | What it does |
 | --- | --- |
-| `list_budgets` | List all budgets visible to the connected YNAB account |
-| `get_budget_summary` | Snapshot: accounts + current-month totals |
+| `list_plans` | List all plans visible to the connected YNAB account |
+| `get_plan_summary` | Snapshot: accounts + current-month totals |
 | `list_accounts` | All accounts with balances |
 | `get_month` | Full month breakdown grouped by category group; defaults to the current month |
 | `list_transactions` | Transactions, optionally filtered to `uncategorized` / `unapproved` |
@@ -41,7 +41,7 @@ Read tools:
 | `reflect_income_expense` | Income (by payee) vs expense (by category, grouped) pivot over last N months (default 3), with Average and Total columns |
 | `reflect_age_of_money` | Current age of money plus monthly history, average, and trend |
 | `get_category_details` | Drilldown for one category: month aggregates + every transaction this month |
-| `search_payees` | Substring-match payees in a budget — use to canonicalize a payee `id` before passing it to `update_transactions` |
+| `search_payees` | Substring-match payees in a plan — use to canonicalize a payee `id` before passing it to `update_transactions` |
 
 Write tools (require write access — see "Permissions"):
 
@@ -59,8 +59,8 @@ connects:
 
 1. **Claude.ai → Connector** (inbound). Claude.ai discovers the connector's
    authorization endpoints via RFC 9728 protected-resource metadata, registers
-   itself dynamically (RFC 7591), and starts an OAuth 2.1 authorization-code
-   flow with PKCE. The connector acts as the Authorization Server using
+   itself (dynamic registration per RFC 7591, or a Client ID Metadata
+   Document), and starts an OAuth 2.1 authorization-code flow with S256 PKCE. The connector acts as the Authorization Server using
    `@cloudflare/workers-oauth-provider`.
 2. **Connector → YNAB** (outbound). The connector's `/authorize` endpoint
    redirects the user to `https://app.ynab.com/oauth/authorize`. After the
@@ -70,9 +70,11 @@ connects:
 
 `completeAuthorization` then encrypts the YNAB tokens into Claude.ai's bearer
 token via the OAuth provider's `props`. On every MCP request, the provider
-decrypts and surfaces them as `this.props` inside the tool handlers — so each
-tool call uses the right user's YNAB credentials. Access tokens are refreshed
-lazily on 401 via the stored refresh token.
+decrypts them and hands them to a fresh, stateless MCP server built for that
+request — so each tool call uses the right user's YNAB credentials. Claude.ai's
+access token is issued to expire just before the YNAB token inside it; when
+Claude.ai refreshes, the connector refreshes the YNAB token and stores the new
+pair in the grant.
 
 ## One-time setup
 
@@ -175,10 +177,12 @@ reads only, simply don't reconnect; existing read-only tokens stay valid.
 
 ```
 src/
-  index.ts       # Worker entry: OAuthProvider + YnabMcp (McpAgent)
-  ynab-auth.ts   # /authorize + /callback handlers (YNAB upstream OAuth)
-  ynab.ts        # YNAB API client + OAuth helpers
-  tools/         # One file per MCP tool
+  index.ts          # Worker entry: OAuthProvider + stateless MCP handler
+  server.ts         # buildServer(props): MCP server + tool registration
+  token-refresh.ts  # YNAB token rotation on Claude.ai token refresh
+  ynab-auth.ts      # /authorize + /callback handlers (YNAB upstream OAuth)
+  ynab.ts           # YNAB API client + OAuth helpers
+  tools/            # One file per MCP tool
 docs/
   adr/           # Architecture decision records (start with 0001-add-write-tools.md)
   plans/         # Implementation plans for in-flight work

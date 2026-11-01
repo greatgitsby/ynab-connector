@@ -168,8 +168,8 @@ export const renderReconcile = (out: ReconcileResult): string => {
     );
     lines.push(
       "Reconciliation requires every transaction to be approved and " +
-        "categorized. Resolve these (e.g. via triage_inbox + " +
-        "update_transactions), then re-run:",
+        "categorized. Fix these (for example with triage_inbox and " +
+        "update_transactions), then run this again:",
     );
     for (const u of reconciliation.unverified) {
       lines.push(`${fmtTxLine(u.tx, { includeIds: true })} [${u.reason}]`);
@@ -185,9 +185,9 @@ export const renderReconcile = (out: ReconcileResult): string => {
     lines.push(`Statement balance: ${fmtMoney(reconciliation.statementBalance)}`);
     lines.push(`YNAB cleared balance: ${fmtMoney(reconciliation.clearedBalance)}`);
     lines.push(
-      "Clear or correct the transactions below so the cleared balance matches " +
-        "your statement — or add a reconciliation adjustment in the YNAB app — " +
-        "then re-run.",
+      "Clear or correct the transactions below until the cleared balance " +
+        "matches your statement, or add a reconciliation adjustment in the " +
+        "YNAB app. Then run this again.",
     );
     if (reconciliation.uncleared.length) {
       lines.push("", `Uncleared transactions (${reconciliation.uncleared.length}):`);
@@ -231,17 +231,17 @@ export const renderReconcile = (out: ReconcileResult): string => {
 // ---- MCP tool registration
 
 const DESCRIPTION =
-  "Reconcile a YNAB account against a bank statement. Provide the account's " +
-  "real cleared balance (from your statement) in milliunits. Reconciliation " +
-  "only proceeds when EVERY active transaction in the account is approved and " +
-  "categorized — otherwise it makes no changes and lists what needs review. " +
-  "When the statement balance equals YNAB's cleared balance, every cleared " +
-  "transaction is locked as `reconciled`. When the balances differ, nothing is " +
-  "written and the discrepancy plus uncleared transactions are reported (this " +
-  "tool cannot create the YNAB balance-adjustment transaction — do that in the " +
-  "YNAB app). Note: YNAB's API does not expose the linked bank's own balance, " +
-  "so you must supply the statement balance. Requires write access — " +
-  "connections granted read-only must be reconnected to enable this tool.";
+  "Reconcile a YNAB account against a bank statement. Pass the cleared " +
+  "balance from the statement, in milliunits. YNAB's API does not expose the " +
+  "linked bank's balance, so the statement is the only source for it. The " +
+  "tool reconciles only when EVERY active transaction in the account is " +
+  "approved and categorized; otherwise it changes nothing and lists what " +
+  "needs review. If the statement balance equals YNAB's cleared balance, it " +
+  "locks every cleared transaction as `reconciled`. If they differ, it writes " +
+  "nothing and reports the difference and the uncleared transactions. It " +
+  "cannot create YNAB's balance-adjustment transaction; the user does that in " +
+  "the YNAB app. Requires write access; a read-only connection must be " +
+  "reconnected to use this tool.";
 
 export const registerReconcileAccount = (
   server: McpServer,

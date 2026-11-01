@@ -175,18 +175,17 @@ const renderTxSummary = (t: Transaction): string => {
 // ---- MCP tool registration
 
 const DESCRIPTION =
-  "Edit one or more existing transactions in a single bulk call. Use this " +
-  "to categorize, approve or un-approve, memo, flag, mark " +
-  "cleared/reconciled, set a payee, or split a transaction across multiple " +
-  "categories. Provide only " +
-  "the fields you want to change — omitted fields are left unchanged. " +
-  "Splits: when `subtransactions` is set, the parent's `category_id` must " +
-  "be null/omitted, each sub requires `amount_milliunits`, and sub-amounts " +
-  "should sum to the parent's amount (YNAB enforces this). YNAB's split " +
-  "semantics REPLACE the whole subtransactions array — to edit one sub of " +
-  "a 3-way split, send all 3 subs. Cannot create, delete, or change a " +
-  "transaction's date/amount/account. Requires write access — connections " +
-  "granted read-only must be reconnected to enable this tool.";
+  "Edit one or more existing transactions in one bulk call: categorize, " +
+  "approve or unapprove, set the memo or flag, mark cleared or reconciled, " +
+  "set the payee, or split across categories. Send only the fields to " +
+  "change; omitted fields stay as they are. For splits, when " +
+  "`subtransactions` is set, leave the parent's `category_id` null or " +
+  "omitted, give each sub an `amount_milliunits`, and make the subs sum to " +
+  "the parent's amount (YNAB enforces this). YNAB REPLACES the whole " +
+  "subtransactions array, so to edit one sub of a 3-way split, send all 3. " +
+  "Cannot create or delete transactions or change their date, amount, or " +
+  "account. Requires write access; a read-only connection must be " +
+  "reconnected to use this tool.";
 
 export const registerUpdateTransactions = (
   server: McpServer,

@@ -185,7 +185,7 @@ export const renderCategoryDetails = (
 // ---- MCP tool registration
 
 const DESCRIPTION =
-  "Drilldown for one category: its month aggregates (budgeted/activity/balance/goal) plus every transaction in that category for the given month (default 'current'). Split transactions are expanded: only the subtransactions allocated to this category appear, and each is labelled with its parent payee.";
+  "One category for one month (default 'current'): its budgeted, activity, balance, and goal, plus every transaction in it that month. For split transactions, only the subtransactions in this category appear, each labelled with its parent's payee.";
 
 export const registerGetCategoryDetails = (
   server: McpServer,

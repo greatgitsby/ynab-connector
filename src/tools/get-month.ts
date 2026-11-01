@@ -141,7 +141,7 @@ export const renderMonthReport = (
 // ---- MCP tool registration
 
 const DESCRIPTION =
-  "Full month breakdown grouped by category group: income, budgeted, activity, to-be-budgeted, and every category's budgeted/activity/balance/goal for that month. Defaults to the current month.";
+  "One month grouped by category group: income, budgeted, activity, to-be-budgeted, and each category's budgeted, activity, balance, and goal. Defaults to the current month.";
 
 export const registerGetMonth = (
   server: McpServer,

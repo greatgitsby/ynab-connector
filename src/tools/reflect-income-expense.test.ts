@@ -76,7 +76,16 @@ const fixturePlan = (): PlanDetail => ({
   last_modified_on: "2026-05-01",
   first_month: "2025-01-01",
   last_month: "2026-05-01",
-  currency_format: { iso_code: "USD", decimal_digits: 2 },
+  currency_format: {
+          iso_code: "USD",
+          example_format: "123,456.78",
+          decimal_digits: 2,
+          decimal_separator: ".",
+          symbol_first: true,
+          group_separator: ",",
+          currency_symbol: "$",
+          display_symbol: true,
+        },
   category_groups: [
     group({ id: "grp-bills", name: "Monthly Bills" }),
     group({ id: "grp-fun", name: "Fun" }),

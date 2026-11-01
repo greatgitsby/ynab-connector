@@ -80,6 +80,20 @@ describe("computeTriageInbox", () => {
     expect(r.uncategorized).toHaveLength(1);
   });
 
+  test("leaves out tracking-account txs from both transaction sections", () => {
+    const r = computeTriageInbox(
+      [tx({ id: "bank" }), tx({ id: "401k", account_id: "acc-401k" })],
+      [
+        tx({ id: "bank-unapproved", category_id: "c1", approved: false }),
+        tx({ id: "401k-unapproved", account_id: "acc-401k", approved: false }),
+      ],
+      monthDetail(),
+      { trackingAccountIds: new Set(["acc-401k"]) },
+    );
+    expect(r.uncategorized.map((t) => t.id)).toEqual(["bank"]);
+    expect(r.auto_categorized.map((t) => t.id)).toEqual(["bank-unapproved"]);
+  });
+
   test("dedupes autoCategorized against uncategorized by tx id", () => {
     const shared = tx({ id: "shared", date: "2026-05-10", approved: false });
     const r = computeTriageInbox(

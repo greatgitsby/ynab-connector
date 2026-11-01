@@ -3,7 +3,7 @@ import { planIdParam } from "../schemas";
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { Account, Transaction, YnabClient } from "../ynab";
 import { YnabError } from "../ynab";
-import { isTransferTx } from "../predicates";
+import { isTrackingAccount, isTransferTx } from "../predicates";
 import {
   fmtMoney,
   fmtTxLine,
@@ -66,11 +66,14 @@ export const computeReconciliation = (
     (t) => !t.deleted && t.cleared !== "reconciled",
   );
 
+  // Tracking (off-budget) accounts never take categories, so only approval
+  // gates them.
+  const needsCategory = !isTrackingAccount(account);
   const unverified: Unverified[] = [];
   for (const t of active) {
     if (!t.approved) {
       unverified.push({ tx: t, reason: "unapproved" });
-    } else if (isUncategorizedTx(t)) {
+    } else if (needsCategory && isUncategorizedTx(t)) {
       unverified.push({ tx: t, reason: "uncategorized" });
     }
   }

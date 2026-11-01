@@ -21,7 +21,16 @@ describe("computePlanList", () => {
         id: "live",
         name: "Family",
         last_modified_on: "2026-10-31T00:00:00Z",
-        currency_format: { iso_code: "USD", decimal_digits: 2 },
+        currency_format: {
+          iso_code: "USD",
+          example_format: "123,456.78",
+          decimal_digits: 2,
+          decimal_separator: ".",
+          symbol_first: true,
+          group_separator: ",",
+          currency_symbol: "$",
+          display_symbol: true,
+        },
       }),
     ]);
     expect(r.plans.map((p) => p.id)).toEqual(["live", "old"]);

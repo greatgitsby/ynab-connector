@@ -24,7 +24,7 @@ project's terms follow.
 
 | Term | Meaning |
 | --- | --- |
-| Triage Inbox | Uncategorized transactions, unapproved imports, overspent categories, and underfunded goals in one call. Mirrors YNAB's review workflow, not any single YNAB screen. |
+| Triage Inbox | Uncategorized transactions, unapproved imports, overspent categories, and underfunded goals in one call. Mirrors YNAB's review workflow, not any single YNAB screen. Tracking-account transactions are left out because they never take a category. |
 | Month Window | The consecutive months a Reflect tool covers: the requested range intersected with the months the Plan has data for, plus a truncation note when they differ. |
 | GoalView | The interpreted form of a Goal, from `interpretGoal`. Hides the `goal_*` matrix. A goal snoozed in the reference month is flagged, but `goal_under_funded` passes through unchanged because YNAB does not document how snoozing affects it. |
 | Compute / Render | The split every tool follows: pure `compute*` to a typed result, pure `render*` to text. |
@@ -32,7 +32,8 @@ project's terms follow.
 
 ## Ambiguities
 
-**"Uncategorized"** means two things: a Transaction with no `category_id`, which is inbox-worthy, and
+**"Uncategorized"** means two things: a Transaction with no `category_id`, which is inbox-worthy
+unless it sits in a tracking (off-budget) account, where YNAB never assigns a category, and
 the synthetic internal Category named "Uncategorized", which YNAB hoists out of its group and the
 connector renders as a standalone row above the grouped expenses.
 

@@ -16,7 +16,9 @@ project's terms follow.
 | Subtransaction | One part of a split. Its parent's `category_id` is null; per-category sums count the subs and skip the parent. |
 | Milliunit | YNAB's amount encoding: integer thousandths of a currency unit. $1.00 is 1000. |
 | Ready to Assign | Unassigned cash, read from `month.to_be_budgeted`. Never read it from the "Inflow: Ready to Assign" category's `balance`, which is a lifetime cumulative figure. Render it as "Ready to Assign". |
-| Reflect | YNAB's analytics tabs. The connector has one `reflect_*` tool per tab. |
+| Scheduled Transaction | A future or repeating transaction YNAB enters on `date_next`. Not in balances or activity until then. |
+| Money Movement | One assignment or move of money between categories in a month. A null category is Ready to Assign. |
+| Reflect | YNAB's analytics tabs. The connector keeps a `reflect_*` tool only where the API has no direct answer: income v expense and net worth. |
 
 ## Connector
 

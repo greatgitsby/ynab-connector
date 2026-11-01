@@ -17,6 +17,8 @@ const account = (over: Partial<Account>): Account => ({
   type: "checking",
   on_budget: true,
   closed: false,
+  transfer_payee_id: null,
+  deleted: false,
   balance: 1_000_000,
   cleared_balance: 950_000,
   uncleared_balance: 50_000,
@@ -38,6 +40,7 @@ const tx = (over: Partial<Transaction> & { id: string }): Transaction =>
     category_name: "Groceries",
     flag_color: null,
     transfer_account_id: null,
+    deleted: false,
     ...over,
   }) as Transaction;
 
@@ -87,6 +90,7 @@ describe("computeReconciliation", () => {
             {
               id: "s1",
               transaction_id: "split",
+              deleted: false,
               amount: -5_000,
               memo: null,
               payee_id: null,
@@ -258,7 +262,7 @@ describe("renderReconcile", () => {
       tx({ id: "unappr", approved: false }),
       tx({ id: "uncat", category_id: null }),
     ], 950_000);
-    const out = renderReconcile({ reconciliation, locked: [] });
+    const out = renderReconcile({ reconciliation, locked: [] }, "USD");
     expect(out).toContain("Cannot reconcile Checking — 2 transactions need review");
     expect(out).toContain("[unapproved]");
     expect(out).toContain("[uncategorized]");
@@ -270,7 +274,7 @@ describe("renderReconcile", () => {
       [tx({ id: "u1", cleared: "uncleared" })],
       900_000,
     );
-    const out = renderReconcile({ reconciliation, locked: [] });
+    const out = renderReconcile({ reconciliation, locked: [] }, "USD");
     expect(out).toContain("off by -$50.00");
     expect(out).toContain("Statement balance: $900.00");
     expect(out).toContain("YNAB cleared balance: $950.00");
@@ -282,7 +286,7 @@ describe("renderReconcile", () => {
       [tx({ id: "u1", cleared: "uncleared" })],
       950_000,
     );
-    const out = renderReconcile({ reconciliation, locked: [] });
+    const out = renderReconcile({ reconciliation, locked: [] }, "USD");
     expect(out).toContain("already reconciled — nothing to lock");
   });
 
@@ -297,7 +301,7 @@ describe("renderReconcile", () => {
       locked: [
         { ok: true, transaction_id: "c1", transaction: tx({ id: "c1", cleared: "reconciled" }) },
       ],
-    });
+    }, "USD");
     expect(out).toContain("Reconciled Checking — locked 1 / 1 transaction");
     expect(out).toContain("[ok]");
   });
@@ -311,7 +315,7 @@ describe("renderReconcile", () => {
       [],
       950_000,
     );
-    const out = renderReconcile({ reconciliation, locked: [] });
+    const out = renderReconcile({ reconciliation, locked: [] }, "USD");
     expect(out).toContain("Account: Checking — linked ✓, last reconciled 2026-04-30");
   });
 });

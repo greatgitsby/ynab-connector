@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { planIdParam } from "../schemas";
+import { includeIdsParam, planIdParam } from "../schemas";
+import { CategorySchema, TransactionSchema } from "../wire";
 import type { McpServer } from "@modelcontextprotocol/server";
 import type {
   Category,
@@ -22,73 +23,17 @@ import { isSpendingCategory, isInboxableTx } from "../predicates";
 // inferred and the schema doubles as the tool's outputSchema — see docs/internals/structured-output.md).
 // Money is in milliunits; `iso` is the currency code for formatting them.
 
-// Mirrors the YNAB SubTransaction shape (see ynab.ts).
-const SubTransactionSchema = z.object({
-  id: z.string(),
-  transaction_id: z.string(),
-  amount: z.number(),
-  memo: z.string().nullable(),
-  payee_id: z.string().nullable(),
-  payee_name: z.string().nullable(),
-  category_id: z.string().nullable(),
-  category_name: z.string().nullable(),
-});
-
-// Mirrors the YNAB Transaction shape (see ynab.ts). `amount` is milliunits.
-const TransactionSchema = z.object({
-  id: z.string(),
-  date: z.string(),
-  amount: z.number(),
-  memo: z.string().nullable(),
-  cleared: z.string(),
-  approved: z.boolean(),
-  account_id: z.string(),
-  account_name: z.string(),
-  payee_id: z.string().nullable(),
-  payee_name: z.string().nullable(),
-  category_id: z.string().nullable(),
-  category_name: z.string().nullable(),
-  flag_color: z.string().nullable(),
-  transfer_account_id: z.string().nullable(),
-  deleted: z.boolean().optional(),
-  subtransactions: z.array(SubTransactionSchema).optional(),
-});
-
-// Mirrors the YNAB Category shape (see ynab.ts). Money fields are milliunits.
-const CategorySchema = z.object({
-  id: z.string(),
-  category_group_id: z.string(),
-  category_group_name: z.string().optional(),
-  name: z.string(),
-  hidden: z.boolean(),
-  internal: z.boolean().optional(),
-  deleted: z.boolean().optional(),
-  budgeted: z.number(),
-  activity: z.number(),
-  balance: z.number(),
-  goal_type: z.string().nullable().optional(),
-  goal_target: z.number().nullable().optional(),
-  goal_target_date: z.string().nullable().optional(),
-  goal_cadence: z.number().nullable().optional(),
-  goal_cadence_frequency: z.number().nullable().optional(),
-  goal_months_to_budget: z.number().nullable().optional(),
-  goal_percentage_complete: z.number().nullable().optional(),
-  goal_under_funded: z.number().nullable().optional(),
-  goal_overall_funded: z.number().nullable().optional(),
-  goal_overall_left: z.number().nullable().optional(),
-});
-
 const UnderfundedGoalRowSchema = z.object({
   id: z.string(),
   name: z.string(),
   // milliunits still needed this month to stay on pace.
   underfunded: z.number(),
   // The Category's goal_target in milliunits.
-  goalTarget: z.number(),
+  goal_target: z.number(),
   // Cadence suffix from interpretGoal — "/month", "/week", " every 3 months", or "".
-  cadenceLabel: z.string(),
+  cadence_label: z.string(),
   // YYYY-MM-DD or null when the goal has no date.
-  nextDueDate: z.string().nullable(),
+  next_due_date: z.string().nullable(),
 });
 export type UnderfundedGoalRow = z.infer<typeof UnderfundedGoalRowSchema>;
 
@@ -97,11 +42,11 @@ export const TriageInboxSchema = z.object({
   iso: z.string(),
   month: z.string(),
   // Live Ready-to-Assign for the current month.
-  readyToAssign: z.number(),
+  ready_to_assign: z.number(),
   // Sorted desc by date.
   uncategorized: z.array(TransactionSchema),
   // Sorted desc by date. Excludes any tx that already appears in uncategorized.
-  autoCategorized: z.array(TransactionSchema),
+  auto_categorized: z.array(TransactionSchema),
   // Sorted by balance asc (most overspent first).
   overspent: z.array(CategorySchema),
   // Sorted by underfunded desc (largest gap first).
@@ -143,23 +88,23 @@ export const computeTriageInbox = (
     );
 
   const underfunded: UnderfundedGoalRow[] = underfundedCats.map((cat) => {
-    const goal = interpretGoal(cat, monthDetail.month);
+    const goal = interpretGoal(cat, monthDetail.month, iso);
     return {
       id: cat.id,
       name: cat.name,
       underfunded: cat.goal_under_funded ?? 0,
-      goalTarget: cat.goal_target ?? 0,
-      cadenceLabel: goal?.cadenceLabel ?? "",
-      nextDueDate: goal?.nextDueDate ?? null,
+      goal_target: cat.goal_target ?? 0,
+      cadence_label: goal?.cadenceLabel ?? "",
+      next_due_date: goal?.nextDueDate ?? null,
     };
   });
 
   return {
     iso,
     month: monthDetail.month,
-    readyToAssign: monthDetail.to_be_budgeted,
+    ready_to_assign: monthDetail.to_be_budgeted,
     uncategorized,
-    autoCategorized,
+    auto_categorized: autoCategorized,
     overspent,
     underfunded,
   };
@@ -178,8 +123,8 @@ const fmtUnderfundedLine = (
   iso: string,
 ): string => {
   const idSuffix = includeIds ? ` — id ${row.id}` : "";
-  const date = row.nextDueDate ? ` by ${row.nextDueDate}` : "";
-  return `- ${row.name}: needs ${fmtMoney(row.underfunded, iso)} more this month (goal ${fmtMoney(row.goalTarget, iso)}${row.cadenceLabel}${date})${idSuffix}`;
+  const date = row.next_due_date ? ` by ${row.next_due_date}` : "";
+  return `- ${row.name}: needs ${fmtMoney(row.underfunded, iso)} more this month (goal ${fmtMoney(row.goal_target, iso)}${row.cadence_label}${date})${idSuffix}`;
 };
 
 export const renderTriageInbox = (
@@ -189,7 +134,7 @@ export const renderTriageInbox = (
   const iso = inbox.iso;
   const out: string[] = [];
   out.push(`Triage inbox for month ${inbox.month}`);
-  out.push(`Ready to assign: ${fmtMoney(inbox.readyToAssign, iso)}`);
+  out.push(`Ready to Assign: ${fmtMoney(inbox.ready_to_assign, iso)}`);
   out.push("");
 
   pushSection(
@@ -198,21 +143,21 @@ export const renderTriageInbox = (
     inbox.uncategorized,
     opts.maxPerSection,
     (t) =>
-      fmtTxLine(t, { showCategory: false, includeIds: opts.includeIds, iso }),
+      fmtTxLine(t, iso, { showCategory: false, includeIds: opts.includeIds }),
   );
   pushSection(
     out,
     "Auto-categorized (verify category before approving)",
-    inbox.autoCategorized,
+    inbox.auto_categorized,
     opts.maxPerSection,
-    (t) => fmtTxLine(t, { includeIds: opts.includeIds, iso }),
+    (t) => fmtTxLine(t, iso, { includeIds: opts.includeIds }),
   );
   pushSection(
     out,
     "Overspent categories (current month)",
     inbox.overspent,
     opts.maxPerSection,
-    (cat) => fmtCategoryLine(cat, inbox.month, opts.includeIds),
+    (cat) => fmtCategoryLine(cat, inbox.month, iso, opts.includeIds),
   );
   pushSection(
     out,
@@ -249,22 +194,19 @@ export const registerTriageInbox = (
           .max(200)
           .optional()
           .default(25),
-        include_ids: z.boolean().optional().default(false),
+        include_ids: includeIdsParam,
       },
       outputSchema: TriageInboxSchema.shape,
     },
     async ({ plan_id, max_per_section, include_ids }) => {
       try {
         const c = getClient();
-        const [uncatRes, unapprovedRes, monthRes, settingsRes] =
-          await Promise.all([
-            c.listTransactions(plan_id, { type: "uncategorized" }),
-            c.listTransactions(plan_id, { type: "unapproved" }),
-            c.getMonth(plan_id, "current"),
-            c.getPlanSettings(plan_id),
-          ]);
-        const iso =
-          settingsRes.data.settings.currency_format?.iso_code ?? "USD";
+        const [uncatRes, unapprovedRes, monthRes, iso] = await Promise.all([
+          c.listTransactions(plan_id, { type: "uncategorized" }),
+          c.listTransactions(plan_id, { type: "unapproved" }),
+          c.getMonth(plan_id, "current"),
+          c.planIso(plan_id),
+        ]);
         const inbox = computeTriageInbox(
           uncatRes.data.transactions,
           unapprovedRes.data.transactions,

@@ -9,7 +9,7 @@ stays in the "review and clean up" lane, not manual data entry.
 Supported: setting a category's monthly `budgeted` (`assign_to_categories`); editing existing
 transactions, including categorize, approve, memo, flag, `cleared`, payee, and splits
 (`update_transactions`); and locking cleared transactions as reconciled (`reconcile_account`).
-`search_payees` is the read companion for canonicalizing payees.
+`list_payees` is the read companion for canonicalizing payees.
 
 Excluded: creating manual transactions, deletes, scheduled transactions, payee rename/merge,
 category rename/move, and goal edits. Adding any of these is a scope decision for the maintainer,
@@ -27,7 +27,7 @@ not an implementation detail. Mistakes are fixed by another write, never by dele
   `update_transactions` to keep the model out of data correction. Splits replace the subtransaction
   array wholesale, and a split parent carries no `category_id`.
 - **Payees.** `payee_id` wins over `payee_name`. A `payee_name` YNAB cannot match silently creates a
-  new payee, which is why `search_payees` exists.
+  new payee, which is why `list_payees` exists.
 - **Best-effort batches.** YNAB has no bulk endpoint for month categories, so
   `assign_to_categories` loops. Every item is tried, each gets its own result, and nothing rolls
   back. The model reads the per-item results and recovers.

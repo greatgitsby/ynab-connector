@@ -49,13 +49,17 @@ const addMonths = (year: number, month1: number, delta: number) => {
 // adding the cadence interval until the date is strictly in the future (YNAB
 // can still report a current-month deadline for a goal that's already met,
 // which renders as a past date for any day after the 1st).
+//
+// GET /plans/{id} sends only the deprecated goal_target_month, so fall back
+// to it.
 const nextGoalDate = (c: Category, refMonth: string): string | null => {
-  if (!c.goal_target_date) return null;
+  const target = c.goal_target_date ?? c.goal_target_month;
+  if (!target) return null;
   const recurring = (c.goal_cadence ?? 0) > 0;
   const m2b = c.goal_months_to_budget;
-  if (!recurring || m2b == null || m2b < 1) return c.goal_target_date;
+  if (!recurring || m2b == null || m2b < 1) return target;
   const [refY, refM] = refMonth.split("-").map(Number);
-  const anchorDay = c.goal_target_date.slice(8, 10);
+  const anchorDay = target.slice(8, 10);
   let [y, mo] = addMonths(refY, refM, m2b - 1);
   const step = cadenceMonths(c);
   if (step != null && step > 0) {
@@ -90,6 +94,7 @@ const buildCadenceLabel = (c: Category): string => {
 export const interpretGoal = (
   c: Category,
   refMonth: string,
+  iso = "USD",
 ): GoalView | null => {
   if (!c.goal_type || c.goal_target == null) return null;
   const cadenceLabel = buildCadenceLabel(c);
@@ -98,10 +103,10 @@ export const interpretGoal = (
     c.goal_under_funded && c.goal_under_funded > 0 ? c.goal_under_funded : 0;
   const snoozed =
     !!c.goal_snoozed_at && c.goal_snoozed_at.slice(0, 7) === refMonth.slice(0, 7);
-  const parts = [`${fmtMoney(c.goal_target)}${cadenceLabel}`];
+  const parts = [`${fmtMoney(c.goal_target, iso)}${cadenceLabel}`];
   if (nextDueDate) parts.push(`by ${nextDueDate}`);
   if (underfunded > 0)
-    parts.push(`needs ${fmtMoney(underfunded)} more this month`);
+    parts.push(`needs ${fmtMoney(underfunded, iso)} more this month`);
   if (snoozed) parts.push("snoozed this month");
   return {
     label: parts.join(", "),
@@ -114,8 +119,11 @@ export const interpretGoal = (
   };
 };
 
-// Convenience for category-line rendering — same shape as the old fmtGoal.
-export const fmtGoalSuffix = (c: Category, refMonth: string): string => {
-  const view = interpretGoal(c, refMonth);
+export const fmtGoalSuffix = (
+  c: Category,
+  refMonth: string,
+  iso = "USD",
+): string => {
+  const view = interpretGoal(c, refMonth, iso);
   return view ? ` — goal: ${view.label}` : "";
 };

@@ -14,39 +14,17 @@ const plan = (overrides: Partial<Plan> & { id: string; name: string }): Plan => 
 });
 
 describe("computePlanList", () => {
-  test("filters out (Archived) by default", () => {
-    const r = computePlanList(
-      [
-        plan({ id: "live", name: "Family" }),
-        plan({ id: "old", name: "Side Project (Archived)" }),
-      ],
-      { includeArchived: false },
-    );
-    expect(r.plans.map((b) => b.id)).toEqual(["live"]);
-  });
-
-  test("keeps archived when includeArchived is true", () => {
-    const r = computePlanList(
-      [
-        plan({ id: "live", name: "Family" }),
-        plan({ id: "old", name: "Side Project (Archived)" }),
-      ],
-      { includeArchived: true },
-    );
-    expect(r.plans).toHaveLength(2);
-  });
-
-  test("result conforms to PlanListSchema", () => {
-    const r = computePlanList(
-      [
-        plan({
-          id: "b-1",
-          name: "Family",
-          currency_format: { iso_code: "USD", decimal_digits: 2 },
-        }),
-      ],
-      { includeArchived: false },
-    );
+  test("keeps archived plans, most recently modified first", () => {
+    const r = computePlanList([
+      plan({ id: "old", name: "Family 2025 (Archived on 2026-01-02)", last_modified_on: "2026-01-03T00:00:00Z" }),
+      plan({
+        id: "live",
+        name: "Family",
+        last_modified_on: "2026-10-31T00:00:00Z",
+        currency_format: { iso_code: "USD", decimal_digits: 2 },
+      }),
+    ]);
+    expect(r.plans.map((p) => p.id)).toEqual(["live", "old"]);
     expect(() => PlanListSchema.parse(r)).not.toThrow();
   });
 });
@@ -56,26 +34,9 @@ describe("renderPlanList", () => {
     expect(renderPlanList({ plans: [] })).toBe("No plans found.");
   });
 
-  test("emits id, currency, and last_modified per row", () => {
-    const r = computePlanList(
-      [
-        plan({
-          id: "b-1",
-          name: "Family",
-          currency_format: { iso_code: "USD", decimal_digits: 2 },
-        }),
-      ],
-      { includeArchived: false },
-    );
-    const out = renderPlanList(r);
-    expect(out).toContain("- Family (id: b-1) — USD, last modified 2026-05-01");
-  });
-
   test("defaults to USD when currency_format is missing", () => {
-    const r = computePlanList(
-      [plan({ id: "b-1", name: "Family" })],
-      { includeArchived: false },
-    );
-    expect(renderPlanList(r)).toContain("— USD,");
+    expect(
+      renderPlanList(computePlanList([plan({ id: "b-1", name: "Family" })])),
+    ).toContain("(USD,");
   });
 });

@@ -2,30 +2,29 @@ import { McpServer } from "@modelcontextprotocol/server";
 import { YnabClient } from "./ynab";
 import type { Props } from "./ynab-auth";
 import { registerListPlans } from "./tools/list-plans";
-import { registerGetPlanSummary } from "./tools/get-plan-summary";
 import { registerListAccounts } from "./tools/list-accounts";
+import { registerListMonths } from "./tools/list-months";
 import { registerGetMonth } from "./tools/get-month";
+import { registerGetCategory } from "./tools/get-category";
 import { registerListTransactions } from "./tools/list-transactions";
+import { registerListScheduledTransactions } from "./tools/list-scheduled-transactions";
+import { registerListMoneyMovements } from "./tools/list-money-movements";
+import { registerListPayees } from "./tools/list-payees";
 import { registerTriageInbox } from "./tools/triage-inbox";
-import { registerReflectSpendingBreakdown } from "./tools/reflect-spending-breakdown";
-import { registerReflectSpendingTrends } from "./tools/reflect-spending-trends";
-import { registerReflectNetWorth } from "./tools/reflect-net-worth";
 import { registerReflectIncomeExpense } from "./tools/reflect-income-expense";
-import { registerReflectAgeOfMoney } from "./tools/reflect-age-of-money";
-import { registerGetCategoryDetails } from "./tools/get-category-details";
-import { registerSearchPayees } from "./tools/search-payees";
+import { registerReflectNetWorth } from "./tools/reflect-net-worth";
 import { registerAssignToCategories } from "./tools/assign-to-categories";
 import { registerUpdateTransactions } from "./tools/update-transactions";
 import { registerReconcileAccount } from "./tools/reconcile-account";
 
-export const SERVER_VERSION = "0.2.0";
+export const SERVER_VERSION = "0.3.0";
 
 const INSTRUCTIONS =
-  'YNAB (You Need A Budget) connector. Read tools return plans, accounts, categories, transactions, and reports. Write tools (assign_to_categories, update_transactions, reconcile_account) edit category amounts and existing transactions, and reconcile an account against a bank statement. ' +
+  "YNAB (You Need A Budget) connector. Tools follow YNAB's API: list_* and get_* return YNAB objects with YNAB's field names, and reflect_* tools are multi-month reports. " +
   'Every plan-scoped tool takes an optional plan_id; it defaults to "last-used" (the most recently used plan), so call list_plans only when the user has several plans. ' +
-  'Money values in text responses are already converted from YNAB milliunits to currency; structured output and write tools use milliunits. Each line ends with "— id <uuid>"; use that id to refer to the item in later calls. Month parameters accept "YYYY-MM-01" or the literal string "current". ' +
-  "For an overview, start with triage_inbox or get_plan_summary. The reflect_* tools report across several months, and get_category_details covers one category. Before passing a payee to update_transactions, look up its id with search_payees. " +
-  'Write tools need a connection with write scope. If one returns a "read-only" error, ask the user to disconnect and reconnect the connector in their MCP client.';
+  'Money in text is already formatted in the plan\'s currency; structured output and write tools use YNAB milliunits (1000 = 1.00), and outflows are negative. Months are "YYYY-MM-01" or "current"; dates are "YYYY-MM-DD". Add include_ids for "— id <uuid>" on each text line; structured output always carries ids. ' +
+  "Start with triage_inbox for what needs attention, or get_month for this month's categories. list_scheduled_transactions shows upcoming bills and transfers that are not yet in balances. list_money_movements shows assignments and moves between categories, including money taken from savings goals. list_transactions narrows to an account, category, payee, or month over any date range and totals the matches; find payee ids with list_payees. " +
+  "Write tools (assign_to_categories, update_transactions, reconcile_account) edit category amounts and existing transactions and reconcile an account against a statement. They need a connection with write scope; if one returns a \"read-only\" error, ask the user to disconnect and reconnect the connector in their MCP client.";
 
 // Builds the MCP server for one request. The server is stateless: the
 // Worker creates a fresh instance per request (see index.ts), and everything
@@ -48,18 +47,17 @@ export const buildServer = (props: Props): McpServer => {
   const getProps = () => props;
 
   registerListPlans(server, getClient);
-  registerGetPlanSummary(server, getClient);
   registerListAccounts(server, getClient);
+  registerListMonths(server, getClient);
   registerGetMonth(server, getClient);
+  registerGetCategory(server, getClient);
   registerListTransactions(server, getClient);
+  registerListScheduledTransactions(server, getClient);
+  registerListMoneyMovements(server, getClient);
+  registerListPayees(server, getClient);
   registerTriageInbox(server, getClient);
-  registerReflectSpendingBreakdown(server, getClient);
-  registerReflectSpendingTrends(server, getClient);
-  registerReflectNetWorth(server, getClient);
   registerReflectIncomeExpense(server, getClient);
-  registerReflectAgeOfMoney(server, getClient);
-  registerGetCategoryDetails(server, getClient);
-  registerSearchPayees(server, getClient);
+  registerReflectNetWorth(server, getClient);
   registerAssignToCategories(server, getClient, getProps);
   registerUpdateTransactions(server, getClient, getProps);
   registerReconcileAccount(server, getClient, getProps);

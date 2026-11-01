@@ -6,14 +6,35 @@ import {
   MonthReportSchema,
 } from "./get-month";
 
-const cat = (overrides: Partial<Category>): Category => ({
-  id: "cat-x",
-  category_group_id: "grp-x",
-  name: "Generic",
+const cat = (
+  id: string,
+  group: string,
+  overrides: Partial<Category> = {},
+): Category => ({
+  id,
+  category_group_id: group,
+  category_group_name: group,
+  name: id,
   hidden: false,
+  internal: false,
+  deleted: false,
   budgeted: 0,
   activity: 0,
   balance: 0,
+  ...overrides,
+});
+
+const group = (
+  id: string,
+  categories: Category[],
+  overrides: Partial<CategoryGroup> = {},
+): CategoryGroup => ({
+  id,
+  name: id,
+  hidden: false,
+  internal: false,
+  deleted: false,
+  categories,
   ...overrides,
 });
 
@@ -24,121 +45,74 @@ const monthDetail = (categories: Category[]): MonthDetail => ({
   activity: -2_500_000,
   to_be_budgeted: 500_000,
   age_of_money: 12,
+  deleted: false,
   categories,
 });
 
-const group = (overrides: Partial<CategoryGroup> & { id: string; name: string }): CategoryGroup => ({
-  hidden: false,
-  categories: [],
-  ...overrides,
-});
+// GET /months/{month} order is arbitrary; the Plan's order comes from groups.
+const month = monthDetail([
+  cat("games", "Fun"),
+  cat("rta", "Internal", { internal: true }),
+  cat("old", "Bills", { hidden: true }),
+  cat("power", "Bills"),
+  cat("rent", "Bills", { budgeted: 2_000_000 }),
+  cat("h", "Old Stuff"),
+]);
+const groups = [
+  group("Bills", [cat("rent", "Bills"), cat("power", "Bills"), cat("old", "Bills")]),
+  group("Fun", [cat("games", "Fun")]),
+  group("Old Stuff", [cat("h", "Old Stuff")], { hidden: true }),
+];
+
+const ids = (r: ReturnType<typeof computeMonthReport>) =>
+  r.groups.map((g) => [g.name, g.categories.map((c) => c.id)]);
 
 describe("computeMonthReport", () => {
-  test("groups categories in category_groups order, dropping hidden when not included", () => {
-    const groups: CategoryGroup[] = [
-      group({
-        id: "grp-bills",
-        name: "Monthly Bills",
-        categories: [
-          cat({ id: "rent" }),
-          cat({ id: "old-sub", hidden: true }),
-        ],
-      }),
-      group({
-        id: "grp-hidden",
-        name: "Hidden Group",
-        hidden: true,
-        categories: [cat({ id: "h" })],
-      }),
-    ];
-    const m = monthDetail([
-      cat({ id: "rent", name: "Rent", budgeted: 2_000_000 }),
-      cat({ id: "old-sub", name: "Old", hidden: true }),
-      cat({ id: "h", name: "Hidden", hidden: true }),
+  test("orders groups and categories as the Plan does, dropping hidden and internal", () => {
+    const r = computeMonthReport(month, groups, { includeHidden: false, iso: "USD" });
+    expect(ids(r)).toEqual([
+      ["Bills", ["rent", "power"]],
+      ["Fun", ["games"]],
     ]);
-    const r = computeMonthReport(m, groups, { includeHidden: false });
-    expect(r.groups).toHaveLength(1);
-    expect(r.groups[0].name).toBe("Monthly Bills");
-    expect(r.groups[0].categories.map((c) => c.id)).toEqual(["rent"]);
-  });
-
-  test("includes hidden groups and categories when includeHidden is true", () => {
-    const groups: CategoryGroup[] = [
-      group({
-        id: "grp-hidden",
-        name: "Hidden",
-        hidden: true,
-        categories: [cat({ id: "h", name: "Old", hidden: true })],
-      }),
-    ];
-    const m = monthDetail([cat({ id: "h", name: "Old", hidden: true })]);
-    const r = computeMonthReport(m, groups, { includeHidden: true });
-    expect(r.groups).toHaveLength(1);
-  });
-
-  test("drops groups with zero matching categories", () => {
-    const groups: CategoryGroup[] = [
-      group({
-        id: "grp-empty",
-        name: "Empty",
-        categories: [cat({ id: "g-only" })],
-      }),
-    ];
-    // monthDetail has no matching cat for g-only.
-    const r = computeMonthReport(monthDetail([]), groups, {
-      includeHidden: false,
-    });
-    expect(r.groups).toHaveLength(0);
-  });
-
-  test("result conforms to MonthReportSchema", () => {
-    const groups: CategoryGroup[] = [
-      group({
-        id: "grp-bills",
-        name: "Monthly Bills",
-        categories: [cat({ id: "rent" })],
-      }),
-    ];
-    const m = monthDetail([
-      cat({ id: "rent", name: "Rent", budgeted: 2_000_000 }),
-    ]);
-    const r = computeMonthReport(m, groups, { includeHidden: false });
+    expect(r.to_be_budgeted).toBe(500_000);
     expect(() => MonthReportSchema.parse(r)).not.toThrow();
+  });
+
+  test("includes hidden groups and categories when asked", () => {
+    const r = computeMonthReport(month, groups, { includeHidden: true, iso: "USD" });
+    expect(ids(r)).toEqual([
+      ["Bills", ["rent", "power", "old"]],
+      ["Fun", ["games"]],
+      ["Old Stuff", ["h"]],
+    ]);
+  });
+
+  test("still groups every category when GET /categories comes back empty", () => {
+    const empty = [group("Bills", [], { internal: true })];
+    const r = computeMonthReport(month, empty, { includeHidden: false, iso: "USD" });
+    expect(r.groups.flatMap((g) => g.categories.map((c) => c.id)).sort()).toEqual([
+      "games",
+      "h",
+      "power",
+      "rent",
+    ]);
   });
 });
 
 describe("renderMonthReport", () => {
   test("renders month totals and one ## section per group", () => {
-    const groups: CategoryGroup[] = [
-      group({
-        id: "grp-bills",
-        name: "Monthly Bills",
-        categories: [cat({ id: "rent" })],
-      }),
-    ];
-    const m = monthDetail([
-      cat({
-        id: "rent",
-        name: "Rent",
-        budgeted: 2_000_000,
-        activity: -2_000_000,
-        balance: 0,
-      }),
-    ]);
-    const report = computeMonthReport(m, groups, { includeHidden: false });
+    const report = computeMonthReport(month, groups, { includeHidden: false, iso: "USD" });
     const out = renderMonthReport(report, { includeIds: false });
     expect(out).toContain("Month: 2026-05-01");
-    expect(out).toContain("Income:         $5,000.00");
-    expect(out).toContain("Age of money:   12 days");
-    expect(out).toContain("## Monthly Bills");
-    expect(out).toContain("Rent: budgeted $2,000.00");
+    expect(out).toContain("Income:          $5,000.00");
+    expect(out).toContain("Age of money:    12 days");
+    expect(out).toContain("## Bills");
+    expect(out).toContain("- rent: budgeted $2,000.00");
   });
 
   test("omits Age of money when null", () => {
     const m: MonthDetail = { ...monthDetail([]), age_of_money: null };
-    const report = computeMonthReport(m, [], { includeHidden: false });
-    expect(renderMonthReport(report, { includeIds: false })).not.toContain(
-      "Age of money",
-    );
+    const report = computeMonthReport(m, [], { includeHidden: false, iso: "USD" });
+    expect(renderMonthReport(report, { includeIds: false })).not.toContain("Age of money");
   });
 });

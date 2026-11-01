@@ -17,13 +17,13 @@ const cat = (over: Partial<Category> & { id: string; name: string }): Category =
     ...over,
   }) as Category;
 
-// Mock YnabClient just sufficient for the apply function — only `getCategory`
+// Mock YnabClient just sufficient for the apply function — only `getMonthCategory`
 // and `updateCategoryMonth` are touched.
-type MockClient = Pick<YnabClient, "getCategory" | "updateCategoryMonth">;
+type MockClient = Pick<YnabClient, "getMonthCategory" | "updateCategoryMonth">;
 
 const stubClient = (
   responder: {
-    getCategory: (id: string) => Category;
+    getMonthCategory: (id: string) => Category;
     updateCategoryMonth: (
       month: string,
       id: string,
@@ -32,9 +32,9 @@ const stubClient = (
   },
 ): { client: MockClient; calls: { method: string; args: unknown[] }[] } => {
   const calls: { method: string; args: unknown[] }[] = [];
-  const getCategory = vi.fn(async (_planId: string, id: string) => {
-    calls.push({ method: "getCategory", args: [id] });
-    return { data: { category: responder.getCategory(id) } };
+  const getMonthCategory = vi.fn(async (_planId: string, _month: string, id: string) => {
+    calls.push({ method: "getMonthCategory", args: [id] });
+    return { data: { category: responder.getMonthCategory(id) } };
   });
   const updateCategoryMonth = vi.fn(
     async (
@@ -53,7 +53,7 @@ const stubClient = (
     },
   );
   return {
-    client: { getCategory, updateCategoryMonth } as unknown as MockClient,
+    client: { getMonthCategory, updateCategoryMonth } as unknown as MockClient,
     calls,
   };
 };
@@ -79,7 +79,7 @@ describe("applyAssignToCategories", () => {
       }),
     };
     const { client, calls } = stubClient({
-      getCategory: (id) => before[id],
+      getMonthCategory: (id) => before[id],
       updateCategoryMonth: (_m, id) => after[id],
     });
 
@@ -109,16 +109,16 @@ describe("applyAssignToCategories", () => {
       },
     ]);
     expect(calls).toEqual([
-      { method: "getCategory", args: ["cat-a"] },
+      { method: "getMonthCategory", args: ["cat-a"] },
       { method: "updateCategoryMonth", args: ["2026-05-01", "cat-a", 450000] },
-      { method: "getCategory", args: ["cat-b"] },
+      { method: "getMonthCategory", args: ["cat-b"] },
       { method: "updateCategoryMonth", args: ["2026-05-01", "cat-b", 150000] },
     ]);
   });
 
   test("a mid-batch failure does not stop subsequent moves", async () => {
     const { client } = stubClient({
-      getCategory: (id) => cat({ id, name: `Cat ${id}`, budgeted: 100000 }),
+      getMonthCategory: (id) => cat({ id, name: `Cat ${id}`, budgeted: 100000 }),
       updateCategoryMonth: (_m, id, budgeted) => {
         if (id === "cat-b") return new YnabError(404, "category not found");
         return cat({ id, name: `Cat ${id}`, budgeted, balance: budgeted });
@@ -139,7 +139,7 @@ describe("applyAssignToCategories", () => {
 
   test("surfaces non-YnabError messages on the per-item result", async () => {
     const { client } = stubClient({
-      getCategory: () => {
+      getMonthCategory: () => {
         throw new Error("network broken");
       },
       updateCategoryMonth: () => cat({ id: "cat-a", name: "X", budgeted: 0 }),
@@ -178,19 +178,19 @@ describe("renderAssignToCategoriesResult", () => {
   };
 
   test("header summarizes ok/total and error count", () => {
-    const rendered = renderAssignToCategoriesResult(sample);
+    const rendered = renderAssignToCategoriesResult(sample, "USD");
     expect(rendered).toContain("Reassigned 1 / 2 categories (1 error)");
   });
 
   test("ok rows show before → after with the id suffix", () => {
-    const rendered = renderAssignToCategoriesResult(sample);
+    const rendered = renderAssignToCategoriesResult(sample, "USD");
     expect(rendered).toContain(
       "[ok] 2026-05-01 Groceries: $400.00 → $450.00 (balance $450.00) — id cat-a",
     );
   });
 
   test("error rows include the message and category id", () => {
-    const rendered = renderAssignToCategoriesResult(sample);
+    const rendered = renderAssignToCategoriesResult(sample, "USD");
     expect(rendered).toContain(
       "[error] 2026-05-01 cat-b: YNAB 404: category not found",
     );
@@ -210,6 +210,6 @@ describe("renderAssignToCategoriesResult", () => {
         },
       ],
     };
-    expect(renderAssignToCategoriesResult(noOp)).toContain("$400.00 = $400.00");
+    expect(renderAssignToCategoriesResult(noOp, "USD")).toContain("$400.00 = $400.00");
   });
 });

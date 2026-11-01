@@ -7,6 +7,8 @@ const cat = (overrides: Partial<Category>): Category => ({
   category_group_id: "grp-1",
   name: "Groceries",
   hidden: false,
+  internal: false,
+  deleted: false,
   budgeted: 0,
   activity: 0,
   balance: 0,

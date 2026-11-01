@@ -10,10 +10,20 @@ explain. Domain meaning is in the [glossary](./glossary.md).
   return only the last year, which truncates "all uncategorized" and "all unreconciled" queries.
   `YnabClient` sends `ALL_TIME` unless the caller passes a date.
 - **`month` accepts `YYYY-MM-01` or `current`.**
-- **`GET /plans/{id}` omits group names.** Categories, top-level or under `months[].categories[]`,
-  have no `category_group_name`, and `category_groups[].categories` is `null`. Build an id-to-name
-  map from `plan.category_groups[]` and resolve through `category_group_id`, as
-  `reflect_income_expense` does.
+- **`GET /plans/{id}` omits fields the lighter endpoints send.** Categories, top-level or under
+  `months[].categories[]`, have no `category_group_name` and no `goal_target_date` (only the
+  deprecated `goal_target_month`), and `category_groups[].categories` is `null`. Resolve group names
+  through `category_group_id`, as `reflect_income_expense` does; `interpretGoal` falls back to
+  `goal_target_month`. Its per-month `goal_*` fields are that month's own funding state.
+- **`GET /months/{month}` returns categories unordered.** Take group order from `GET /categories`.
+- **Category and payee listings return hybrid rows.** By category, each split part is its own row
+  (`type: "subtransaction"`, `parent_transaction_id`) carrying the part's payee, usually null, not
+  the parent's. By payee, splits come back whole with `category_name: "Split"`. Neither double
+  counts, so totals are safe. Plan, account, and month listings nest `subtransactions` instead.
+  Every listing leaves out pending bank transactions.
+- **Money movements include every assignment.** A null `from_category_id` is Ready to Assign, and a
+  null `to_category_id` returns money to it, so a category's movements net to its `budgeted`. Never
+  send `last_knowledge_of_server` here: the delta response carries deleted tombstones.
 - **Ignore `*_formatted` / `*_currency` siblings** (v1.82). Structured output stays in milliunits.
 - **Tokens.** Access tokens last two hours; refresh tokens are long-lived and rotate. See
   [token rotation](./overview.md#token-rotation-lives-in-one-place).

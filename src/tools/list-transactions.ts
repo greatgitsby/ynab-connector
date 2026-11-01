@@ -1,98 +1,104 @@
 import { z } from "zod";
-import { planIdParam } from "../schemas";
+import {
+  dateParam,
+  includeIdsParam,
+  monthParam,
+  planIdParam,
+} from "../schemas";
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { Transaction, YnabClient } from "../ynab";
-import { result, handleError, fmtTxLine } from "../format";
+import { TransactionSchema } from "../wire";
+import { result, handleError, fmtMoney, fmtTxLine, text } from "../format";
 
-// ---- Result types (zod is the single source of truth; the TS types are
-// inferred and the schema doubles as the tool's outputSchema — see docs/internals/structured-output.md).
-// Money (`amount`) is in milliunits; cleared status and flag color are YNAB
-// enum-ish strings left as plain strings.
-
-const SubTransactionSchema = z.object({
-  id: z.string(),
-  transaction_id: z.string(),
-  amount: z.number(),
-  memo: z.string().nullable(),
-  payee_id: z.string().nullable(),
-  payee_name: z.string().nullable(),
-  category_id: z.string().nullable(),
-  category_name: z.string().nullable(),
-});
-
-const TransactionSchema = z.object({
-  id: z.string(),
-  date: z.string(),
-  amount: z.number(),
-  memo: z.string().nullable(),
-  cleared: z.string(),
-  approved: z.boolean(),
-  account_id: z.string(),
-  account_name: z.string(),
-  payee_id: z.string().nullable(),
-  payee_name: z.string().nullable(),
-  category_id: z.string().nullable(),
-  category_name: z.string().nullable(),
-  flag_color: z.string().nullable(),
-  transfer_account_id: z.string().nullable(),
-  deleted: z.boolean().optional(),
-  subtransactions: z.array(SubTransactionSchema).optional(),
-});
+// ---- Result type (zod is the source of truth; see docs/internals/structured-output.md)
 
 export const TransactionListSchema = z.object({
-  // Currency code (e.g. "USD") for formatting the milliunit amounts below.
   iso: z.string(),
-  // Most recent first (slice(-limit) then reversed).
+  // Totals cover every matching transaction, not just the listed ones.
+  count: z.number().int(),
+  total: z.number().int(),
+  // Net amount per month ("YYYY-MM-01"), chronological.
+  by_month: z.array(
+    z.object({
+      month: z.string(),
+      count: z.number().int(),
+      total: z.number().int(),
+    }),
+  ),
+  // Most recent first, capped at `limit`.
   transactions: z.array(TransactionSchema),
 });
 export type TransactionList = z.infer<typeof TransactionListSchema>;
 
 // ---- Compute (pure)
 
-export interface ComputeOpts {
-  limit: number;
-  // Currency code for the structured payload. Optional for callers (tests)
-  // that don't care; the handler always passes the plan's real code.
-  iso?: string;
-}
-
 export const computeTransactionList = (
   fetched: Transaction[],
-  opts: ComputeOpts,
+  opts: { limit: number; iso: string },
 ): TransactionList => {
+  const byMonth = new Map<string, { count: number; total: number }>();
+  let total = 0;
+  for (const t of fetched) {
+    total += t.amount;
+    const key = `${t.date.slice(0, 7)}-01`;
+    const m = byMonth.get(key) ?? { count: 0, total: 0 };
+    m.count += 1;
+    m.total += t.amount;
+    byMonth.set(key, m);
+  }
+  const sorted = [...fetched].sort((a, b) => b.date.localeCompare(a.date));
   return {
-    iso: opts.iso ?? "USD",
-    transactions: fetched.slice(-opts.limit).reverse(),
+    iso: opts.iso,
+    count: fetched.length,
+    total,
+    by_month: [...byMonth]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([month, m]) => ({ month, ...m })),
+    transactions: sorted.slice(0, opts.limit),
   };
 };
 
 // ---- Render (pure)
 
-export interface RenderOpts {
-  includeIds: boolean;
-}
-
 export const renderTransactionList = (
   list: TransactionList,
-  opts: RenderOpts,
+  opts: { includeIds: boolean },
 ): string => {
-  if (!list.transactions.length) return "No transactions match.";
-  return list.transactions
-    .map((t) => fmtTxLine(t, { includeIds: opts.includeIds, iso: list.iso }))
-    .join("\n");
+  if (!list.count) return "No transactions match.";
+  const { iso } = list;
+  const out = [
+    `${list.count} transactions, total ${fmtMoney(list.total, iso)}`,
+  ];
+  if (list.by_month.length > 1) {
+    out.push("", "## By month");
+    for (const m of list.by_month) {
+      out.push(`- ${m.month.slice(0, 7)}: ${fmtMoney(m.total, iso)} (${m.count})`);
+    }
+  }
+  out.push(
+    "",
+    list.transactions.length < list.count
+      ? `## Most recent ${list.transactions.length} of ${list.count}`
+      : "## Transactions",
+  );
+  for (const t of list.transactions) {
+    out.push(fmtTxLine(t, iso, { includeIds: opts.includeIds }));
+  }
+  return out.join("\n");
 };
 
 // ---- MCP tool registration
 
 const DESCRIPTION =
-  "List transactions in a plan, most recent first. Optionally bound the date " +
-  "range with since_date and/or until_date (YYYY-MM-DD, inclusive) and filter " +
-  "by type ('uncategorized' or 'unapproved'). Without since_date, searches " +
-  "the plan's full history.";
-
-const isoDate = z
-  .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, { message: "date must be YYYY-MM-DD" });
+  "Transactions in a plan, most recent first, with the count, net total, and " +
+  "per-month totals of every match. Narrow to one account_id, category_id, " +
+  "payee_id, or month (at most one), bound dates with since_date and " +
+  "until_date (YYYY-MM-DD, inclusive), and filter by type. Without " +
+  "since_date it searches the plan's full history. By category, split " +
+  "transactions appear as their parts in that category; by payee, as whole " +
+  "transactions. Look up payee ids with list_payees. YNAB's API omits " +
+  "pending bank transactions until they post. Amounts are signed: outflows " +
+  "are negative.";
 
 export const registerListTransactions = (
   server: McpServer,
@@ -106,30 +112,53 @@ export const registerListTransactions = (
       annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
         plan_id: planIdParam,
-        since_date: isoDate.optional(),
-        until_date: isoDate.optional(),
+        account_id: z.string().optional(),
+        category_id: z.string().optional(),
+        payee_id: z.string().optional(),
+        month: monthParam.optional(),
+        since_date: dateParam.optional(),
+        until_date: dateParam.optional(),
         type: z.enum(["uncategorized", "unapproved"]).optional(),
         limit: z.number().int().positive().max(500).optional().default(100),
-        include_ids: z.boolean().optional().default(false),
+        include_ids: includeIdsParam,
       },
       outputSchema: TransactionListSchema.shape,
     },
-    async ({ plan_id, since_date, until_date, type, limit, include_ids }) => {
+    async (args) => {
+      const scopes = [
+        args.account_id,
+        args.category_id,
+        args.payee_id,
+        args.month,
+      ].filter((s) => s !== undefined);
+      if (scopes.length > 1) {
+        return {
+          ...text(
+            "Pass at most one of account_id, category_id, payee_id, or month.",
+          ),
+          isError: true as const,
+        };
+      }
       try {
         const c = getClient();
-        const [{ data }, settingsRes] = await Promise.all([
-          c.listTransactions(plan_id, {
-            sinceDate: since_date,
-            untilDate: until_date,
-            type,
+        const [{ data }, iso] = await Promise.all([
+          c.listTransactions(args.plan_id, {
+            accountId: args.account_id,
+            categoryId: args.category_id,
+            payeeId: args.payee_id,
+            month: args.month,
+            sinceDate: args.since_date,
+            untilDate: args.until_date,
+            type: args.type,
           }),
-          c.getPlanSettings(plan_id),
+          c.planIso(args.plan_id),
         ]);
-        const iso =
-          settingsRes.data.settings.currency_format?.iso_code ?? "USD";
-        const list = computeTransactionList(data.transactions, { limit, iso });
+        const list = computeTransactionList(data.transactions, {
+          limit: args.limit,
+          iso,
+        });
         return result(
-          renderTransactionList(list, { includeIds: include_ids }),
+          renderTransactionList(list, { includeIds: args.include_ids }),
           list,
         );
       } catch (e) {

@@ -67,25 +67,42 @@ describe("YnabClient", () => {
     });
   });
 
-  describe("updateTransaction", () => {
-    test("PUTs the transaction endpoint with a wrapped body", async () => {
-      stub = stubFetch(() =>
-        okResponse({ data: { transaction: { id: "tx-1" } } }),
-      );
-      const client = new YnabClient("tok");
-      await client.updateTransaction("bud-1", "tx-1", {
-        category_id: "cat-x",
-        approved: true,
-      });
+  describe("listTransactions", () => {
+    const urlFor = async (opts: Parameters<YnabClient["listTransactions"]>[1]) => {
+      stub = stubFetch(() => okResponse({ data: { transactions: [] } }));
+      await new YnabClient("tok").listTransactions("p1", opts);
+      const url = new URL(stub.calls[0].url);
+      stub.restore();
+      return url;
+    };
 
-      const [{ url, init }] = stub.calls;
-      expect(url).toBe(
-        "https://api.ynab.com/v1/plans/bud-1/transactions/tx-1",
-      );
-      expect(init.method).toBe("PUT");
-      expect(JSON.parse(init.body as string)).toEqual({
-        transaction: { category_id: "cat-x", approved: true },
+    // YNAB v1.85 defaults since_date to one year ago when omitted, so every
+    // scope must send an explicit lower bound.
+    test("routes each scope to its YNAB endpoint and always sends since_date", async () => {
+      const cases: [Parameters<YnabClient["listTransactions"]>[1], string][] = [
+        [{}, "/v1/plans/p1/transactions"],
+        [{ accountId: "a1" }, "/v1/plans/p1/accounts/a1/transactions"],
+        [{ categoryId: "c1" }, "/v1/plans/p1/categories/c1/transactions"],
+        [{ payeeId: "y1" }, "/v1/plans/p1/payees/y1/transactions"],
+        [{ month: "2026-05-01" }, "/v1/plans/p1/months/2026-05-01/transactions"],
+      ];
+      for (const [opts, path] of cases) {
+        const url = await urlFor(opts);
+        expect(url.pathname).toBe(path);
+        expect(url.searchParams.get("since_date")).toBe(ALL_TIME);
+      }
+    });
+
+    test("passes since_date, until_date, and type through", async () => {
+      const url = await urlFor({
+        payeeId: "y1",
+        sinceDate: "2026-01-01",
+        untilDate: "2026-06-30",
+        type: "unapproved",
       });
+      expect(url.searchParams.get("since_date")).toBe("2026-01-01");
+      expect(url.searchParams.get("until_date")).toBe("2026-06-30");
+      expect(url.searchParams.get("type")).toBe("unapproved");
     });
   });
 
@@ -160,14 +177,12 @@ describe("YnabClient", () => {
       expect(res.data.plans[0].id).toBe("p1");
     });
 
-    test("getPlan hits /plans/{id} and forwards last_knowledge_of_server", async () => {
+    test("getPlan hits /plans/{id}", async () => {
       stub = stubFetch(() =>
-        okResponse({ data: { plan: { id: "p1", name: "Home" }, server_knowledge: 7 } }),
+        okResponse({ data: { plan: { id: "p1", name: "Home" } } }),
       );
-      const res = await new YnabClient("tok").getPlan("p1", 5);
-      expect(stub.calls[0].url).toBe(
-        "https://api.ynab.com/v1/plans/p1?last_knowledge_of_server=5",
-      );
+      const res = await new YnabClient("tok").getPlan("p1");
+      expect(stub.calls[0].url).toBe("https://api.ynab.com/v1/plans/p1");
       expect(res.data.plan.name).toBe("Home");
     });
 
@@ -177,38 +192,6 @@ describe("YnabClient", () => {
       expect(stub.calls[0].url).toBe(
         "https://api.ynab.com/v1/plans/last-used/accounts",
       );
-    });
-  });
-
-  describe("transaction listings", () => {
-    // YNAB v1.85 defaults since_date to one year ago when omitted, so the
-    // client must always send an explicit lower bound.
-    test("listTransactions sends since_date=ALL_TIME when none is given", async () => {
-      stub = stubFetch(() => okResponse({ data: { transactions: [] } }));
-      await new YnabClient("tok").listTransactions("p1", { type: "unapproved" });
-      const url = new URL(stub.calls[0].url);
-      expect(url.pathname).toBe("/v1/plans/p1/transactions");
-      expect(url.searchParams.get("since_date")).toBe(ALL_TIME);
-      expect(url.searchParams.get("type")).toBe("unapproved");
-    });
-
-    test("listTransactions forwards since_date and until_date", async () => {
-      stub = stubFetch(() => okResponse({ data: { transactions: [] } }));
-      await new YnabClient("tok").listTransactions("p1", {
-        sinceDate: "2026-01-01",
-        untilDate: "2026-01-31",
-      });
-      const url = new URL(stub.calls[0].url);
-      expect(url.searchParams.get("since_date")).toBe("2026-01-01");
-      expect(url.searchParams.get("until_date")).toBe("2026-01-31");
-    });
-
-    test("listAccountTransactions sends since_date=ALL_TIME by default", async () => {
-      stub = stubFetch(() => okResponse({ data: { transactions: [] } }));
-      await new YnabClient("tok").listAccountTransactions("p1", "a1");
-      const url = new URL(stub.calls[0].url);
-      expect(url.pathname).toBe("/v1/plans/p1/accounts/a1/transactions");
-      expect(url.searchParams.get("since_date")).toBe(ALL_TIME);
     });
   });
 

@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { planIdParam } from "../schemas";
+import { includeIdsParam, planIdParam } from "../schemas";
+import { AccountSchema } from "../wire";
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { Account, YnabClient } from "../ynab";
 import { result, handleError, fmtMoney } from "../format";
@@ -8,24 +9,6 @@ import { result, handleError, fmtMoney } from "../format";
 // inferred and the schema doubles as the tool's outputSchema — see docs/internals/structured-output.md).
 // Money is in milliunits; balances carry no currency code, so we attach an
 // iso field for formatting.
-
-const AccountSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  type: z.string(),
-  on_budget: z.boolean(),
-  closed: z.boolean(),
-  deleted: z.boolean().optional(),
-  balance: z.number(),
-  cleared_balance: z.number(),
-  uncleared_balance: z.number(),
-  // Direct-import (linked-bank) status. Absent on accounts that predate the
-  // field or were never linked. Note: YNAB's API does NOT expose the bank's
-  // reported balance — only these health flags and the last-reconciled time.
-  direct_import_linked: z.boolean().optional(),
-  direct_import_in_error: z.boolean().optional(),
-  last_reconciled_at: z.string().nullable().optional(),
-});
 
 export const AccountListSchema = z.object({
   // Currency code (e.g. "USD") for formatting the milliunit balances below.
@@ -49,7 +32,9 @@ export const computeAccountList = (
 ): AccountList => {
   return {
     iso: opts.iso ?? "USD",
-    accounts: fetched.filter((a) => opts.includeClosed || !a.closed),
+    accounts: fetched.filter(
+      (a) => !a.deleted && (opts.includeClosed || !a.closed),
+    ),
   };
 };
 
@@ -90,7 +75,10 @@ export const renderAccountList = (
 
 // ---- MCP tool registration
 
-const DESCRIPTION = "List all accounts in a plan with balances.";
+const DESCRIPTION =
+  "List a plan's accounts with balance, cleared and uncleared balances, " +
+  "bank-link health, and last reconciliation. Tracking (off-budget) " +
+  "accounts are marked. Closed accounts are hidden unless include_closed.";
 
 export const registerListAccounts = (
   server: McpServer,
@@ -105,15 +93,20 @@ export const registerListAccounts = (
       inputSchema: {
         plan_id: planIdParam,
         include_closed: z.boolean().optional().default(false),
-        include_ids: z.boolean().optional().default(false),
+        include_ids: includeIdsParam,
       },
       outputSchema: AccountListSchema.shape,
     },
     async ({ plan_id, include_closed, include_ids }) => {
       try {
-        const { data } = await getClient().listAccounts(plan_id);
+        const c = getClient();
+        const [{ data }, iso] = await Promise.all([
+          c.listAccounts(plan_id),
+          c.planIso(plan_id),
+        ]);
         const list = computeAccountList(data.accounts, {
           includeClosed: include_closed,
+          iso,
         });
         return result(
           renderAccountList(list, { includeIds: include_ids }),

@@ -52,9 +52,12 @@ const EXPECTED_TOOLS = [
   "list_plans",
   "list_scheduled_transactions",
   "list_transactions",
+  "merge_payees",
   "reconcile_account",
   "reflect_income_expense",
   "reflect_net_worth",
+  "rename_payees",
+  "review_payees",
   "triage_inbox",
   "update_transactions",
 ];
@@ -96,7 +99,13 @@ describe("tool discovery", () => {
   test("read tools are annotated read-only; write tools are not", async () => {
     const client = await connect();
     const { tools } = await client.listTools();
-    const writes = new Set(["assign_to_categories", "update_transactions", "reconcile_account"]);
+    const writes = new Set([
+      "assign_to_categories",
+      "update_transactions",
+      "reconcile_account",
+      "rename_payees",
+      "merge_payees",
+    ]);
     for (const t of tools) {
       expect(t.annotations?.readOnlyHint, t.name).toBe(!writes.has(t.name));
     }
@@ -296,6 +305,60 @@ describe("tool calls", () => {
     expect(res.isError).toBe(true);
     expect((res.content as Array<{ text: string }>)[0].text).toContain("read-only");
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test("merge_payees previews by default and writes nothing", async () => {
+    fetchMock.mockImplementation(async (u: string, init?: RequestInit) => {
+      if (init?.method && init.method !== "GET") throw new Error(`unexpected ${init.method}`);
+      const path = new URL(u).pathname;
+      if (path.endsWith("/settings"))
+        return json({ data: { settings: { currency_format: { iso_code: "USD", decimal_digits: 2 } } } });
+      if (path.endsWith("/payees"))
+        return json({
+          data: {
+            payees: [
+              { id: "keep", name: "Starbucks", transfer_account_id: null, deleted: false },
+              { id: "dup", name: "STARBUCKS #1", transfer_account_id: null, deleted: false },
+            ],
+          },
+        });
+      if (path.endsWith("/scheduled_transactions")) return json({ data: { scheduled_transactions: [] } });
+      return json({
+        data: {
+          transactions: [
+            {
+              id: "t1",
+              date: "2026-10-01",
+              amount: -5000,
+              memo: null,
+              cleared: "cleared",
+              approved: true,
+              flag_color: null,
+              account_id: "a",
+              account_name: "Checking",
+              payee_id: "dup",
+              payee_name: "STARBUCKS #1",
+              category_id: null,
+              category_name: null,
+              transfer_account_id: null,
+              deleted: false,
+              subtransactions: [],
+            },
+          ],
+        },
+      });
+    });
+    const client = await connect();
+    const res = await client.callTool({
+      name: "merge_payees",
+      arguments: { target_payee_id: "keep", source_payee_ids: ["dup"] },
+    });
+    expect(res.isError).toBeFalsy();
+    expect((res.content as Array<{ text: string }>)[0].text).toContain("nothing changed yet");
+    expect(res.structuredContent).toMatchObject({
+      applied: false,
+      sources: [{ payee_id: "dup", transactions: [{ id: "t1" }] }],
+    });
   });
 
   test("invalid arguments are rejected by schema validation", async () => {

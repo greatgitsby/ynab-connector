@@ -21,6 +21,13 @@ explain. Domain meaning is in the [glossary](./glossary.md).
   the parent's. By payee, splits come back whole with `category_name: "Split"`. Neither double
   counts, so totals are safe. Plan, account, and month listings nest `subtransactions` instead.
   Every listing leaves out pending bank transactions.
+- **Split parts of existing transactions are read-only.** Sending `subtransactions` for an existing
+  split returns an error, so a split part's payee or category can't be changed through the API.
+  Splitting a plain transaction, and setting a split parent's own fields without `subtransactions`,
+  both work.
+- **Updating a scheduled transaction is a full `PUT`.** Omitted fields are cleared, `date` (the next
+  occurrence) must be in the future per the spec, and the body has no `subtransactions`, so split
+  scheduled transactions can't be written.
 - **Money movements include every assignment.** A null `from_category_id` is Ready to Assign, and a
   null `to_category_id` returns money to it, so a category's movements net to its `budgeted`. Never
   send `last_knowledge_of_server` here: the delta response carries deleted tombstones.

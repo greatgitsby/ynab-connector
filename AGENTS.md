@@ -13,7 +13,7 @@ Think of these instructions as good defaults, not hard rules. The developer's pr
 3. **Skipping the write gate.** Every write handler checks `getProps().canWrite` before any YNAB call. Tokens from before write support deserialize with `canWrite === undefined`; treat that as `false`.
 4. **Pruning `wrangler.jsonc` migrations.** Keep both migration entries, including the `v2` `deleted_classes` one. Cloudflare replays the history by tag.
 5. **Writing to a real plan.** Try writes only against a dedicated test plan. See [development](docs/operations/development.md#calling-ynab-directly).
-6. **Widening the write surface quietly.** Manual transaction creation, deletes, scheduled transactions, payee rename/merge, category rename/move, and goal edits are excluded on purpose. See [write tools](docs/internals/write-tools.md).
+6. **Widening the write surface quietly.** Manual transaction creation, deletes, scheduled transaction edits (beyond `merge_payees` re-pointing a payee), category rename/move, and goal edits are excluded on purpose. See [write tools](docs/internals/write-tools.md).
 
 ## Commands
 

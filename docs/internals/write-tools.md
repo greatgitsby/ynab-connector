@@ -44,10 +44,11 @@ not an implementation detail. Mistakes are fixed by another write, never by dele
 
 ## Payee merges
 
-YNAB's API has no merge, combine, or delete for payees, so `merge_payees` re-points transactions
-with a bulk PATCH and scheduled transactions with one PUT each, and leaves the source payees in
-place. It cannot move YNAB's renaming rules, so later imports can still land on a source payee; the
-user retires sources in YNAB's Manage Payees. What the API can't edit stays on the source and is
+YNAB's API has no merge, combine, or delete for payees (v1.88: payees are `GET`, `POST`, and a
+name-only `PATCH`), so `merge_payees` re-points transactions with a bulk PATCH and scheduled
+transactions with one PUT each, and leaves the source payees in place. It cannot move YNAB's renaming rules, so later imports can still land on a source payee. The user
+deletes sources in the web app's Manage Payees, which bulk-deletes unused payees and, for a used
+one, asks which payee its transactions move to. What the API can't edit stays on the source and is
 reported: parts of an existing split, and split scheduled transactions (see
 [YNAB API](./ynab-api.md)). A re-run moves whatever is left, so a partial merge is fixed by
 running it again.

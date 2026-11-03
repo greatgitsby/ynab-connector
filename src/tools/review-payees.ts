@@ -174,7 +174,8 @@ const DESCRIPTION =
   "look for duplicates the grouping can't see (\"AMZN Mktp\" and " +
   "\"Amazon\"). Each group lists its most-used payee first, usually the one " +
   "to keep. Consolidate with merge_payees and rename with rename_payees. " +
-  "Transfer payees are left out. Reads every transaction in the plan, so " +
+  "YNAB's API can't delete payees; the user removes unused ones in bulk in " +
+  "YNAB's web app (Manage Payees, Delete All). Transfer payees are left out. Reads every transaction in the plan, so " +
   "call it once per cleanup, not per payee.";
 
 export const registerReviewPayees = (

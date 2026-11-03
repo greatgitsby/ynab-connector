@@ -233,8 +233,10 @@ export const renderMerge = (r: MergePayeesResult): string => {
     );
   }
   out.push(
-    "The old payees are not deleted: YNAB's API can't delete or combine payees, so future bank " +
-      "imports may still land on them. To retire them, combine or delete them in YNAB's Manage Payees.",
+    "The old payees still exist: YNAB's API can't delete payees, so future bank imports may " +
+      "still land on them. To remove them, open Manage Payees in YNAB's web app (click the plan " +
+      "name, top left): Delete All under unused payees removes every payee nothing uses, and " +
+      "deleting one that is still used asks which payee its transactions move to.",
   );
   return out.join("\n");
 };
@@ -247,7 +249,7 @@ const DESCRIPTION =
   "only previews, listing what would move and what can't; show the preview " +
   "to the user, then call again with apply: true. YNAB's API can't re-point " +
   "parts of an existing split or split scheduled transactions; those are " +
-  "reported and stay on the source. The source payees are not deleted. " +
+  "reported and stay on the source. The source payees are not deleted (YNAB's API can't); the user deletes them in YNAB's web app, under Manage Payees. " +
   "Rename the target afterwards with rename_payees if needed. Find " +
   "candidates with review_payees. Transfer payees can't be merged. " +
   "Requires write access; a read-only connection must be reconnected to " +

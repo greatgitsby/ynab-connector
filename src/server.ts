@@ -20,7 +20,7 @@ import { registerReviewPayees } from "./tools/review-payees";
 import { registerRenamePayees } from "./tools/rename-payees";
 import { registerMergePayees } from "./tools/merge-payees";
 
-export const SERVER_VERSION = "0.4.0";
+export const SERVER_VERSION = "0.4.1";
 
 const INSTRUCTIONS =
   "YNAB (You Need A Budget) connector. Tools follow YNAB's API: list_* and get_* return YNAB objects with YNAB's field names, and reflect_* tools are multi-month reports. " +

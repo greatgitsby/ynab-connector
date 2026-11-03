@@ -21,6 +21,10 @@ explain. Domain meaning is in the [glossary](./glossary.md).
   the parent's. By payee, splits come back whole with `category_name: "Split"`. Neither double
   counts, so totals are safe. Plan, account, and month listings nest `subtransactions` instead.
   Every listing leaves out pending bank transactions.
+- **Some names are stored HTML-escaped.** Most payees come back as typed ("AT&T"), but some,
+  likely from bank-import data, are stored as "Board &amp; Brew", often beside a clean twin. This
+  is stored data, not output encoding, so don't decode responses: a rename's collision check and a
+  merge's target name work on the stored name. `review_payees` flags them for renaming or merging.
 - **Split parts of existing transactions are read-only.** Sending `subtransactions` for an existing
   split returns an error, so a split part's payee or category can't be changed through the API.
   Splitting a plain transaction, and setting a split parent's own fields without `subtransactions`,

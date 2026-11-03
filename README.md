@@ -40,6 +40,7 @@ Read tools:
 | `list_scheduled_transactions` | Upcoming scheduled bills, paychecks, and transfers that aren't in balances yet |
 | `list_money_movements` | Assignments and moves between categories, with each category's net flow and moves out of savings goals flagged |
 | `list_payees` | Payees, optionally filtered by part of their name |
+| `review_payees` | Each payee's usage, groups of likely duplicates, and barely used payees, for cleanup |
 | `triage_inbox` | Uncategorized and unapproved transactions, overspent categories, and underfunded goals in one call |
 | `reflect_income_expense` | Income by payee against expense by category for each month in a range (default 3 months), with Average and Total columns |
 | `reflect_net_worth` | Current net worth, month-end history rebuilt from transactions, and each account's balance |
@@ -51,8 +52,10 @@ Write tools need write access (see [Permissions](#permissions)):
 | `assign_to_categories` | Set a month's `budgeted` amount on one or more categories, as absolute milliunits. Moves money between categories or funds them from Ready to Assign. |
 | `update_transactions` | Edit existing transactions in bulk: category, approval, memo, flag, cleared status, payee, or splits. |
 | `reconcile_account` | Reconcile an account against a bank statement balance. Locks cleared transactions only when every transaction is approved and categorized and the balances match. |
+| `rename_payees` | Rename one or more payees. Refuses a name another payee already has. |
+| `merge_payees` | Move every transaction and scheduled transaction from duplicate payees to one payee. Previews unless called with `apply: true`; reports anything YNAB's API can't move. |
 
-The connector deliberately leaves out creating manual transactions, deleting anything, creating or editing scheduled transactions, renaming or merging payees, renaming or moving categories, and editing goals. [Write tools](docs/internals/write-tools.md) explains why.
+The connector deliberately leaves out creating manual transactions, deleting anything (payees included), creating or editing scheduled transactions other than re-pointing their payee in a merge, renaming or moving categories, and editing goals. [Write tools](docs/internals/write-tools.md) explains why.
 
 ## How auth works
 

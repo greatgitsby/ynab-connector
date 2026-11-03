@@ -305,12 +305,33 @@ export class YnabClient {
       `/plans/${planId}/payees`,
     );
   }
+  updatePayee(planId: string, payeeId: string, body: { name: string }) {
+    return this.request<{ data: { payee: Payee } }>(
+      "PATCH",
+      `/plans/${planId}/payees/${payeeId}`,
+      { payee: body },
+    );
+  }
 
   // Scheduled transactions
   listScheduledTransactions(planId: string) {
     return this.request<{
       data: { scheduled_transactions: ScheduledTransaction[] };
     }>("GET", `/plans/${planId}/scheduled_transactions`);
+  }
+  // A full replace: fields left out are cleared, not kept.
+  updateScheduledTransaction(
+    planId: string,
+    scheduledTransactionId: string,
+    body: SaveScheduledTransaction,
+  ) {
+    return this.request<{
+      data: { scheduled_transaction: ScheduledTransaction };
+    }>(
+      "PUT",
+      `/plans/${planId}/scheduled_transactions/${scheduledTransactionId}`,
+      { scheduled_transaction: body },
+    );
   }
 
   // Money movements. Never pass last_knowledge_of_server here: the delta
@@ -356,4 +377,17 @@ export interface SaveTransactionFields {
 // settable fields. YNAB requires `id` (or `import_id`); we always pass `id`.
 export interface SaveTransactionWithId extends SaveTransactionFields {
   id: string;
+}
+
+// YNAB's `SaveScheduledTransaction`. It has no subtransactions, so a split
+// scheduled transaction can't be written through the API.
+export interface SaveScheduledTransaction {
+  account_id: string;
+  date: string;
+  amount: number;
+  payee_id: string | null;
+  category_id: string | null;
+  memo: string | null;
+  flag_color: string | null;
+  frequency: string;
 }

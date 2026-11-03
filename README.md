@@ -40,7 +40,7 @@ Read tools:
 | `list_scheduled_transactions` | Upcoming scheduled bills, paychecks, and transfers that aren't in balances yet |
 | `list_money_movements` | Assignments and moves between categories, with each category's net flow and moves out of savings goals flagged |
 | `list_payees` | Payees, optionally filtered by part of their name |
-| `review_payees` | Each payee's usage, groups of likely duplicates, and barely used payees, for cleanup |
+| `review_payees` | Likely duplicate payees, names stored with HTML entities, and barely used payees, with usage counts; filter by name and page through every list |
 | `triage_inbox` | Uncategorized and unapproved transactions, overspent categories, and underfunded goals in one call |
 | `reflect_income_expense` | Income by payee against expense by category for each month in a range (default 3 months), with Average and Total columns |
 | `reflect_net_worth` | Current net worth, month-end history rebuilt from transactions, and each account's balance |

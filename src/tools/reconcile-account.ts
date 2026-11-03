@@ -3,7 +3,7 @@ import { planIdParam } from "../schemas";
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { Account, Transaction, YnabClient } from "../ynab";
 import { YnabError } from "../ynab";
-import { isTrackingAccount, isTransferTx } from "../predicates";
+import { isSplitTx, isTrackingAccount, isTransferTx } from "../predicates";
 import {
   fmtMoney,
   fmtTxLine,
@@ -53,7 +53,7 @@ export interface ReconcileResult {
 const isUncategorizedTx = (t: Transaction): boolean =>
   t.category_id == null &&
   !isTransferTx(t) &&
-  !(t.subtransactions && t.subtransactions.length > 0);
+  !isSplitTx(t);
 
 export const computeReconciliation = (
   account: Account,

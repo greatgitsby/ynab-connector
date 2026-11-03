@@ -280,6 +280,12 @@ export class YnabClient {
       `/plans/${planId}${scope}/transactions${txQuery(opts)}`,
     );
   }
+  getTransaction(planId: string, transactionId: string) {
+    return this.request<{ data: { transaction: Transaction } }>(
+      "GET",
+      `/plans/${planId}/transactions/${transactionId}`,
+    );
+  }
   updateTransactionsBulk(
     planId: string,
     body: { transactions: SaveTransactionWithId[] },

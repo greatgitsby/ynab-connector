@@ -24,8 +24,12 @@ not an implementation detail. Mistakes are fixed by another write, never by dele
   lands on the same state and the chat shows "was $400, now $450". There is no balance
   validation: drawing from Ready to Assign or overspending on purpose is legitimate.
 - **Existing transactions only.** `date`, top-level `amount`, and `account_id` are excluded from
-  `update_transactions` to keep the model out of data correction. Splits replace the subtransaction
-  array wholesale, and a split parent carries no `category_id`.
+  `update_transactions` to keep the model out of data correction. `subtransactions` can split a
+  plain transaction, but YNAB's API refuses to change an existing split's parts or its parent's
+  `category_id`; the user edits those in YNAB. Because one rejected row can fail the whole bulk
+  PATCH, the tool GETs each transaction it is asked to split and returns a per-item error for one
+  that is already a split. It skips that check for `category_id`, since a GET per categorize would
+  double the calls on the common path.
 - **Payees.** `payee_id` wins over `payee_name`. A `payee_name` YNAB cannot match silently creates a
   new payee, which is why `list_payees` exists.
 - **Best-effort batches.** YNAB has no bulk endpoint for month categories, so

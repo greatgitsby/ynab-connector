@@ -37,6 +37,11 @@ export const isTrackingAccount = (a: Account): boolean => !a.on_budget;
 export const isTransferTx = (t: Transaction): boolean =>
   t.transfer_account_id != null;
 
+// True when a Transaction is a split parent: it has live subtransactions and
+// its categories live on them.
+export const isSplitTx = (t: Transaction): boolean =>
+  t.subtransactions?.some((s) => !s.deleted) ?? false;
+
 // True when a Category's goal saves toward something bigger than this
 // month's spending: a target balance (TB, TBD) or a Plan Your Spending (NEED)
 // goal that isn't due every week or every month. Money moved out of one of

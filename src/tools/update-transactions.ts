@@ -15,6 +15,7 @@ import {
   scopeDeniedError,
 } from "../format";
 import type { Props } from "../ynab-auth";
+import { isSplitTx } from "../predicates";
 
 // ---- Input + Result types
 
@@ -90,59 +91,92 @@ const toWireSub = (s: UpdateSubInput): SaveSubTransaction => {
 // ---- Compute: response → per-input result (pure)
 
 // YNAB's bulk PATCH response includes the updated transactions in arbitrary
-// order. `transaction_ids` carries every id that was successfully updated
-// (including subtransaction ids — we filter to parent ids by looking them up
-// against the input set). Failed rows are NOT in the response; for those we
-// surface a generic error so the caller knows which inputs missed.
+// order. Failed rows are NOT in the response, so an input missing from it gets
+// a generic error. `failed` carries inputs that already have an error (refused
+// before sending, or a whole-batch failure).
 export const interpretBulkResponse = (
   inputs: UpdateTransactionInput[],
   updatedTransactions: Transaction[],
+  failed: ReadonlyMap<UpdateTransactionInput, string> = new Map(),
 ): UpdateTransactionsResult => {
   const byId = new Map(updatedTransactions.map((t) => [t.id, t]));
   return {
-    results: inputs.map((input) => {
+    results: inputs.map((input): UpdateTransactionResult => {
+      const error = failed.get(input);
       const t = byId.get(input.transaction_id);
-      if (t) {
+      if (error === undefined && t) {
         return { ok: true, transaction_id: input.transaction_id, transaction: t };
       }
       return {
         ok: false,
         transaction_id: input.transaction_id,
         error:
+          error ??
           "Not present in YNAB's bulk-update response — id may not exist or may be out of scope.",
       };
     }),
   };
 };
 
-// ---- Effectful: one bulk PATCH per call
+// ---- Effectful: split precheck, then one bulk PATCH
+
+const errorMessage = (e: unknown): string =>
+  e instanceof YnabError
+    ? `YNAB ${e.status}: ${e.body}`
+    : e instanceof Error
+      ? e.message
+      : String(e);
+
+// YNAB rejects `subtransactions` on a transaction that is already a split, and
+// one bad row can fail the whole bulk PATCH. Splitting is rare, so one GET per
+// such input is cheap.
+const precheckSplits = async (
+  client: YnabClient,
+  planId: string,
+  inputs: UpdateTransactionInput[],
+): Promise<Map<UpdateTransactionInput, string>> => {
+  const failed = new Map<UpdateTransactionInput, string>();
+  await Promise.all(
+    inputs
+      .filter((i) => i.subtransactions !== undefined)
+      .map(async (input) => {
+        try {
+          const { data } = await client.getTransaction(planId, input.transaction_id);
+          if (isSplitTx(data.transaction)) {
+            failed.set(
+              input,
+              "Already a split. YNAB's API cannot change an existing split's parts; the user must edit it in YNAB.",
+            );
+          }
+        } catch (e) {
+          failed.set(input, errorMessage(e));
+        }
+      }),
+  );
+  return failed;
+};
 
 export const applyUpdateTransactions = async (
   client: YnabClient,
   planId: string,
   inputs: UpdateTransactionInput[],
 ): Promise<UpdateTransactionsResult> => {
-  const body = { transactions: inputs.map(buildBulkRow) };
-  try {
-    const resp = await client.updateTransactionsBulk(planId, body);
-    return interpretBulkResponse(inputs, resp.data.transactions);
-  } catch (e) {
-    // Whole-batch failure (e.g., 401, 5xx) — surface as a per-item error so
-    // the response shape is stable.
-    const message =
-      e instanceof YnabError
-        ? `YNAB ${e.status}: ${e.body}`
-        : e instanceof Error
-          ? e.message
-          : String(e);
-    return {
-      results: inputs.map((input) => ({
-        ok: false,
-        transaction_id: input.transaction_id,
-        error: message,
-      })),
-    };
+  const failed = await precheckSplits(client, planId, inputs);
+  const toSend = inputs.filter((i) => !failed.has(i));
+  let updated: Transaction[] = [];
+  if (toSend.length > 0) {
+    try {
+      const resp = await client.updateTransactionsBulk(planId, {
+        transactions: toSend.map(buildBulkRow),
+      });
+      updated = resp.data.transactions;
+    } catch (e) {
+      // Whole-batch failure (e.g., 401, 5xx): every sent input gets the error.
+      const message = errorMessage(e);
+      for (const i of toSend) failed.set(i, message);
+    }
   }
+  return interpretBulkResponse(inputs, updated, failed);
 };
 
 // ---- Render (pure)
@@ -178,12 +212,16 @@ const renderTxSummary = (t: Transaction, iso: string): string => {
 const DESCRIPTION =
   "Edit one or more existing transactions in one bulk call: categorize, " +
   "approve or unapprove, set the memo or flag, mark cleared or reconciled, " +
-  "set the payee, or split across categories. Send only the fields to " +
-  "change; omitted fields stay as they are. For splits, when " +
-  "`subtransactions` is set, leave the parent's `category_id` null or " +
-  "omitted, give each sub an `amount_milliunits`, and make the subs sum to " +
-  "the parent's amount (YNAB enforces this). YNAB REPLACES the whole " +
-  "subtransactions array, so to edit one sub of a 3-way split, send all 3. " +
+  "set the payee, or split a transaction across categories. Send only the " +
+  "fields to change; omitted fields stay as they are. `subtransactions` " +
+  "only splits a transaction that is NOT already a split: leave the " +
+  "parent's `category_id` null or omitted, give each sub an " +
+  "`amount_milliunits`, and make the subs sum to the parent's amount (YNAB " +
+  "enforces this). YNAB's API cannot edit an existing split: its parts and " +
+  "the parent's category are read-only here, so tell the user to change " +
+  "them in YNAB. Other fields (memo, approval, flag, cleared, payee) still " +
+  "work on a split parent. Splits are not allowed on tracking accounts or " +
+  "on transfers between on-budget accounts. " +
   "Cannot create or delete transactions or change their date, amount, or " +
   "account. Requires write access; a read-only connection must be " +
   "reconnected to use this tool.";

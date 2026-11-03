@@ -104,10 +104,23 @@ describe("interpretBulkResponse", () => {
 });
 
 describe("applyUpdateTransactions", () => {
+  const sub = {
+    id: "s1",
+    transaction_id: "tx-split",
+    amount: -10000,
+    memo: null,
+    payee_id: null,
+    payee_name: null,
+    category_id: "cat-a",
+    category_name: "A",
+    deleted: false,
+  };
+
   const stub = (
     responder: (body: unknown) => Transaction[] | YnabError,
+    existing: Transaction[] = [],
   ): {
-    client: Pick<YnabClient, "updateTransactionsBulk">;
+    client: Pick<YnabClient, "updateTransactionsBulk" | "getTransaction">;
     bodies: unknown[];
   } => {
     const bodies: unknown[] = [];
@@ -121,8 +134,13 @@ describe("applyUpdateTransactions", () => {
         };
       },
     );
+    const getTransaction = vi.fn(async (_planId: string, id: string) => {
+      const t = existing.find((e) => e.id === id);
+      if (!t) throw new YnabError(404, "not found");
+      return { data: { transaction: t } };
+    });
     return {
-      client: { updateTransactionsBulk } as Pick<YnabClient, "updateTransactionsBulk">,
+      client: { updateTransactionsBulk, getTransaction },
       bodies,
     };
   };
@@ -145,6 +163,67 @@ describe("applyUpdateTransactions", () => {
         { id: "tx-2", category_id: "cat-x" },
       ],
     });
+  });
+
+  test("refuses to resplit an existing split or a failed lookup, sends the rest", async () => {
+    const { client, bodies } = stub(
+      () => [tx({ id: "tx-plain" }), tx({ id: "tx-split", memo: "m" })],
+      [tx({ id: "tx-split", subtransactions: [sub] }), tx({ id: "tx-plain" })],
+    );
+    const split = [{ amount_milliunits: -10000, category_id: "cat-b" }];
+
+    const out = await applyUpdateTransactions(client as YnabClient, "bud-1", [
+      { transaction_id: "tx-split", subtransactions: split },
+      { transaction_id: "tx-plain", subtransactions: split },
+      { transaction_id: "tx-split", memo: "m" },
+      { transaction_id: "tx-gone", subtransactions: split },
+    ]);
+
+    expect(bodies).toEqual([
+      {
+        transactions: [
+          {
+            id: "tx-plain",
+            subtransactions: [{ amount: -10000, category_id: "cat-b" }],
+          },
+          { id: "tx-split", memo: "m" },
+        ],
+      },
+    ]);
+    expect(out.results.map((r) => [r.transaction_id, r.ok])).toEqual([
+      ["tx-split", false],
+      ["tx-plain", true],
+      ["tx-split", true],
+      ["tx-gone", false],
+    ]);
+    if (!out.results[0].ok) {
+      expect(out.results[0].error).toMatch(/already a split/i);
+    }
+    if (!out.results[3].ok) {
+      expect(out.results[3].error).toBe("YNAB 404: not found");
+    }
+  });
+
+  test("skips the PATCH when every input is a locked split", async () => {
+    const { client, bodies } = stub(
+      () => [],
+      [
+        tx({
+          id: "tx-split",
+          subtransactions: [sub],
+        }),
+      ],
+    );
+
+    const out = await applyUpdateTransactions(client as YnabClient, "bud-1", [
+      {
+        transaction_id: "tx-split",
+        subtransactions: [{ amount_milliunits: -10000 }],
+      },
+    ]);
+
+    expect(bodies).toHaveLength(0);
+    expect(out.results.map((r) => r.ok)).toEqual([false]);
   });
 
   test("whole-batch YnabError surfaces as per-item errors", async () => {

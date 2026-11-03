@@ -8,11 +8,12 @@ stays in the "review and clean up" lane, not manual data entry.
 
 Supported: setting a category's monthly `budgeted` (`assign_to_categories`); editing existing
 transactions, including categorize, approve, memo, flag, `cleared`, payee, and splits
-(`update_transactions`); and locking cleared transactions as reconciled (`reconcile_account`).
-`list_payees` is the read companion for canonicalizing payees.
+(`update_transactions`); locking cleared transactions as reconciled (`reconcile_account`); and
+payee cleanup, renaming payees (`rename_payees`) and consolidating duplicates (`merge_payees`).
+`list_payees` and `review_payees` are the read companions for canonicalizing payees.
 
-Excluded: creating manual transactions, deletes, scheduled transactions, payee rename/merge,
-category rename/move, and goal edits. Adding any of these is a scope decision for the maintainer,
+Excluded: creating manual transactions, deletes (payees included), scheduled transaction edits other
+than a merge re-pointing their payee, category rename/move, and goal edits. Adding any of these is a scope decision for the maintainer,
 not an implementation detail. Mistakes are fixed by another write, never by deleting.
 
 ## Shape
@@ -35,8 +36,24 @@ not an implementation detail. Mistakes are fixed by another write, never by dele
   state, so the model needn't re-fetch. Writes declare no `outputSchema` yet.
 - **Annotations.** Writes are `destructiveHint: true` (they overwrite prior values) and
   `idempotentHint: true`.
-- **No connector-side safety layer** beyond the write gate: no dry runs, no confirm flags. The client's
-  per-call approval is the human in the loop. A client that auto-approves tool calls removes it.
+- **No connector-side safety layer** beyond the write gate, with one exception. The client's per-call
+  approval is the human in the loop, and it works because the arguments show the change. A client
+  that auto-approves tool calls removes it. `merge_payees` is the exception: its arguments are two
+  payee ids that can stand for hundreds of transactions, so it previews unless called with
+  `apply: true`, and the approval of the apply call follows a preview the user has seen.
+
+## Payee merges
+
+YNAB's API has no merge, combine, or delete for payees, so `merge_payees` re-points transactions
+with a bulk PATCH and scheduled transactions with one PUT each, and leaves the source payees in
+place. It cannot move YNAB's renaming rules, so later imports can still land on a source payee; the
+user retires sources in YNAB's Manage Payees. What the API can't edit stays on the source and is
+reported: parts of an existing split, and split scheduled transactions (see
+[YNAB API](./ynab-api.md)). A re-run moves whatever is left, so a partial merge is fixed by
+running it again.
+
+`rename_payees` refuses a name another live payee already has: two payees with one name can't be
+told apart, and the user meant a merge.
 
 ## Write access
 

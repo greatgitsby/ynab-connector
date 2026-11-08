@@ -4,6 +4,8 @@ import { fmtMoney } from "./format";
 // Interpreted form of a YNAB Goal. Hides the goal_* matrix from callers.
 // Returned by interpretGoal(); null when the Category carries no goal.
 export interface GoalView {
+  // YNAB's goal_type: TB, TBD, MF, NEED, or DEBT.
+  type: string;
   // Pre-formatted suffix as used in category line rendering, e.g.
   //   "$500/month, by 2026-08-01, needs $200 more this month"
   label: string;
@@ -109,6 +111,7 @@ export const interpretGoal = (
     parts.push(`needs ${fmtMoney(underfunded, iso)} more this month`);
   if (snoozed) parts.push("snoozed this month");
   return {
+    type: c.goal_type,
     label: parts.join(", "),
     targetAmount: c.goal_target,
     cadenceLabel,

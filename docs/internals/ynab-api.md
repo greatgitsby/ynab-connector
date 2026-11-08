@@ -32,6 +32,22 @@ explain. Domain meaning is in the [glossary](./glossary.md).
 - **Updating a scheduled transaction is a full `PUT`.** Omitted fields are cleared, `date` (the next
   occurrence) must be in the future per the spec, and the body has no `subtransactions`, so split
   scheduled transactions can't be written.
+- **Categories can't be hidden through the API.** `PATCH /categories/{id}` drops `hidden`
+  without an error (a body with only `hidden` is a 400, "param is missing"), and moving a category
+  into the internal Hidden Categories group is refused. Checked against v1.89.
+- **Category goal `PATCH` traps** (v1.89, checked against a test plan):
+  - `goal_target: null` removes the goal. The category then reads `goal_type: null`,
+    `goal_target: 0`, not `null`.
+  - `goal_target` alone keeps the goal's type, cadence, and date. On a category without a goal it
+    creates a monthly NEED "set aside" goal.
+  - `goal_frequency` replaces the goal with a NEED goal. It needs `goal_target`, and combining it
+    with `goal_target_date` is a 400.
+  - On a recurring goal, `goal_target_date` is the repeat's anchor, not a deadline.
+    `goal_target_date: null` clears it.
+  - YNAB stores `goal_needs_whole_amount` on a TB goal, or on a category with no goal, and stores a
+    negative `goal_target`, all without an error.
+  - No field creates a TB/TBD goal or sets an every-N-months cadence or `goal_day`, so the API can't rebuild
+    those once they are removed or replaced.
 - **Money movements include every assignment.** A null `from_category_id` is Ready to Assign, and a
   null `to_category_id` returns money to it, so a category's movements net to its `budgeted`. Never
   send `last_knowledge_of_server` here: the delta response carries deleted tombstones.

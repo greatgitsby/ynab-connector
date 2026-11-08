@@ -14,7 +14,8 @@ read and write access. That gives the Connector access to:
 
 - Your plans (names, IDs, currency): read
 - Accounts and balances: read
-- Categories, category groups, and goal data: read
+- Categories and category groups: read
+- Category goals (targets): read and edit (create, change, remove)
 - Transactions and split transactions: read and edit (categorize, approve,
   memo, flag, mark cleared or reconciled, set payee, split across categories)
 - Monthly summaries: read

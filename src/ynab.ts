@@ -226,6 +226,13 @@ export class YnabClient {
       `/plans/${planId}/categories`,
     );
   }
+  updateCategory(planId: string, categoryId: string, body: SaveCategoryGoal) {
+    return this.request<{ data: { category: Category } }>(
+      "PATCH",
+      `/plans/${planId}/categories/${categoryId}`,
+      { category: body },
+    );
+  }
   getMonthCategory(planId: string, month: string, categoryId: string) {
     return this.request<{ data: { category: Category } }>(
       "GET",
@@ -390,4 +397,14 @@ export interface SaveScheduledTransaction {
   memo: string | null;
   flag_color: string | null;
   frequency: string;
+}
+
+// The goal fields of YNAB's `SaveCategory`, the only ones the connector sends.
+// `goal_target: null` removes the goal. `hidden` is not among them: YNAB drops
+// it (see docs/internals/ynab-api.md).
+export interface SaveCategoryGoal {
+  goal_target?: number | null;
+  goal_target_date?: string | null;
+  goal_needs_whole_amount?: boolean;
+  goal_frequency?: "monthly" | "weekly" | "yearly";
 }

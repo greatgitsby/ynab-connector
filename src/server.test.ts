@@ -58,6 +58,7 @@ const EXPECTED_TOOLS = [
   "reflect_net_worth",
   "rename_payees",
   "review_payees",
+  "set_category_goals",
   "triage_inbox",
   "update_transactions",
 ];
@@ -105,6 +106,7 @@ describe("tool discovery", () => {
       "reconcile_account",
       "rename_payees",
       "merge_payees",
+      "set_category_goals",
     ]);
     for (const t of tools) {
       expect(t.annotations?.readOnlyHint, t.name).toBe(!writes.has(t.name));
@@ -304,7 +306,58 @@ describe("tool calls", () => {
     });
     expect(res.isError).toBe(true);
     expect((res.content as Array<{ text: string }>)[0].text).toContain("read-only");
+    // A goal preview reads YNAB, so it is gated too.
+    const goals = await client.callTool({
+      name: "set_category_goals",
+      arguments: { changes: [{ category_id: "c1", remove_goal: true }] },
+    });
+    expect(goals.isError).toBe(true);
+    expect((goals.content as Array<{ text: string }>)[0].text).toContain("read-only");
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test("set_category_goals previews by default, then PATCHes only with apply: true", async () => {
+    const counseling = {
+      id: "c1",
+      category_group_id: "g1",
+      name: "Piano Lessons",
+      hidden: false,
+      internal: false,
+      deleted: false,
+      budgeted: 0,
+      activity: 0,
+      balance: 0,
+      goal_type: "NEED",
+      goal_target: 350000,
+      goal_cadence: 1,
+      goal_cadence_frequency: 1,
+      goal_needs_whole_amount: true,
+    };
+    fetchMock.mockImplementation(async (u: string, init?: RequestInit) => {
+      const path = new URL(u).pathname;
+      if (init?.method === "PATCH")
+        return json({ data: { category: { ...counseling, goal_type: null, goal_target: 0 } } });
+      if (path.endsWith("/settings"))
+        return json({ data: { settings: { currency_format: { iso_code: "USD", decimal_digits: 2 } } } });
+      return json({
+        data: { category_groups: [{ id: "g1", name: "Fixed", hidden: false, deleted: false, categories: [counseling] }] },
+      });
+    });
+    const client = await connect();
+    const args = { changes: [{ category_id: "c1", remove_goal: true }] };
+    const preview = await client.callTool({ name: "set_category_goals", arguments: args });
+    expect(preview.isError).toBeFalsy();
+    expect((preview.content as Array<{ text: string }>)[0].text).toContain("nothing changed yet");
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === "PATCH")).toBe(false);
+
+    const applied = await client.callTool({ name: "set_category_goals", arguments: { ...args, apply: true } });
+    expect(applied.structuredContent).toMatchObject({
+      applied: true,
+      results: [{ ok: true, before: "$350.00/month", after: null }],
+    });
+    const patch = fetchMock.mock.calls.find(([, init]) => init?.method === "PATCH")!;
+    expect(new URL(patch[0]).pathname).toBe("/v1/plans/last-used/categories/c1");
+    expect(JSON.parse(patch[1].body)).toEqual({ category: { goal_target: null } });
   });
 
   test("merge_payees previews by default and writes nothing", async () => {

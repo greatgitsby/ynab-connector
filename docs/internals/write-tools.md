@@ -8,12 +8,12 @@ stays in the "review and clean up" lane, not manual data entry.
 
 Supported: setting a category's monthly `budgeted` (`assign_to_categories`); editing existing
 transactions, including categorize, approve, memo, flag, `cleared`, payee, and splits
-(`update_transactions`); locking cleared transactions as reconciled (`reconcile_account`); and
+(`update_transactions`); creating, changing, and removing category goals (`set_category_goals`); locking cleared transactions as reconciled (`reconcile_account`); and
 payee cleanup, renaming payees (`rename_payees`) and consolidating duplicates (`merge_payees`).
 `list_payees` and `review_payees` are the read companions for canonicalizing payees.
 
 Excluded: creating manual transactions, deletes (payees included), scheduled transaction edits other
-than a merge re-pointing their payee, category rename/move, and goal edits. Adding any of these is a scope decision for the maintainer,
+than a merge re-pointing their payee, and category rename/move. Adding any of these is a scope decision for the maintainer,
 not an implementation detail. Mistakes are fixed by another write, never by deleting.
 
 ## Shape
@@ -40,11 +40,13 @@ not an implementation detail. Mistakes are fixed by another write, never by dele
   state, so the model needn't re-fetch. Writes declare no `outputSchema` yet.
 - **Annotations.** Writes are `destructiveHint: true` (they overwrite prior values) and
   `idempotentHint: true`.
-- **No connector-side safety layer** beyond the write gate, with one exception. The client's per-call
+- **No connector-side safety layer** beyond the write gate, with two exceptions. The client's per-call
   approval is the human in the loop, and it works because the arguments show the change. A client
-  that auto-approves tool calls removes it. `merge_payees` is the exception: its arguments are two
-  payee ids that can stand for hundreds of transactions, so it previews unless called with
-  `apply: true`, and the approval of the apply call follows a preview the user has seen.
+  that auto-approves tool calls removes it. `merge_payees` and `set_category_goals` are the exceptions,
+  previewing unless called with `apply: true`, so the approval of the apply call follows a preview
+  the user has seen. A merge's arguments are two payee ids that can stand for hundreds of
+  transactions. A goal change's arguments don't show the goal it replaces, and the API can't
+  rebuild most goals it removes (see [Goals](#goals)).
 
 ## Payee merges
 
@@ -59,6 +61,17 @@ running it again.
 
 `rename_payees` refuses a name another live payee already has: two payees with one name can't be
 told apart, and the user meant a merge.
+
+## Goals
+
+YNAB's category `PATCH` can only create "Plan Your Spending" goals repeating monthly, weekly, or
+yearly. It can change the amount or date of any goal and remove any goal, but it can't create
+savings-balance (TB, TBD) goals, every-N-months cadences, or a due day. So a removal, or a
+`goal_frequency` that replaces a goal, may be impossible to undo from chat; that is why
+`set_category_goals` previews and shows the current goal first.
+
+Hiding was requested along with goals and left out because YNAB's API can't do it (see
+[YNAB API](./ynab-api.md)). The tool description tells the model to send the user to YNAB for it.
 
 ## Write access
 

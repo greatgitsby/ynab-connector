@@ -88,6 +88,47 @@ describe("interpretBulkResponse", () => {
     expect(out.results.map((r) => r.ok)).toEqual([true, true]);
   });
 
+  test("flags a split YNAB returns unsplit, or a category it ignored on a split", () => {
+    const subs = [{ amount_milliunits: -10000, category_id: "cat-a" }];
+    const out = interpretBulkResponse(
+      [
+        { transaction_id: "tx-1", subtransactions: subs },
+        { transaction_id: "tx-2", subtransactions: subs },
+        // YNAB answers 200 and keeps the split; see the error below.
+        { transaction_id: "tx-2", category_id: "cat-b", memo: "m" },
+        { transaction_id: "tx-1", category_id: "cat-b" },
+      ],
+      [
+        tx({ id: "tx-1" }),
+        tx({
+          id: "tx-2",
+          subtransactions: [
+            {
+              id: "s1",
+              transaction_id: "tx-2",
+              amount: -10000,
+              memo: null,
+              payee_id: null,
+              payee_name: null,
+              category_id: "cat-a",
+              category_name: "A",
+              transfer_account_id: null,
+              transfer_transaction_id: null,
+              deleted: false,
+            },
+          ],
+        }),
+      ],
+    );
+    expect(out.results.map((r) => r.ok)).toEqual([false, true, false, true]);
+    if (!out.results[0].ok) {
+      expect(out.results[0].error).toMatch(/did not come back split/);
+    }
+    if (!out.results[2].ok) {
+      expect(out.results[2].error).toMatch(/ignored the category change/);
+    }
+  });
+
   test("flags inputs whose id is missing from the response as errors", () => {
     const inputs = [
       { transaction_id: "tx-1", approved: true },
@@ -165,26 +206,47 @@ describe("applyUpdateTransactions", () => {
     });
   });
 
-  test("refuses to resplit an existing split or a failed lookup, sends the rest", async () => {
+  test("refuses a resplit, a sum mismatch, or a failed lookup, sends the rest", async () => {
+    const charge = { amount: -24010, import_id: "YNAB:-24010:2026-11-09:1" };
     const { client, bodies } = stub(
-      () => [tx({ id: "tx-plain" }), tx({ id: "tx-split", memo: "m" })],
-      [tx({ id: "tx-split", subtransactions: [sub] }), tx({ id: "tx-plain" })],
+      () => [
+        tx({ id: "tx-plain", ...charge, subtransactions: [sub] }),
+        tx({ id: "tx-split", memo: "m" }),
+      ],
+      [
+        tx({ id: "tx-split", subtransactions: [sub] }),
+        tx({ id: "tx-plain", ...charge }),
+        tx({ id: "tx-short", ...charge }),
+      ],
     );
-    const split = [{ amount_milliunits: -10000, category_id: "cat-b" }];
+    const split = [
+      { amount_milliunits: -14190, category_id: "cat-spotify", memo: "Spotify" },
+      { amount_milliunits: -9820, category_id: "cat-netflix", memo: "Netflix" },
+    ];
+    const short = [
+      { amount_milliunits: -14190, category_id: "cat-spotify" },
+      { amount_milliunits: -9810, category_id: "cat-netflix" },
+    ];
 
     const out = await applyUpdateTransactions(client as YnabClient, "bud-1", [
       { transaction_id: "tx-split", subtransactions: split },
       { transaction_id: "tx-plain", subtransactions: split },
       { transaction_id: "tx-split", memo: "m" },
       { transaction_id: "tx-gone", subtransactions: split },
+      { transaction_id: "tx-short", subtransactions: short },
     ]);
 
+    // The split row carries only the parts: no amount, date, cleared,
+    // approved, or import_id, so YNAB keeps those and the import match.
     expect(bodies).toEqual([
       {
         transactions: [
           {
             id: "tx-plain",
-            subtransactions: [{ amount: -10000, category_id: "cat-b" }],
+            subtransactions: [
+              { amount: -14190, category_id: "cat-spotify", memo: "Spotify" },
+              { amount: -9820, category_id: "cat-netflix", memo: "Netflix" },
+            ],
           },
           { id: "tx-split", memo: "m" },
         ],
@@ -195,12 +257,18 @@ describe("applyUpdateTransactions", () => {
       ["tx-plain", true],
       ["tx-split", true],
       ["tx-gone", false],
+      ["tx-short", false],
     ]);
     if (!out.results[0].ok) {
       expect(out.results[0].error).toMatch(/already a split/i);
     }
     if (!out.results[3].ok) {
       expect(out.results[3].error).toBe("YNAB 404: not found");
+    }
+    if (!out.results[4].ok) {
+      expect(out.results[4].error).toMatch(
+        /sum to -24000 milliunits but the transaction is -24010 \(off by -10\)/,
+      );
     }
   });
 
@@ -284,7 +352,7 @@ describe("renderUpdateTransactionsResult", () => {
     );
   });
 
-  test("split transactions show an N-way split note", () => {
+  test("split transactions show an N-way split note and their parts", () => {
     const splitSample: UpdateTransactionsResult = {
       results: [
         {
@@ -320,8 +388,8 @@ describe("renderUpdateTransactionsResult", () => {
         },
       ],
     };
-    expect(renderUpdateTransactionsResult(splitSample, "USD")).toContain(
-      "(2-way split)",
-    );
+    const rendered = renderUpdateTransactionsResult(splitSample, "USD");
+    expect(rendered).toContain("(2-way split)");
+    expect(rendered).toContain("\n  - -$2.50 → A\n  - -$2.00 → B");
   });
 });

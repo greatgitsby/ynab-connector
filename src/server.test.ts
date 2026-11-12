@@ -313,6 +313,23 @@ describe("tool calls", () => {
     });
     expect(goals.isError).toBe(true);
     expect((goals.content as Array<{ text: string }>)[0].text).toContain("read-only");
+    // A split GETs the transaction first, so it is gated before that read.
+    const split = await client.callTool({
+      name: "update_transactions",
+      arguments: {
+        updates: [
+          {
+            transaction_id: "t1",
+            subtransactions: [
+              { amount_milliunits: -14190, category_id: "c1" },
+              { amount_milliunits: -9820, category_id: "c2" },
+            ],
+          },
+        ],
+      },
+    });
+    expect(split.isError).toBe(true);
+    expect((split.content as Array<{ text: string }>)[0].text).toContain("read-only");
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

@@ -8,7 +8,14 @@ import {
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { Transaction, YnabClient } from "../ynab";
 import { TransactionSchema } from "../wire";
-import { result, handleError, fmtMoney, fmtTxLine, text } from "../format";
+import {
+  result,
+  handleError,
+  fmtMoney,
+  fmtSplitLines,
+  fmtTxLine,
+  text,
+} from "../format";
 
 // ---- Result type (zod is the source of truth; see docs/internals/structured-output.md)
 
@@ -83,6 +90,7 @@ export const renderTransactionList = (
   );
   for (const t of list.transactions) {
     out.push(fmtTxLine(t, iso, { includeIds: opts.includeIds }));
+    out.push(...fmtSplitLines(t, iso, { includeIds: opts.includeIds }));
   }
   return out.join("\n");
 };
@@ -96,7 +104,8 @@ const DESCRIPTION =
   "until_date (YYYY-MM-DD, inclusive), and filter by type. Without " +
   "since_date it searches the plan's full history. By category, split " +
   "transactions appear as their parts in that category; by payee, as whole " +
-  "transactions. Look up payee ids with list_payees. YNAB's API omits " +
+  "transactions; otherwise a split is one line followed by its parts " +
+  "(amount, payee, category, memo). Look up payee ids with list_payees. YNAB's API omits " +
   "pending bank transactions until they post. Amounts are signed: outflows " +
   "are negative.";
 

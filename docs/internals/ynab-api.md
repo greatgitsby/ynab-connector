@@ -26,9 +26,11 @@ explain. Domain meaning is in the [glossary](./glossary.md).
   is stored data, not output encoding, so don't decode responses: a rename's collision check and a
   merge's target name work on the stored name. `review_payees` flags them for renaming or merging.
 - **Split parts of existing transactions are read-only.** Sending `subtransactions` for an existing
-  split returns an error, so a split part's payee or category can't be changed through the API.
-  Splitting a plain transaction, and setting a split parent's own fields without `subtransactions`,
-  both work.
+  split is a 400, even with identical parts, so a part's payee or category can't be changed through
+  the API. A `category_id` sent for a split parent is dropped with a 200; the parent keeps YNAB's
+  internal "Split" category. Splitting a plain transaction keeps its id, `import_id`, `cleared`, and
+  `approved`, and setting a split parent's other fields works. Parts that don't sum to the amount
+  are a 400, and any 400 row fails the whole bulk PATCH. Checked against v1.91 on a test plan.
 - **Updating a scheduled transaction is a full `PUT`.** Omitted fields are cleared, `date` (the next
   occurrence) must be in the future per the spec, and the body has no `subtransactions`, so split
   scheduled transactions can't be written.

@@ -10,6 +10,7 @@ import type {
 import { YnabError } from "../ynab";
 import {
   fmtMoney,
+  fmtSplitLines,
   handleError,
   result,
   scopeDeniedError,
@@ -105,6 +106,16 @@ export const interpretBulkResponse = (
       const error = failed.get(input);
       const t = byId.get(input.transaction_id);
       if (error === undefined && t) {
+        const ignored =
+          input.subtransactions !== undefined
+            ? !isSplitTx(t) &&
+              "YNAB accepted the row but the transaction did not come back split. Check it in YNAB."
+            : input.category_id !== undefined &&
+              isSplitTx(t) &&
+              "Is a split, so YNAB ignored the category change; the user edits a split's parts in YNAB. Any other fields in this row were applied.";
+        if (ignored) {
+          return { ok: false, transaction_id: input.transaction_id, error: ignored };
+        }
         return { ok: true, transaction_id: input.transaction_id, transaction: t };
       }
       return {
@@ -127,6 +138,22 @@ const errorMessage = (e: unknown): string =>
       ? e.message
       : String(e);
 
+// Why a split input can't be sent, or null if it can. The parts must sum to the
+// parent exactly; a split that has already been split can't be split again.
+export const splitRefusal = (
+  existing: Transaction,
+  subs: UpdateSubInput[],
+): string | null => {
+  if (isSplitTx(existing)) {
+    return "Already a split. YNAB's API cannot change an existing split's parts; the user must edit it in YNAB.";
+  }
+  const sum = subs.reduce((acc, s) => acc + s.amount_milliunits, 0);
+  if (sum !== existing.amount) {
+    return `Parts sum to ${sum} milliunits but the transaction is ${existing.amount} (off by ${existing.amount - sum}). The parts must add up exactly; nothing was sent.`;
+  }
+  return null;
+};
+
 // YNAB rejects `subtransactions` on a transaction that is already a split, and
 // one bad row can fail the whole bulk PATCH. Splitting is rare, so one GET per
 // such input is cheap.
@@ -142,12 +169,8 @@ const precheckSplits = async (
       .map(async (input) => {
         try {
           const { data } = await client.getTransaction(planId, input.transaction_id);
-          if (isSplitTx(data.transaction)) {
-            failed.set(
-              input,
-              "Already a split. YNAB's API cannot change an existing split's parts; the user must edit it in YNAB.",
-            );
-          }
+          const refusal = splitRefusal(data.transaction, input.subtransactions!);
+          if (refusal) failed.set(input, refusal);
         } catch (e) {
           failed.set(input, errorMessage(e));
         }
@@ -188,9 +211,12 @@ export const renderUpdateTransactionsResult = (
   const okCount = out.results.filter((r) => r.ok).length;
   const errCount = out.results.length - okCount;
   const header = `## Updated ${okCount} / ${out.results.length} transaction${out.results.length === 1 ? "" : "s"}${errCount ? ` (${errCount} error${errCount === 1 ? "" : "s"})` : ""}`;
-  const lines = out.results.map((r) => {
-    if (!r.ok) return `- [error] tx ${r.transaction_id}: ${r.error}`;
-    return `- [ok] ${renderTxSummary(r.transaction, iso)} — id ${r.transaction.id}`;
+  const lines = out.results.flatMap((r) => {
+    if (!r.ok) return [`- [error] tx ${r.transaction_id}: ${r.error}`];
+    return [
+      `- [ok] ${renderTxSummary(r.transaction, iso)} — id ${r.transaction.id}`,
+      ...fmtSplitLines(r.transaction, iso),
+    ];
   });
   return [header, ...lines].join("\n");
 };
@@ -214,12 +240,16 @@ const DESCRIPTION =
   "approve or unapprove, set the memo or flag, mark cleared or reconciled, " +
   "set the payee, or split a transaction across categories. Send only the " +
   "fields to change; omitted fields stay as they are. `subtransactions` " +
-  "only splits a transaction that is NOT already a split: leave the " +
-  "parent's `category_id` null or omitted, give each sub an " +
-  "`amount_milliunits`, and make the subs sum to the parent's amount (YNAB " +
-  "enforces this). YNAB's API cannot edit an existing split: its parts and " +
-  "the parent's category are read-only here, so tell the user to change " +
-  "them in YNAB. Other fields (memo, approval, flag, cleared, payee) still " +
+  "splits a transaction in place: it keeps its id, import match, cleared " +
+  "and approved state. It only works on a transaction that is NOT already a " +
+  "split: leave the parent's `category_id` null or omitted, give each sub " +
+  "a signed `amount_milliunits` (outflows negative), and make the subs sum " +
+  "exactly to the parent's amount; a mismatch is refused before anything is " +
+  "sent. YNAB's API cannot edit an existing split: its parts and the " +
+  "parent's category are read-only here, so tell the user to change them in " +
+  "YNAB (this tool will not delete and re-create a transaction, which would " +
+  "lose its bank import match). The result lists each split's parts. Other " +
+  "fields (memo, approval, flag, cleared, payee) still " +
   "work on a split parent. Splits are not allowed on tracking accounts or " +
   "on transfers between on-budget accounts. " +
   "Cannot create or delete transactions or change their date, amount, or " +

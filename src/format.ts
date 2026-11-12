@@ -108,13 +108,30 @@ export const fmtTxLine = (
   const cat = showCategory
     ? ` → ${t.category_name ?? "(uncategorized)"}`
     : "";
+  const parts = t.subtransactions?.filter((s) => !s.deleted).length ?? 0;
   const split =
     t.type === "subtransaction"
       ? ` (split of ${t.parent_transaction_id})`
-      : t.subtransactions?.length
-        ? ` (${t.subtransactions.length}-way split)`
+      : parts
+        ? ` (${parts}-way split)`
         : "";
   const approval = t.approved ? "" : " (unapproved)";
   const idSuffix = opts.includeIds ? ` — id ${t.id}` : "";
   return `- ${t.date} ${fmtMoney(t.amount, iso)} ${payee}${cat}${split} [${t.account_name}]${approval}${idSuffix}`;
 };
+
+// A split parent's live parts, one indented line each, so a read shows what
+// the split is made of.
+export const fmtSplitLines = (
+  t: Transaction,
+  iso: string,
+  opts: { includeIds?: boolean } = {},
+): string[] =>
+  (t.subtransactions ?? [])
+    .filter((s) => !s.deleted)
+    .map((s) => {
+      const payee = s.payee_name ? ` ${s.payee_name}` : "";
+      const memo = s.memo ? ` "${s.memo}"` : "";
+      const idSuffix = opts.includeIds ? ` — id ${s.id}` : "";
+      return `  - ${fmtMoney(s.amount, iso)}${payee} → ${s.category_name ?? "(uncategorized)"}${memo}${idSuffix}`;
+    });

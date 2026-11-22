@@ -10,7 +10,8 @@
     "cf-typegen": "wrangler types",
     "type-check": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "eval": "vitest run --config vitest.evals.config.ts"
   },
   "dependencies": {
     "@cloudflare/workers-oauth-provider": "^1.2.4",

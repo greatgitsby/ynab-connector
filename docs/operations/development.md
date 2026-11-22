@@ -41,6 +41,10 @@ a 401. Extra arguments after the path go to `curl`.
 
 `patch`, `put`, and `post` write to YNAB. Point them only at a separate test plan, never a real one.
 
+## Evals
+
+`npm run eval` runs `evals/**/*.eval.ts`: failures from real agent runs, replayed through the MCP client against a fixture plan with the clock frozen. They grade the outcome an agent needs, so many fail until the tools catch up, and they stay out of `npm test`. Add a failure as a fixture row plus one `test`. Build fixtures from a read-only look at a real plan; never write to one.
+
 ## Deploying
 
 ```bash

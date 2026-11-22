@@ -3,6 +3,8 @@ import { dateParam, includeIdsParam, planIdParam } from "../schemas";
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { YnabClient } from "../ynab";
 import { fmtMoney, handleError, result } from "../format";
+import { normalizeName } from "../resolve";
+import { isCardPaymentPayee } from "../predicates";
 import {
   addDays,
   daysBetween,
@@ -27,18 +29,24 @@ type Cadence = (typeof CADENCES)[number];
 const SeriesSchema = z.object({
   payee: z.string(),
   payee_id: z.string().nullable(),
-  // From the most recent charge.
+  // The most common category across the charges; ties go to the latest.
   category: z.string().nullable(),
   category_id: z.string().nullable(),
   account: z.string(),
   cadence: z.enum(CADENCES.map((c) => c.name) as [string, ...string[]]),
   // Median days between charges.
   interval_days: z.number().int(),
+  // False when some cycles were skipped: every gap is one to three cycles.
+  regular: z.boolean(),
   typical_amount: z.number().int(),
   min_amount: z.number().int(),
   max_amount: z.number().int(),
-  // Most charges within 15% of the typical amount.
+  // Most charges within 15% of the typical amount. Amounts are at the
+  // current price when previous_amount is set.
   steady_amount: z.boolean(),
+  // A price change: the earlier series at this amount, now part of this one.
+  previous_amount: z.number().int().optional(),
+  price_changed_on: z.string().optional(),
   // typical_amount scaled to a month, for comparing cadences.
   monthly_equivalent: z.number().int(),
   count: z.number().int(),
@@ -50,6 +58,10 @@ const SeriesSchema = z.object({
   status: z.enum(["active", "late", "lapsed"]),
   // A scheduled transaction exists for this payee.
   scheduled: z.boolean(),
+  // How subscription-like: an exact repeating amount, many charges, and a
+  // monthly or longer cadence count for it. Habitual spending (coffee, rides)
+  // that happens to repeat is "low".
+  confidence: z.enum(["high", "medium", "low"]),
   last_transaction_id: z.string(),
 });
 export type Series = z.infer<typeof SeriesSchema>;
@@ -58,8 +70,11 @@ export const RecurringSchema = z.object({
   iso: z.string(),
   since_date: z.string(),
   as_of: z.string(),
-  // Sum of monthly_equivalent over active and late outflow series.
+  // Sum of monthly_equivalent over active and late outflow series, every page.
   monthly_total: z.number().int(),
+  series_count: z.number().int(),
+  offset: z.number().int(),
+  next_offset: z.number().int().nullable(),
   series: z.array(SeriesSchema),
 });
 export type Recurring = z.infer<typeof RecurringSchema>;
@@ -86,8 +101,44 @@ const byDate = (rows: FlatRow[]): FlatRow[] => {
   return [...m.values()].sort((a, b) => a.date.localeCompare(b.date));
 };
 
-// A series, or null when the dates don't keep one cadence: at least three
-// quarters of the gaps must fall within the cadence's tolerance.
+// Regular: at least three quarters of the gaps fall within the median's
+// cadence. Otherwise, with three or more charges of one exact amount, skipped
+// cycles: every gap is one to three cycles of the shortest gap's cadence (a
+// card that missed a month). Varying amounts on loose dates are habits.
+const fitCadence = (gaps: number[], oneAmount: boolean): { cadence: Cadence; regular: boolean } | null => {
+  const med = median(gaps);
+  const cadence = CADENCES.find((c) => Math.abs(med - c.days) <= c.tol);
+  if (cadence) {
+    const onBeat = gaps.filter((g) => Math.abs(g - cadence.days) <= cadence.tol).length;
+    if (onBeat >= gaps.length * 0.75) return { cadence, regular: true };
+  }
+  if (gaps.length < 2 || !oneAmount) return null;
+  const shortest = Math.min(...gaps);
+  const base = CADENCES.find((c) => Math.abs(shortest - c.days) <= c.tol);
+  if (!base) return null;
+  const skips = gaps.every((g) => [1, 2, 3].some((k) => Math.abs(g - k * base.days) <= base.tol * k));
+  return skips ? { cadence: base, regular: false } : null;
+};
+
+const confidenceOf = (s: Pick<Series, "min_amount" | "max_amount" | "steady_amount" | "count" | "cadence" | "regular">): Series["confidence"] => {
+  const score =
+    (s.min_amount === s.max_amount ? 2 : s.steady_amount ? 1 : 0) +
+    (s.count >= 5 ? 2 : s.count >= 3 ? 1 : -1) -
+    (s.cadence === "weekly" || s.cadence === "biweekly" ? 1 : 0) -
+    (s.regular ? 0 : 1);
+  return score >= 3 ? "high" : score === 2 ? "medium" : "low";
+};
+
+// The row whose category is most common; ties go to the latest.
+const usualRow = (rows: FlatRow[]): FlatRow => {
+  const n = new Map<string, number>();
+  for (const r of rows) n.set(r.category_id ?? "", (n.get(r.category_id ?? "") ?? 0) + 1);
+  return [...rows].sort(
+    (a, b) => n.get(b.category_id ?? "")! - n.get(a.category_id ?? "")! || b.date.localeCompare(a.date),
+  )[0];
+};
+
+// A series, or null when the dates don't keep one cadence.
 export const detectSeries = (
   rows: FlatRow[],
   opts: { minOccurrences: number; today: string; scheduledPayees: ReadonlySet<string> },
@@ -96,10 +147,9 @@ export const detectSeries = (
   if (occ.length < opts.minOccurrences) return null;
   const gaps = occ.slice(1).map((r, i) => daysBetween(occ[i].date, r.date));
   const med = median(gaps);
-  const cadence = CADENCES.find((c) => Math.abs(med - c.days) <= c.tol);
-  if (!cadence) return null;
-  const onBeat = gaps.filter((g) => Math.abs(g - cadence.days) <= cadence.tol).length;
-  if (onBeat < gaps.length * 0.75) return null;
+  const fit = fitCadence(gaps, new Set(occ.map((r) => r.amount)).size === 1);
+  if (!fit) return null;
+  const { cadence, regular } = fit;
 
   const amounts = occ.map((r) => r.amount);
   const typical = median(amounts);
@@ -111,27 +161,92 @@ export const detectSeries = (
   const overdue = daysBetween(next, opts.today);
   const status =
     overdue <= cadence.tol ? "active" : overdue <= cadence.days + cadence.tol ? "late" : "lapsed";
-  return {
-    payee: last.payee ?? "(no payee)",
-    payee_id: last.payee_id,
-    category: last.category,
-    category_id: last.category_id,
-    account: last.account,
+  const usual = usualRow(rows);
+  const shape = {
     cadence: cadence.name,
-    interval_days: med,
-    typical_amount: typical,
+    regular,
     min_amount: Math.min(...amounts),
     max_amount: Math.max(...amounts),
     steady_amount: near >= amounts.length * 0.75,
-    monthly_equivalent: Math.round((typical * 30.44) / cadence.days),
     count: occ.length,
+  };
+  return {
+    payee: last.payee ?? "(no payee)",
+    payee_id: last.payee_id,
+    category: usual.category,
+    category_id: usual.category_id,
+    account: last.account,
+    ...shape,
+    interval_days: med,
+    typical_amount: typical,
+    monthly_equivalent: Math.round((typical * 30.44) / cadence.days),
     first_date: occ[0].date,
     last_date: last.date,
     next_expected_date: next,
     status,
     scheduled: !!last.payee_id && opts.scheduledPayees.has(last.payee_id),
+    confidence: confidenceOf(shape),
     last_transaction_id: last.id,
   };
+};
+
+// Payees one rename apart share a group: one name is the other plus words
+// ("Google" and "Google One", "Anthropic" and "Anthropic Claude") and they
+// charged at least one identical amount. Returns each payee key's group key.
+const payeeFamilies = (rows: FlatRow[], keyOf: (r: FlatRow) => string): Map<string, string> => {
+  const info = new Map<string, { words: string[]; amounts: Set<number> }>();
+  for (const r of rows) {
+    const k = keyOf(r);
+    const i = info.get(k) ?? { words: normalizeName(r.payee ?? "").split(" ").filter(Boolean), amounts: new Set() };
+    i.amounts.add(r.amount);
+    info.set(k, i);
+  }
+  const root = new Map([...info.keys()].map((k) => [k, k]));
+  const find = (k: string): string => (root.get(k) === k ? k : find(root.get(k)!));
+  const byFirst = new Map<string, string[]>();
+  for (const [k, i] of info) if (i.words.length) byFirst.set(i.words[0], [...(byFirst.get(i.words[0]) ?? []), k]);
+  for (const keys of byFirst.values()) {
+    for (const a of keys) {
+      for (const b of keys) {
+        const [wa, wb] = [info.get(a)!, info.get(b)!];
+        if (a === b || wa.words.length >= wb.words.length) continue;
+        if (!wa.words.every((w, i) => wb.words[i] === w)) continue;
+        if (![...wa.amounts].some((x) => wb.amounts.has(x))) continue;
+        root.set(find(a), find(b));
+      }
+    }
+  }
+  return new Map([...info.keys()].map((k) => [k, find(k)]));
+};
+
+// A series that starts within a cycle after another of the same cadence ended,
+// at a price within half of it, is a price change: fold the earlier one in.
+const linkPriceChanges = (list: Series[]): Series[] => {
+  const out: Series[] = [];
+  for (const s of [...list].sort((a, b) => a.first_date.localeCompare(b.first_date))) {
+    const c = CADENCES.find((x) => x.name === s.cadence)!;
+    const i = out.findIndex(
+      (o) =>
+        o.cadence === s.cadence &&
+        o.last_date < s.first_date &&
+        daysBetween(o.last_date, s.first_date) <= c.days + c.tol &&
+        Math.abs(s.typical_amount - o.typical_amount) <= Math.abs(o.typical_amount) * 0.5,
+    );
+    if (i < 0) {
+      out.push(s);
+      continue;
+    }
+    const [prev] = out.splice(i, 1);
+    const merged = {
+      ...s,
+      previous_amount: prev.typical_amount,
+      price_changed_on: s.first_date,
+      first_date: prev.first_date,
+      count: s.count + prev.count,
+    };
+    out.push({ ...merged, confidence: confidenceOf(merged) });
+  }
+  return out;
 };
 
 // Per payee: the payee's whole history if it keeps a cadence (a utility bill
@@ -147,13 +262,22 @@ export const computeRecurring = (
     includeIncome: boolean;
     includeLapsed: boolean;
     scheduledPayees: ReadonlySet<string>;
+    limit?: number;
+    offset?: number;
   },
 ): Recurring => {
+  const used = rows.filter(
+    (r) =>
+      !r.transfer &&
+      !isCardPaymentPayee(r.payee) &&
+      r.amount !== 0 &&
+      (opts.includeIncome || r.amount < 0),
+  );
+  const payeeKey = (r: FlatRow) => r.payee_id ?? r.payee ?? "none";
+  const family = payeeFamilies(used, payeeKey);
   const byPayee = new Map<string, FlatRow[]>();
-  for (const r of rows) {
-    if (r.transfer || r.amount === 0) continue;
-    if (!opts.includeIncome && r.amount > 0) continue;
-    const key = `${r.payee_id ?? r.payee ?? "none"}|${Math.sign(r.amount)}`;
+  for (const r of used) {
+    const key = `${family.get(payeeKey(r))}|${Math.sign(r.amount)}`;
     byPayee.set(key, [...(byPayee.get(key) ?? []), r]);
   }
   const series: Series[] = [];
@@ -166,10 +290,12 @@ export const computeRecurring = (
     }
     const byAmount = new Map<number, FlatRow[]>();
     for (const r of group) byAmount.set(r.amount, [...(byAmount.get(r.amount) ?? []), r]);
+    const found: Series[] = [];
     for (const same of byAmount.values()) {
       const s = detectSeries(same, opts);
-      if (s) series.push(s);
+      if (s) found.push(s);
     }
+    series.push(...linkPriceChanges(found));
   }
   const kept = series
     .filter((s) => opts.includeLapsed || s.status !== "lapsed")
@@ -178,6 +304,9 @@ export const computeRecurring = (
         a.next_expected_date.localeCompare(b.next_expected_date) ||
         a.payee.localeCompare(b.payee),
     );
+  const offset = opts.offset ?? 0;
+  const page = kept.slice(offset, opts.limit === undefined ? undefined : offset + opts.limit);
+  const end = offset + page.length;
   return {
     iso: opts.iso,
     since_date: opts.sinceDate,
@@ -185,17 +314,21 @@ export const computeRecurring = (
     monthly_total: kept
       .filter((s) => s.status !== "lapsed" && s.typical_amount < 0)
       .reduce((a, s) => a + s.monthly_equivalent, 0),
-    series: kept,
+    series_count: kept.length,
+    offset,
+    next_offset: end < kept.length ? end : null,
+    series: page,
   };
 };
 
 // ---- Render (pure)
 
 export const renderRecurring = (r: Recurring, opts: { includeIds: boolean }): string => {
-  if (!r.series.length) return `No recurring charges found since ${r.since_date}.`;
+  if (!r.series_count) return `No recurring charges found since ${r.since_date}.`;
   const { iso } = r;
+  const shown = r.series.length < r.series_count ? ` (${r.offset + 1}–${r.offset + r.series.length} shown)` : "";
   const out = [
-    `${r.series.length} recurring series since ${r.since_date} (as of ${r.as_of}); outflows ≈ ${fmtMoney(r.monthly_total, iso)}/month`,
+    `${r.series_count} recurring series${shown} since ${r.since_date} (as of ${r.as_of}); outflows ≈ ${fmtMoney(r.monthly_total, iso)}/month`,
     "",
   ];
   for (const s of r.series) {
@@ -205,6 +338,9 @@ export const renderRecurring = (r: Recurring, opts: { includeIds: boolean }): st
     const flags = [
       s.status !== "active" ? s.status : "",
       s.scheduled ? "scheduled" : "",
+      s.regular ? "" : "skips cycles",
+      s.previous_amount !== undefined ? `was ${fmtMoney(s.previous_amount, iso)} until ${s.price_changed_on}` : "",
+      s.confidence === "high" ? "" : `${s.confidence} confidence`,
     ].filter(Boolean);
     const ids = opts.includeIds
       ? ` — payee ${s.payee_id ?? "none"}, category ${s.category_id ?? "none"}, last tx ${s.last_transaction_id}`
@@ -213,6 +349,7 @@ export const renderRecurring = (r: Recurring, opts: { includeIds: boolean }): st
       `- ${s.payee} ${amt} ${s.cadence} → ${s.category ?? "(uncategorized)"}; next ${s.next_expected_date}, last ${s.last_date}, ${s.count}×${flags.length ? ` [${flags.join(", ")}]` : ""}${ids}`,
     );
   }
+  if (r.next_offset != null) out.push(`(more: pass offset ${r.next_offset})`);
   return out.join("\n");
 };
 
@@ -220,11 +357,13 @@ export const renderRecurring = (r: Recurring, opts: { includeIds: boolean }): st
 
 const DESCRIPTION =
   "Recurring charges (subscriptions, bills): payees, or one exact amount from a payee, that repeat on a steady cadence " +
-  "(weekly, biweekly, monthly, quarterly, semiannual, yearly). Each series has its typical amount and range, whether the amount is steady, " +
-  "the current category (from the latest charge), the next expected date, a monthly equivalent, whether a scheduled transaction already covers it, " +
-  "and a status: active, late (overdue by under one cycle), or lapsed (probably cancelled; hidden unless include_lapsed). " +
-  "Several subscriptions behind one payee, such as Virtual Card cards, come back as separate series by amount. " +
-  "Looks back 400 days by default; a yearly charge needs min_occurrences within the window. Transfers are excluded; income only with include_income.";
+  "(weekly, biweekly, monthly, quarterly, semiannual, yearly), including ones that skipped a cycle (regular: false). Each series has its typical amount and range, whether the amount is steady, " +
+  "its usual category (the most common across charges), the next expected date, a monthly equivalent, whether a scheduled transaction already covers it, " +
+  "a status: active, late (overdue by under one cycle), or lapsed (probably cancelled; hidden unless include_lapsed), " +
+  "and a confidence (high, medium, low) that it is a subscription rather than habitual spending such as coffee or rides. " +
+  "Several subscriptions behind one payee, such as Virtual Card cards, come back as separate series by amount. A renamed payee (\"Google\" then \"Google One\") stays one series, " +
+  "and a price change folds the old price into the new series as previous_amount. Page with limit and offset. " +
+  "Looks back 400 days by default; a yearly charge needs min_occurrences within the window. Transfers and credit card payments are excluded; income only with include_income.";
 
 export const registerFindRecurringCharges = (
   server: McpServer,
@@ -242,6 +381,8 @@ export const registerFindRecurringCharges = (
         min_occurrences: z.number().int().min(2).max(24).optional().default(3),
         include_income: z.boolean().optional().default(false),
         include_lapsed: z.boolean().optional().default(false),
+        limit: z.number().int().min(1).max(500).optional().describe("Series per page. Default: all."),
+        offset: z.number().int().min(0).optional().default(0),
         include_ids: includeIdsParam,
       },
       outputSchema: RecurringSchema.shape,
@@ -269,6 +410,8 @@ export const registerFindRecurringCharges = (
           includeIncome: args.include_income,
           includeLapsed: args.include_lapsed,
           scheduledPayees,
+          limit: args.limit,
+          offset: args.offset,
         });
         return result(renderRecurring(r, { includeIds: args.include_ids }), r);
       } catch (e) {

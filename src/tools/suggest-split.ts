@@ -24,6 +24,10 @@ const SuggestionSchema = z.object({
   // Higher is likelier: repeat history matches, goal-target matches, and
   // categories not yet charged this month count for it; extra parts against.
   score: z.number(),
+  // high: every part is an amount this payee charged that category at least
+  // twice. low: a part rests only on an amount equal to a goal target, which
+  // can be coincidence. medium otherwise.
+  confidence: z.enum(["high", "medium", "low"]),
   // Ready to pass to update_transactions as `subtransactions`.
   subtransactions: z.array(
     z.object({ amount_milliunits: z.number().int(), category_id: z.string() }),
@@ -98,13 +102,16 @@ export const buildCandidates = (
 };
 
 // Combinations of candidates, each category at most once, summing exactly to
-// `target`. A depth-first search over amounts, largest first, pruned by what
-// is left to add; it stops after `budget` steps.
+// `target`, with at most `maxGoalOnly` parts that have no history. A
+// depth-first search over amounts, largest first, pruned by what is left to
+// add; it stops after `budget` steps.
 export const findSplits = (
   candidates: Candidate[],
   target: number,
-  opts: { maxParts: number; maxResults: number; budget?: number },
+  opts: { maxParts: number; maxResults: number; budget?: number; maxGoalOnly?: number },
 ): { combos: Candidate[][]; exhaustive: boolean } => {
+  const maxGoalOnly = opts.maxGoalOnly ?? Infinity;
+  let goalOnly = 0;
   const items = [...candidates].sort((a, b) => b.amount - a.amount);
   const suffix = items.map((_, i) => items.slice(i).reduce((a, c) => a + c.amount, 0));
   const combos: Candidate[][] = [];
@@ -125,12 +132,15 @@ export const findSplits = (
     }
     if (i >= items.length || pick.length >= opts.maxParts || suffix[i] < left) return true;
     const c = items[i];
-    if (c.amount <= left && !used.has(c.category_id)) {
+    const unproven = c.times === 0 ? 1 : 0;
+    if (c.amount <= left && !used.has(c.category_id) && goalOnly + unproven <= maxGoalOnly) {
       pick.push(c);
       used.add(c.category_id);
+      goalOnly += unproven;
       const go = walk(i + 1, left - c.amount);
       pick.pop();
       used.delete(c.category_id);
+      goalOnly -= unproven;
       if (!go) return false;
     }
     return walk(i + 1, left);
@@ -154,16 +164,26 @@ export const computeSplitSuggestions = (
   opts: { iso: string; maxParts: number; maxSuggestions: number },
 ): SplitSuggestions => {
   const sign = input.amount < 0 ? -1 : 1;
+  // Two goal targets that happen to sum to the charge are coincidence far more
+  // often than a split, so a combination rests on at most one.
   const { combos, exhaustive } = findSplits(input.candidates, Math.abs(input.amount), {
     maxParts: opts.maxParts,
     maxResults: opts.maxSuggestions,
+    maxGoalOnly: 1,
   });
+  const current = input.tx && !input.alreadySplit ? input.tx.category_id : null;
   const suggestions = combos
+    .filter((parts) => !(parts.length === 1 && parts[0].category_id === current))
     .map((parts) => ({ parts, score: score(parts) }))
     .sort((a, b) => b.score - a.score || a.parts.length - b.parts.length)
     .slice(0, opts.maxSuggestions)
     .map(({ parts, score }) => ({
       score,
+      confidence: parts.some((p) => p.times === 0)
+        ? ("low" as const)
+        : parts.every((p) => p.times >= 2)
+          ? ("high" as const)
+          : ("medium" as const),
       parts: parts.map((p) => ({
         category_id: p.category_id,
         category_name: p.category_name,
@@ -203,7 +223,7 @@ export const renderSplitSuggestions = (s: SplitSuggestions): string => {
   s.suggestions.forEach((g, i) => {
     out.push(
       "",
-      `${i + 1}. ${g.parts.map((p) => `${p.category_name} ${fmtMoney(p.amount, iso)} (${p.source})`).join(" + ")}`,
+      `${i + 1}. ${g.parts.map((p) => `${p.category_name} ${fmtMoney(p.amount, iso)} (${p.source})`).join(" + ")} — ${g.confidence} confidence`,
     );
   });
   if (!s.exhaustive) out.push("", "Search stopped early; narrow with `categories` for more.");
@@ -219,7 +239,9 @@ export const renderSplitSuggestions = (s: SplitSuggestions): string => {
 const DESCRIPTION =
   "Suggest how to split one aggregate charge (Virtual Card, Apple, Amazon) across categories: combinations of known amounts that sum exactly " +
   "to it. Candidates are amounts this payee charged to each category before (whole charges and split parts) and every category's goal target, " +
-  "optionally limited to `categories` (names or ids). Ranked by history matches and categories not yet charged this month. " +
+  "optionally limited to `categories` (names or ids); a combination uses at most one goal target with no history behind it. " +
+  "Ranked by history matches and categories not yet charged this month, each with a confidence: low when it rests on a goal amount alone. " +
+  "A single part in the category the charge already has is not offered. Check the memo before applying. " +
   "Read-only, so it is the dry run: apply a suggestion by passing its `subtransactions` to update_transactions. " +
   "Give `transaction_id`, or `amount_milliunits` with optional `payee` to test an amount.";
 

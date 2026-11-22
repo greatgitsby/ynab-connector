@@ -33,6 +33,16 @@ describe("detectSeries", () => {
     expect(s).toMatchObject({ cadence: "monthly", typical_amount: -1549, steady_amount: true, next_expected_date: "2026-11-30", status: "active", count: 4 });
   });
 
+  test("skipped cycles keep a series, flagged irregular; the usual category wins over the latest", () => {
+    const s = detectSeries(
+      [row("2026-07-13", -108110), row("2026-08-11", -108110, { category: "Fun Money", category_id: "c-n" }), row("2026-10-05", -108110, { category: "Fun Money", category_id: "c-n" })],
+      opts,
+    );
+    expect(s).toMatchObject({ cadence: "monthly", regular: false, category: "Fun Money", confidence: "medium" });
+    const apple = [["2026-07-05", "c-n"], ["2026-08-04", "c-tv"], ["2026-09-04", "c-tv"], ["2026-10-05", "c-tv"], ["2026-11-04", "c-n"]];
+    expect(detectSeries(apple.map(([d, c]) => row(d, -17460, { category_id: c, category: c })), opts)?.category_id).toBe("c-tv");
+  });
+
   test("irregular dates are not a series", () => {
     expect(detectSeries([row("2026-07-01", -1), row("2026-07-04", -1), row("2026-08-30", -1), row("2026-09-02", -1)], opts)).toBeNull();
   });
@@ -68,5 +78,48 @@ describe("computeRecurring", () => {
       ["Virtual Card", -14190, "Spotify", true],
     ]);
     expect(r.monthly_total).toBe(Math.round((-9820 * 30.44) / 30) + Math.round((-14190 * 30.44) / 30));
+  });
+
+  const scan = (rows: FlatRow[], extra: { limit?: number; offset?: number } = {}) =>
+    computeRecurring(rows, { ...opts, minOccurrences: 2, iso: "USD", sinceDate: "2026-01-01", includeIncome: false, includeLapsed: true, ...extra });
+
+  test("a renamed payee that charged the same amount stays one series; one that didn't is separate", () => {
+    const a = { payee: "Anthropic", payee_id: "p-a" };
+    const ac = { payee: "Anthropic Claude", payee_id: "p-ac" };
+    const ap = { payee: "Anthropic Pizza", payee_id: "p-ap" };
+    const r = scan([
+      row("2026-08-02", -218400, a), row("2026-09-02", -218400, a),
+      row("2026-10-02", -218400, ac), row("2026-11-02", -218400, ac),
+      row("2026-10-10", -3000, ap), row("2026-11-10", -3000, ap),
+    ]);
+    expect(r.series.map((s) => [s.payee, s.count, s.status])).toEqual([
+      ["Anthropic Claude", 4, "active"],
+      ["Anthropic Pizza", 2, "active"],
+    ]);
+  });
+
+  test("a price change folds the old series into the new one", () => {
+    const apple = { payee: "Apple", payee_id: "p-apple" };
+    const r = scan([
+      row("2026-06-22", -6540, apple), row("2026-07-22", -6540, apple),
+      ...["2026-08-23", "2026-09-22", "2026-10-22"].map((d) => row(d, -7630, apple)),
+      ...["2026-06-01", "2026-06-09", "2026-07-30"].map((d) => row(d, -2990, apple)),
+    ]);
+    expect(r.series.find((s) => s.typical_amount === -7630)).toMatchObject({
+      previous_amount: -6540, price_changed_on: "2026-08-23", first_date: "2026-06-22", count: 5, confidence: "high",
+    });
+    expect(r.series.some((s) => s.typical_amount === -6540)).toBe(false);
+  });
+
+  test("habitual spending is low confidence; results page", () => {
+    const r = scan([row("2026-10-03", -6450, { payee: "Cafe", payee_id: "p-c" }), row("2026-10-10", -5200, { payee: "Cafe", payee_id: "p-c" })]);
+    expect(r.series[0]).toMatchObject({ cadence: "weekly", confidence: "low" });
+    const many = Array.from({ length: 5 }, (_, i) =>
+      ["2026-09-15", "2026-10-15", "2026-11-15"].map((d) => row(d, -1000 - i, { payee: `S${i}`, payee_id: `p-s${i}` })),
+    ).flat();
+    const p1 = scan(many, { limit: 2 });
+    const p3 = scan(many, { limit: 2, offset: 4 });
+    expect([p1.series_count, p1.series.length, p1.next_offset, p3.series.length, p3.next_offset]).toEqual([5, 2, 2, 1, null]);
+    expect(p1.monthly_total).toBe(p3.monthly_total);
   });
 });

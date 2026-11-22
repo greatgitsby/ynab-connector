@@ -1,13 +1,14 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { categoryId, plan } from "./harness";
-import { CATEGORIES, TRANSACTIONS, TX } from "./fixtures/subscription-scan";
+import { plan } from "./harness";
+import { CATEGORIES, TRANSACTIONS } from "./fixtures/subscription-scan";
 
 // Failures from the 2026-11-22 subscription-scan rerun, one eval each. They
 // grade the outcome an agent needs, not an implementation: where the tool has
 // no way to express the answer yet, the eval names the contract it checks
 // (e.g. a `confidence` field) so a fix can meet it. "Regression" evals guard
-// what already worked in that run. Cases 3 to 9 covered find_recurring_charges,
-// since removed: the agent finds recurring charges with query_transactions.
+// what already worked in that run. Cases 3 to 9 covered find_recurring_charges
+// and 10 to 12 suggest_split, both since removed: the agent finds recurring
+// charges with query_transactions and works out splits itself.
 
 const SCAN = { since_date: "2026-05-22" };
 
@@ -60,50 +61,6 @@ describe("query_transactions", () => {
     expect(r.structured.matched.categories.map((c: { name: string }) => c.name)).toEqual(["🎉 Fun Money", "Pocket Money"]);
     const anthropic = r.structured.groups.find((g: { name: string }) => g.name === "Anthropic");
     expect(anthropic).toMatchObject({ count: 4, total: -740140, first_date: "2026-06-09", last_date: "2026-09-02" });
-  });
-});
-
-describe("suggest_split", () => {
-  test("case 10: Arcade Pass $99.99 is not a mix of unrelated goal targets", async () => {
-    const r = await p.call("suggest_split", { transaction_id: TX.discord.id });
-    expect(r.isError, r.text).toBe(false);
-    const top = r.structured.suggestions[0];
-    const goalParts = top?.parts.filter((x: { source: string }) => x.source === "goal") ?? [];
-    expect(
-      goalParts.length,
-      `memo says "Arcade Pass (yearly)"; top was ${top?.parts.map((x: { category_name: string }) => x.category_name).join(" + ")}`,
-    ).toBeLessThanOrEqual(1);
-    expect(top?.parts.length ?? 0).toBeLessThanOrEqual(2);
-  });
-
-  // Contract: each suggestion carries `confidence`; one resting only on an
-  // amount equal to a goal target is "low".
-  test("case 11: $108.11 FSD matching the Car goal amount alone is low confidence", async () => {
-    const r = await p.call("suggest_split", { transaction_id: TX.fsdOct.id });
-    expect(r.isError, r.text).toBe(false);
-    const tesla = r.structured.suggestions.find(
-      (s: { parts: { category_id: string }[] }) =>
-        s.parts.length === 1 && s.parts[0].category_id === categoryId("Car App"),
-    );
-    expect(tesla, "fixture should still offer the Car goal match").toBeDefined();
-    expect(tesla.confidence, "amount-only goal match").toBe("low");
-  });
-
-  test("case 12: no one-part 'split' back into the category the charge is already in", async () => {
-    const r = await p.call("suggest_split", { transaction_id: TX.privacy399.id });
-    expect(r.isError, r.text).toBe(false);
-    const noop = r.structured.suggestions.filter(
-      (s: { parts: { category_id: string }[] }) =>
-        s.parts.length === 1 && s.parts[0].category_id === categoryId("Pocket Money"),
-    );
-    expect(noop, "Privacy $3.99 → Pocket Money, where it already is").toEqual([]);
-  });
-
-  test("regression: the 11/9 $24.01 Virtual Card charge splits into Netflix + Spotify", async () => {
-    const r = await p.call("suggest_split", { transaction_id: TX.privacy2401.id });
-    expect(r.isError, r.text).toBe(false);
-    const top = r.structured.suggestions[0].parts.map((x: { category_name: string }) => x.category_name).sort();
-    expect(top).toEqual(["🎥 Netflix", "🎶 Spotify + HULU"]);
   });
 });
 

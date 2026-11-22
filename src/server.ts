@@ -24,7 +24,6 @@ import { registerCreateCategories } from "./tools/create-categories";
 import { registerUpdateCategories } from "./tools/update-categories";
 import { registerQueryTransactions } from "./tools/query-transactions";
 import { registerGetSnapshot } from "./tools/get-snapshot";
-import { registerSuggestSplit } from "./tools/suggest-split";
 
 export const SERVER_VERSION = "0.7.0";
 
@@ -33,7 +32,7 @@ const INSTRUCTIONS =
   'Every plan-scoped tool takes an optional plan_id; it defaults to "last-used" (the most recently used plan), so call list_plans only when the user has several plans. ' +
   'Money in text is already formatted in the plan\'s currency; structured output and write tools use YNAB milliunits (1000 = 1.00), and outflows are negative. Months are "YYYY-MM-01" or "current"; dates are "YYYY-MM-DD". Add include_ids for "— id <uuid>" on each text line; structured output always carries ids. ' +
   "Start with get_snapshot for a compact overview (Ready to Assign, inbox, overspent and underfunded, account balances, recent imports), or triage_inbox for the same inbox as full YNAB objects. get_month shows this month's categories; its `only` and `compact` options trim it. " +
-  "query_transactions is the workhorse for transactions: compact rows, any number of account, category, and payee filters by name or id, text search, paging, and group_by payee, category, month, or account with count, total, typical amount, and first and last date. list_transactions returns full YNAB transaction objects for one scope. suggest_split proposes how to split an aggregate charge such as Virtual Card. " +
+  "query_transactions is the workhorse for transactions: compact rows, any number of account, category, and payee filters by name or id, text search, paging, and group_by payee, category, month, or account with count, total, typical amount, and first and last date. list_transactions returns full YNAB transaction objects for one scope." +
   "list_scheduled_transactions shows upcoming bills and transfers that are not yet in balances. list_money_movements shows assignments and moves between categories, including money taken from savings goals. review_payees finds duplicate and little-used payees. " +
   "Write tools (assign_to_categories, set_category_goals, create_categories, update_categories, update_transactions, reconcile_account, rename_payees, merge_payees) edit category amounts and goals, create, rename, and move categories, edit existing transactions, reconcile an account against a statement, and rename or consolidate payees. assign_to_categories and update_transactions accept category names as well as ids, and report Ready to Assign and category balances after the write; assign_to_categories also adds or subtracts, funds goals, funds every underfunded goal except named ones, and has dry_run. merge_payees and set_category_goals preview unless called with apply: true. YNAB's API can't hide or delete categories; the user does that in YNAB. They need a connection with write scope; if one returns a \"read-only\" error, ask the user to disconnect and reconnect the connector in their MCP client.";
 
@@ -80,7 +79,6 @@ export const buildServer = (props: Props): McpServer => {
   registerUpdateCategories(server, getClient, getProps);
   registerQueryTransactions(server, getClient);
   registerGetSnapshot(server, getClient);
-  registerSuggestSplit(server, getClient);
 
   return server;
 };

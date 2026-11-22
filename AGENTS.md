@@ -14,6 +14,7 @@ Think of these instructions as good defaults, not hard rules. The developer's pr
 4. **Pruning `wrangler.jsonc` migrations.** Keep both migration entries, including the `v2` `deleted_classes` one. Cloudflare replays the history by tag.
 5. **Writing to a real plan.** Try writes only against a dedicated test plan. See [development](docs/operations/development.md#calling-ynab-directly).
 6. **Widening the write surface quietly.** Manual transaction creation, deletes, scheduled transaction edits (beyond `merge_payees` re-pointing a payee), are excluded on purpose. Category goals are writable only through `set_category_goals`, and category names and groups only through `create_categories` and `update_categories`. See [write tools](docs/internals/write-tools.md).
+7. **Pushing to `master`.** Every push to `master` deploys to production: CI runs type-check and tests, then `wrangler deploy`. Push there only when asked; otherwise work on a branch.
 
 ## Commands
 

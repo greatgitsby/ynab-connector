@@ -23,6 +23,12 @@ are also `z.looseObject`, so a field a later API version adds still passes valid
   `NaN` before the SDK does.
 - **Money is milliunits.** Sums are integers; averages are not, so they stay `z.number()`. Every
   money-bearing payload carries an `iso` currency code so consumers never assume USD.
+- **Compact rows where size matters.** A YNAB transaction is about 800 bytes of JSON, so a few
+  dozen fill a client's tool-result budget. `query_transactions`, `get_snapshot`, and
+  `find_recurring_charges` return flattened rows from [`rows.ts`](../../src/rows.ts) instead: one
+  row per split part, carrying the parent's transaction id (which writes take) and the part's
+  `part_id`. `list_transactions` and `triage_inbox` keep full YNAB objects for consumers that read
+  them. `get_month` with `compact` swaps `groups` for a flat `categories` list.
 - **Ids are always present.** `include_ids` only controls the `— id <uuid>` text suffixes.
   Structured data stays fully addressable.
 - **Present means computed.** Guard branches (not found, invalid range, no data) return text only.

@@ -65,7 +65,7 @@ const groups = [
 ];
 
 const ids = (r: ReturnType<typeof computeMonthReport>) =>
-  r.groups.map((g) => [g.name, g.categories.map((c) => c.id)]);
+  r.groups!.map((g) => [g.name, g.categories.map((c) => c.id)]);
 
 describe("computeMonthReport", () => {
   test("orders groups and categories as the Plan does, dropping hidden and internal", () => {
@@ -90,11 +90,37 @@ describe("computeMonthReport", () => {
   test("still groups every category when GET /categories comes back empty", () => {
     const empty = [group("Bills", [], { internal: true })];
     const r = computeMonthReport(month, empty, { includeHidden: false, iso: "USD" });
-    expect(r.groups.flatMap((g) => g.categories.map((c) => c.id)).sort()).toEqual([
+    expect(r.groups!.flatMap((g) => g.categories.map((c) => c.id)).sort()).toEqual([
       "games",
       "h",
       "power",
       "rent",
+    ]);
+  });
+});
+
+describe("only and compact", () => {
+  const withGoals = monthDetail([
+    cat("rent", "Bills", { budgeted: 1000, goal_type: "NEED", goal_target: 2000, goal_under_funded: 1000, goal_cadence: 1, goal_cadence_frequency: 1 }),
+    cat("power", "Bills", { balance: -50 }),
+    cat("old", "Bills"),
+    cat("games", "Fun", { activity: -5 }),
+  ]);
+
+  test("only keeps categories matching any listed condition", () => {
+    const r = computeMonthReport(withGoals, groups, { includeHidden: false, iso: "USD", only: ["underfunded", "overspent"] });
+    expect(ids(r)).toEqual([["Bills", ["rent", "power"]]]);
+    const nz = computeMonthReport(withGoals, groups, { includeHidden: false, iso: "USD", only: ["nonzero"] });
+    expect(ids(nz)).toEqual([["Bills", ["rent", "power"]], ["Fun", ["games"]]]);
+  });
+
+  test("compact returns a flat list with goal fields only where a goal exists", () => {
+    const r = computeMonthReport(withGoals, groups, { includeHidden: false, iso: "USD", only: ["underfunded", "overspent"], compact: true });
+    expect(() => MonthReportSchema.parse(r)).not.toThrow();
+    expect(r.groups).toBeUndefined();
+    expect(r.categories).toEqual([
+      { id: "rent", name: "rent", group: "Bills", budgeted: 1000, activity: 0, balance: 0, goal_type: "NEED", goal_target: 2000, underfunded: 1000, next_due_date: null },
+      { id: "power", name: "power", group: "Bills", budgeted: 0, activity: 0, balance: -50 },
     ]);
   });
 });

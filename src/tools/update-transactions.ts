@@ -2,6 +2,8 @@ import { z } from "zod";
 import { planIdParam } from "../schemas";
 import type { McpServer } from "@modelcontextprotocol/server";
 import type {
+  CategoryGroup,
+  MonthDetail,
   SaveSubTransaction,
   SaveTransactionWithId,
   Transaction,
@@ -17,12 +19,15 @@ import {
 } from "../format";
 import type { Props } from "../ynab-auth";
 import { isSplitTx } from "../predicates";
+import { categoryRefs, resolveOne } from "../resolve";
 
 // ---- Input + Result types
 
 export interface UpdateSubInput {
   amount_milliunits: number;
   category_id?: string | null;
+  // Resolved to category_id before sending.
+  category_name?: string;
   memo?: string | null;
   payee_name?: string;
   payee_id?: string;
@@ -31,6 +36,8 @@ export interface UpdateSubInput {
 export interface UpdateTransactionInput {
   transaction_id: string;
   category_id?: string | null;
+  // Resolved to category_id before sending.
+  category_name?: string;
   payee_name?: string;
   payee_id?: string;
   memo?: string | null;
@@ -54,9 +61,80 @@ export interface UpdateTransactionError {
 
 export type UpdateTransactionResult = UpdateTransactionOk | UpdateTransactionError;
 
+export interface CategoryBalance {
+  id: string;
+  name: string;
+  budgeted: number;
+  activity: number;
+  balance: number;
+}
+
 export interface UpdateTransactionsResult {
   results: UpdateTransactionResult[];
+  // The current month's state after the write, for the categories the
+  // updated transactions now sit in. Absent when nothing was written or the
+  // re-read failed.
+  month?: string;
+  ready_to_assign?: number;
+  category_balances?: CategoryBalance[];
 }
+
+// Replaces each category_name with the id it names. An input whose name
+// matches no category, or several, fails on its own before anything is sent.
+export const resolveCategoryNames = (
+  inputs: UpdateTransactionInput[],
+  groups: CategoryGroup[],
+): { inputs: UpdateTransactionInput[]; failed: Map<UpdateTransactionInput, string> } => {
+  const refs = categoryRefs(groups);
+  const failed = new Map<UpdateTransactionInput, string>();
+  const resolved = inputs.map((input) => {
+    const errors: string[] = [];
+    const lookup = (name: string | undefined, id: string | null | undefined) => {
+      if (name === undefined) return id;
+      const r = resolveOne(refs, name, "category");
+      if (r.ok) return r.matches[0].id;
+      errors.push(r.error);
+      return id;
+    };
+    const { category_name, ...rest } = input;
+    const out: UpdateTransactionInput = { ...rest };
+    const catId = lookup(category_name, input.category_id);
+    if (catId !== undefined) out.category_id = catId;
+    if (input.subtransactions) {
+      out.subtransactions = input.subtransactions.map(({ category_name: n, ...sub }) => {
+        const id = lookup(n, sub.category_id);
+        return id !== undefined ? { ...sub, category_id: id } : sub;
+      });
+    }
+    if (errors.length) failed.set(out, errors.join(" "));
+    return out;
+  });
+  return { inputs: resolved, failed };
+};
+
+// The month's categories that updated transactions (or their parts) now use.
+export const touchedBalances = (
+  results: UpdateTransactionResult[],
+  month: MonthDetail,
+): CategoryBalance[] => {
+  const ids = new Set<string>();
+  for (const r of results) {
+    if (!r.ok) continue;
+    if (r.transaction.category_id) ids.add(r.transaction.category_id);
+    for (const s of r.transaction.subtransactions ?? []) {
+      if (!s.deleted && s.category_id) ids.add(s.category_id);
+    }
+  }
+  return month.categories
+    .filter((c) => ids.has(c.id) && !c.internal)
+    .map((c) => ({
+      id: c.id,
+      name: c.name,
+      budgeted: c.budgeted,
+      activity: c.activity,
+      balance: c.balance,
+    }));
+};
 
 // ---- Compute: input → wire body (pure)
 
@@ -182,9 +260,20 @@ const precheckSplits = async (
 export const applyUpdateTransactions = async (
   client: YnabClient,
   planId: string,
-  inputs: UpdateTransactionInput[],
+  rawInputs: UpdateTransactionInput[],
 ): Promise<UpdateTransactionsResult> => {
-  const failed = await precheckSplits(client, planId, inputs);
+  const named = rawInputs.some(
+    (i) => i.category_name !== undefined || i.subtransactions?.some((s) => s.category_name !== undefined),
+  );
+  const { inputs, failed: unresolved } = named
+    ? resolveCategoryNames(rawInputs, (await client.listCategories(planId)).data.category_groups)
+    : { inputs: rawInputs, failed: new Map<UpdateTransactionInput, string>() };
+  const failed = await precheckSplits(
+    client,
+    planId,
+    inputs.filter((i) => !unresolved.has(i)),
+  );
+  for (const [i, e] of unresolved) failed.set(i, e);
   const toSend = inputs.filter((i) => !failed.has(i));
   let updated: Transaction[] = [];
   if (toSend.length > 0) {
@@ -199,7 +288,19 @@ export const applyUpdateTransactions = async (
       for (const i of toSend) failed.set(i, message);
     }
   }
-  return interpretBulkResponse(inputs, updated, failed);
+  const out = interpretBulkResponse(inputs, updated, failed);
+  if (!out.results.some((r) => r.ok)) return out;
+  try {
+    const { data } = await client.getMonth(planId, "current");
+    return {
+      ...out,
+      month: data.month.month,
+      ready_to_assign: data.month.to_be_budgeted,
+      category_balances: touchedBalances(out.results, data.month),
+    };
+  } catch {
+    return out;
+  }
 };
 
 // ---- Render (pure)
@@ -218,7 +319,16 @@ export const renderUpdateTransactionsResult = (
       ...fmtSplitLines(r.transaction, iso),
     ];
   });
-  return [header, ...lines].join("\n");
+  const after = out.ready_to_assign != null
+    ? [
+        "",
+        `After the update (${out.month?.slice(0, 7)}): Ready to Assign ${fmtMoney(out.ready_to_assign ?? 0, iso)}`,
+        ...(out.category_balances ?? []).map(
+          (c) => `- ${c.name}: available ${fmtMoney(c.balance, iso)} (assigned ${fmtMoney(c.budgeted, iso)}, activity ${fmtMoney(c.activity, iso)})`,
+        ),
+      ]
+    : [];
+  return [header, ...lines, ...after].join("\n");
 };
 
 const renderTxSummary = (t: Transaction, iso: string): string => {
@@ -253,7 +363,11 @@ const DESCRIPTION =
   "work on a split parent. Splits are not allowed on tracking accounts or " +
   "on transfers between on-budget accounts. " +
   "Cannot create or delete transactions or change their date, amount, or " +
-  "account. Requires write access; a read-only connection must be " +
+  "account. `category_name` (\"Groceries\" or \"Group: Name\") may stand in " +
+  "for `category_id`, on the transaction or a split part; a name that matches " +
+  "no category or several fails that row before anything is sent. The result " +
+  "ends with this month's Ready to Assign and the available balance of each " +
+  "category the updated transactions now use. Requires write access; a read-only connection must be " +
   "reconnected to use this tool.";
 
 export const registerUpdateTransactions = (
@@ -266,6 +380,7 @@ export const registerUpdateTransactions = (
   const subSchema = z.object({
     amount_milliunits: z.number().int(),
     category_id: z.string().nullable().optional(),
+    category_name: z.string().optional(),
     memo: z.string().nullable().optional(),
     payee_name: z.string().optional(),
     payee_id: z.string().optional(),
@@ -275,6 +390,7 @@ export const registerUpdateTransactions = (
     .object({
       transaction_id: z.string(),
       category_id: z.string().nullable().optional(),
+      category_name: z.string().optional(),
       payee_name: z.string().optional(),
       payee_id: z.string().optional(),
       memo: z.string().nullable().optional(),
@@ -283,8 +399,12 @@ export const registerUpdateTransactions = (
       flag_color: z.enum(flagColors).nullable().optional(),
       subtransactions: z.array(subSchema).optional(),
     })
+    .refine((v) => !(v.category_id !== undefined && v.category_name !== undefined), {
+      message: "Give category_id or category_name, not both.",
+      path: ["category_name"],
+    })
     .refine(
-      (v) => !(v.subtransactions && v.category_id != null),
+      (v) => !(v.subtransactions && (v.category_id != null || v.category_name !== undefined)),
       {
         message:
           "When `subtransactions` is set, the parent's `category_id` must be null or omitted.",

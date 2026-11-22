@@ -1,215 +1,203 @@
 import { describe, test, expect, vi } from "vitest";
-import { YnabError, type Category, type YnabClient } from "../ynab";
+import { YnabError, type Category, type MonthDetail, type YnabClient } from "../ynab";
 import {
   applyAssignToCategories,
-  renderAssignToCategoriesResult,
+  expandFundUnderfunded,
+  planMoves,
+  toAssignMove,
+  type AssignMoveOk,
   type AssignToCategoriesResult,
 } from "./assign-to-categories";
 
-// Minimal Category builder.
 const cat = (over: Partial<Category> & { id: string; name: string }): Category =>
   ({
     category_group_id: "grp-1",
+    category_group_name: "Bills",
     hidden: false,
+    internal: false,
+    deleted: false,
     budgeted: 100000,
     activity: 0,
     balance: 100000,
+    goal_type: null,
+    goal_target: null,
+    goal_under_funded: null,
     ...over,
   }) as Category;
 
-// Mock YnabClient just sufficient for the apply function — only `getMonthCategory`
-// and `updateCategoryMonth` are touched.
-type MockClient = Pick<YnabClient, "getMonthCategory" | "updateCategoryMonth">;
-
-const stubClient = (
-  responder: {
-    getMonthCategory: (id: string) => Category;
-    updateCategoryMonth: (
-      month: string,
-      id: string,
-      budgeted: number,
-    ) => Category | YnabError;
-  },
-): { client: MockClient; calls: { method: string; args: unknown[] }[] } => {
-  const calls: { method: string; args: unknown[] }[] = [];
-  const getMonthCategory = vi.fn(async (_planId: string, _month: string, id: string) => {
-    calls.push({ method: "getMonthCategory", args: [id] });
-    return { data: { category: responder.getMonthCategory(id) } };
+const need = (id: string, name: string, budgeted: number, underfunded: number) =>
+  cat({
+    id,
+    name,
+    budgeted,
+    balance: budgeted,
+    goal_type: "NEED",
+    goal_target: budgeted + underfunded,
+    goal_cadence: 1,
+    goal_cadence_frequency: 1,
+    goal_under_funded: underfunded,
   });
-  const updateCategoryMonth = vi.fn(
-    async (
-      _planId: string,
-      month: string,
-      id: string,
-      body: { budgeted: number },
-    ) => {
-      calls.push({
-        method: "updateCategoryMonth",
-        args: [month, id, body.budgeted],
-      });
-      const r = responder.updateCategoryMonth(month, id, body.budgeted);
-      if (r instanceof YnabError) throw r;
-      return { data: { category: r } };
-    },
-  );
-  return {
-    client: { getMonthCategory, updateCategoryMonth } as unknown as MockClient,
-    calls,
-  };
-};
 
-describe("applyAssignToCategories", () => {
-  test("applies all moves in order and reports before/after per item", async () => {
-    const before: Record<string, Category> = {
-      "cat-a": cat({ id: "cat-a", name: "Groceries", budgeted: 400000 }),
-      "cat-b": cat({ id: "cat-b", name: "Dining", budgeted: 200000 }),
-    };
-    const after: Record<string, Category> = {
-      "cat-a": cat({
-        id: "cat-a",
-        name: "Groceries",
-        budgeted: 450000,
-        balance: 450000,
-      }),
-      "cat-b": cat({
-        id: "cat-b",
-        name: "Dining",
-        budgeted: 150000,
-        balance: 150000,
-      }),
-    };
-    const { client, calls } = stubClient({
-      getMonthCategory: (id) => before[id],
-      updateCategoryMonth: (_m, id) => after[id],
-    });
+const month = (categories: Category[], rta = 1_000_000): MonthDetail => ({
+  month: "2026-05-01",
+  income: 0,
+  budgeted: 0,
+  activity: 0,
+  to_be_budgeted: rta,
+  age_of_money: null,
+  deleted: false,
+  categories,
+});
 
-    const out = await applyAssignToCategories(client as YnabClient, "bud-1", [
-      { month: "2026-05-01", category_id: "cat-a", set_budgeted_milliunits: 450000 },
-      { month: "2026-05-01", category_id: "cat-b", set_budgeted_milliunits: 150000 },
-    ]);
+const detail = month([
+  cat({ id: "cat-a", name: "🛒 Groceries", budgeted: 400000, balance: 400000 }),
+  cat({ id: "cat-b", name: "Dining", budgeted: 200000, balance: 150000 }),
+  need("cat-n", "🎥 Netflix", 0, 9820),
+  need("cat-s", "Spotify", 5000, 9190),
+  cat({ id: "cat-h", name: "Hidden thing", hidden: true }),
+]);
+const months = new Map([["2026-05-01", detail]]);
 
-    expect(out.results).toEqual([
-      {
-        ok: true,
-        month: "2026-05-01",
-        category_id: "cat-a",
-        category_name: "Groceries",
-        before_budgeted: 400000,
-        after_budgeted: 450000,
-        balance: 450000,
-      },
-      {
-        ok: true,
-        month: "2026-05-01",
-        category_id: "cat-b",
-        category_name: "Dining",
-        before_budgeted: 200000,
-        after_budgeted: 150000,
-        balance: 150000,
-      },
-    ]);
-    expect(calls).toEqual([
-      { method: "getMonthCategory", args: ["cat-a"] },
-      { method: "updateCategoryMonth", args: ["2026-05-01", "cat-a", 450000] },
-      { method: "getMonthCategory", args: ["cat-b"] },
-      { method: "updateCategoryMonth", args: ["2026-05-01", "cat-b", 150000] },
+describe("planMoves", () => {
+  test("set, add, and fund_goal compute before/after; names resolve", () => {
+    const r = planMoves(
+      [
+        { month: "2026-05-01", category: "groceries", op: { set: 450000 } },
+        { month: "2026-05-01", category: "cat-b", op: { add: -50000 } },
+        { month: "2026-05-01", category: "Netflix", op: { fundGoal: true } },
+      ],
+      months,
+    );
+    expect(r).toEqual([
+      expect.objectContaining({ ok: true, category_id: "cat-a", before_budgeted: 400000, after_budgeted: 450000, change: 50000, balance: 450000 }),
+      expect.objectContaining({ ok: true, category_id: "cat-b", before_budgeted: 200000, after_budgeted: 150000, change: -50000, balance: 100000 }),
+      expect.objectContaining({ ok: true, category_id: "cat-n", before_budgeted: 0, after_budgeted: 9820, change: 9820 }),
     ]);
   });
 
-  test("a mid-batch failure does not stop subsequent moves", async () => {
-    const { client } = stubClient({
-      getMonthCategory: (id) => cat({ id, name: `Cat ${id}`, budgeted: 100000 }),
-      updateCategoryMonth: (_m, id, budgeted) => {
-        if (id === "cat-b") return new YnabError(404, "category not found");
-        return cat({ id, name: `Cat ${id}`, budgeted, balance: budgeted });
-      },
-    });
-
-    const out = await applyAssignToCategories(client as YnabClient, "bud-1", [
-      { month: "2026-05-01", category_id: "cat-a", set_budgeted_milliunits: 50000 },
-      { month: "2026-05-01", category_id: "cat-b", set_budgeted_milliunits: 50000 },
-      { month: "2026-05-01", category_id: "cat-c", set_budgeted_milliunits: 50000 },
-    ]);
-
-    expect(out.results.map((r) => r.ok)).toEqual([true, false, true]);
-    const errItem = out.results[1];
-    if (errItem.ok) throw new Error("expected error item");
-    expect(errItem.error).toBe("YNAB 404: category not found");
+  test("a second move on one category sees the first", () => {
+    const r = planMoves(
+      [
+        { month: "2026-05-01", category: "cat-s", op: { add: 1000 } },
+        { month: "2026-05-01", category: "cat-s", op: { fundGoal: true } },
+      ],
+      months,
+    ) as AssignMoveOk[];
+    expect(r[1].before_budgeted).toBe(6000);
+    expect(r[1].after_budgeted).toBe(14190);
   });
 
-  test("surfaces non-YnabError messages on the per-item result", async () => {
-    const { client } = stubClient({
-      getMonthCategory: () => {
-        throw new Error("network broken");
-      },
-      updateCategoryMonth: () => cat({ id: "cat-a", name: "X", budgeted: 0 }),
-    });
-
-    const out = await applyAssignToCategories(client as YnabClient, "bud-1", [
-      { month: "2026-05-01", category_id: "cat-a", set_budgeted_milliunits: 0 },
+  test("unknown names, goal-less fund_goal, and ambiguous names fail per move", () => {
+    const dup = new Map([
+      ["2026-05-01", month([...detail.categories, cat({ id: "cat-d2", name: "Dining", category_group_name: "Fun" })])],
     ]);
-
-    expect(out.results[0]).toMatchObject({
-      ok: false,
-      error: "network broken",
-    });
+    const r = planMoves(
+      [
+        { month: "2026-05-01", category: "Nope", op: { set: 1 } },
+        { month: "2026-05-01", category: "cat-a", op: { fundGoal: true } },
+        { month: "2026-05-01", category: "Dining", op: { set: 1 } },
+        { month: "2026-05-01", category: "Fun: Dining", op: { set: 1 } },
+      ],
+      dup,
+    );
+    expect(r.map((x) => x.ok)).toEqual([false, false, false, true]);
+    expect(r[2]).toMatchObject({ error: expect.stringContaining("matches 2 categories") });
   });
 });
 
-describe("renderAssignToCategoriesResult", () => {
-  const sample: AssignToCategoriesResult = {
-    results: [
-      {
-        ok: true,
-        month: "2026-05-01",
-        category_id: "cat-a",
-        category_name: "Groceries",
-        before_budgeted: 400000,
-        after_budgeted: 450000,
-        balance: 450000,
-      },
-      {
-        ok: false,
-        month: "2026-05-01",
-        category_id: "cat-b",
-        error: "YNAB 404: category not found",
-      },
-    ],
+describe("expandFundUnderfunded", () => {
+  test("funds every underfunded visible goal except named ones", () => {
+    const r = expandFundUnderfunded("2026-05-01", detail, [], new Set());
+    expect("moves" in r && r.moves.map((m) => m.category)).toEqual(["cat-n", "cat-s"]);
+    const ex = expandFundUnderfunded("2026-05-01", detail, ["netflix"], new Set());
+    expect("moves" in ex && ex.moves.map((m) => m.category)).toEqual(["cat-s"]);
+  });
+
+  test("an except name that matches nothing refuses the call", () => {
+    const r = expandFundUnderfunded("2026-05-01", detail, ["Netflx"], new Set());
+    expect(r).toEqual({ error: expect.stringContaining('No category matches "Netflx"') });
+  });
+});
+
+describe("toAssignMove", () => {
+  test("maps the tool's fields to one op", () => {
+    expect(toAssignMove({ month: "current", category_name: "X", add_milliunits: -5 })).toEqual({
+      month: "current",
+      category: "X",
+      op: { add: -5 },
+    });
+    expect(toAssignMove({ month: "current", category_id: "c", fund_goal: true }).op).toEqual({ fundGoal: true });
+  });
+});
+
+const stubClient = (opts: { fail?: string; rtaAfter?: number } = {}) => {
+  const patches: [string, string, number][] = [];
+  let reads = 0;
+  const client = {
+    getMonth: vi.fn(async () => {
+      reads += 1;
+      return { data: { month: reads === 1 ? detail : { ...detail, to_be_budgeted: opts.rtaAfter ?? 0 } } };
+    }),
+    updateCategoryMonth: vi.fn(async (_p: string, m: string, id: string, body: { budgeted: number }) => {
+      if (id === opts.fail) throw new YnabError(404, "category not found");
+      patches.push([m, id, body.budgeted]);
+      return { data: { category: cat({ id, name: id, budgeted: body.budgeted, balance: body.budgeted }) } };
+    }),
   };
+  return { client: client as unknown as YnabClient, patches };
+};
 
-  test("header summarizes ok/total and error count", () => {
-    const rendered = renderAssignToCategoriesResult(sample, "USD");
-    expect(rendered).toContain("Reassigned 1 / 2 categories (1 error)");
-  });
-
-  test("ok rows show before → after with the id suffix", () => {
-    const rendered = renderAssignToCategoriesResult(sample, "USD");
-    expect(rendered).toContain(
-      "[ok] 2026-05-01 Groceries: $400.00 → $450.00 (balance $450.00) — id cat-a",
-    );
-  });
-
-  test("error rows include the message and category id", () => {
-    const rendered = renderAssignToCategoriesResult(sample, "USD");
-    expect(rendered).toContain(
-      "[error] 2026-05-01 cat-b: YNAB 404: category not found",
-    );
-  });
-
-  test("uses '=' when before equals after (no-op set)", () => {
-    const noOp: AssignToCategoriesResult = {
-      results: [
-        {
-          ok: true,
-          month: "2026-05-01",
-          category_id: "cat-a",
-          category_name: "Groceries",
-          before_budgeted: 400000,
-          after_budgeted: 400000,
-          balance: 400000,
-        },
+describe("applyAssignToCategories", () => {
+  test("writes changed moves, skips no-ops, and re-reads Ready to Assign", async () => {
+    const { client, patches } = stubClient({ rtaAfter: 940000 });
+    const out = (await applyAssignToCategories(client, "p", {
+      moves: [
+        { month: "2026-05-01", category: "cat-a", op: { add: 60000 } },
+        { month: "2026-05-01", category: "cat-b", op: { set: 200000 } },
       ],
-    };
-    expect(renderAssignToCategoriesResult(noOp, "USD")).toContain("$400.00 = $400.00");
+      dryRun: false,
+    })) as AssignToCategoriesResult;
+    expect(patches).toEqual([["2026-05-01", "cat-a", 460000]]);
+    expect(out.results.map((r) => r.ok)).toEqual([true, true]);
+    expect(out.ready_to_assign).toEqual([{ month: "2026-05-01", before: 1_000_000, after: 940000 }]);
+  });
+
+  test("dry run writes nothing and projects Ready to Assign", async () => {
+    const { client, patches } = stubClient();
+    const out = (await applyAssignToCategories(client, "p", {
+      moves: [],
+      fundUnderfunded: { month: "2026-05-01", except: ["spotify"] },
+      dryRun: true,
+    })) as AssignToCategoriesResult;
+    expect(patches).toEqual([]);
+    expect(out.dry_run).toBe(true);
+    expect(out.results).toEqual([expect.objectContaining({ category_id: "cat-n", change: 9820 })]);
+    expect(out.ready_to_assign).toEqual([{ month: "2026-05-01", before: 1_000_000, after: 990180 }]);
+  });
+
+  test("fund_underfunded skips categories the explicit moves already cover", async () => {
+    const { client, patches } = stubClient();
+    await applyAssignToCategories(client, "p", {
+      moves: [{ month: "2026-05-01", category: "cat-n", op: { set: 1000 } }],
+      fundUnderfunded: { month: "2026-05-01", except: [] },
+      dryRun: false,
+    });
+    expect(patches).toEqual([
+      ["2026-05-01", "cat-n", 1000],
+      ["2026-05-01", "cat-s", 14190],
+    ]);
+  });
+
+  test("a failed PATCH doesn't stop the rest", async () => {
+    const { client } = stubClient({ fail: "cat-a" });
+    const out = (await applyAssignToCategories(client, "p", {
+      moves: [
+        { month: "2026-05-01", category: "cat-a", op: { set: 1 } },
+        { month: "2026-05-01", category: "cat-b", op: { set: 1 } },
+      ],
+      dryRun: false,
+    })) as AssignToCategoriesResult;
+    expect(out.results[0]).toMatchObject({ ok: false, error: "YNAB 404: category not found" });
+    expect(out.results[1].ok).toBe(true);
   });
 });

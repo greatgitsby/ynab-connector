@@ -44,8 +44,10 @@ afterEach(() => vi.unstubAllGlobals());
 const EXPECTED_TOOLS = [
   "assign_to_categories",
   "create_categories",
+  "find_recurring_charges",
   "get_category",
   "get_month",
+  "get_snapshot",
   "list_accounts",
   "list_money_movements",
   "list_months",
@@ -54,12 +56,14 @@ const EXPECTED_TOOLS = [
   "list_scheduled_transactions",
   "list_transactions",
   "merge_payees",
+  "query_transactions",
   "reconcile_account",
   "reflect_income_expense",
   "reflect_net_worth",
   "rename_payees",
   "review_payees",
   "set_category_goals",
+  "suggest_split",
   "triage_inbox",
   "update_categories",
   "update_transactions",
@@ -440,6 +444,168 @@ describe("tool calls", () => {
     expect(res.structuredContent).toMatchObject({
       applied: false,
       sources: [{ payee_id: "dup", transactions: [{ id: "t1" }] }],
+    });
+  });
+
+  describe("against one small plan", () => {
+    const category = (id: string, name: string, extra: Record<string, unknown> = {}) => ({
+      id,
+      category_group_id: "g1",
+      category_group_name: "Subscriptions",
+      name,
+      hidden: false,
+      internal: false,
+      deleted: false,
+      budgeted: 0,
+      activity: 0,
+      balance: 0,
+      ...extra,
+    });
+    const categories = [
+      category("c-net", "🎥 Netflix", { goal_type: "NEED", goal_target: 9820, goal_cadence: 1, goal_cadence_frequency: 1, goal_under_funded: 9820 }),
+      category("c-spo", "Spotify", { goal_type: "NEED", goal_target: 14190, goal_cadence: 1, goal_cadence_frequency: 1 }),
+      category("c-food", "Groceries", { balance: -5000 }),
+    ];
+    const tx = (id: string, date: string, amount: number, extra: Record<string, unknown> = {}) => ({
+      id,
+      date,
+      amount,
+      memo: null,
+      cleared: "cleared",
+      approved: true,
+      flag_color: null,
+      account_id: "a1",
+      account_name: "Checking",
+      payee_id: "p-priv",
+      payee_name: "Virtual Card",
+      category_id: "c-net",
+      category_name: "🎥 Netflix",
+      transfer_account_id: null,
+      import_id: `YNAB:${id}`,
+      deleted: false,
+      subtransactions: [],
+      ...extra,
+    });
+    const transactions = [
+      tx("t1", "2026-08-09", -9820),
+      tx("t2", "2026-09-09", -9820),
+      tx("t3", "2026-10-09", -9820),
+      tx("t4", "2026-10-10", -14190, { category_id: "c-spo", category_name: "Spotify" }),
+      tx("t5", "2026-11-09", -24010, { category_id: null, category_name: null, approved: false }),
+      tx("t6", "2026-11-02", -5000, {
+        payee_id: "p-store",
+        payee_name: "Store",
+        category_id: null,
+        category_name: "Split",
+        memo: "weekly shop",
+        subtransactions: [
+          { id: "s1", transaction_id: "t6", amount: -3000, memo: null, payee_id: null, payee_name: null, category_id: "c-food", category_name: "Groceries", transfer_account_id: null, deleted: false },
+          { id: "s2", transaction_id: "t6", amount: -2000, memo: null, payee_id: null, payee_name: null, category_id: "c-net", category_name: "🎥 Netflix", transfer_account_id: null, deleted: false },
+        ],
+      }),
+    ];
+    const month = { month: "2026-11-01", note: null, income: 0, budgeted: 0, activity: 0, to_be_budgeted: 7000, age_of_money: 30, deleted: false, categories };
+
+    beforeEach(() => {
+      fetchMock.mockImplementation(async (u: string, init?: RequestInit) => {
+        const path = new URL(u).pathname;
+        if (init?.method === "PATCH" && path.endsWith("/transactions")) {
+          const body = JSON.parse(String(init.body));
+          return json({ data: { transaction_ids: ["t5"], transactions: [{ ...transactions[4], ...body.transactions[0], category_name: "Spotify" }] } });
+        }
+        if (init?.method === "PATCH")
+          return json({ data: { category: { ...categories[0], budgeted: 9820, balance: 9820 } } });
+        if (path.endsWith("/settings"))
+          return json({ data: { settings: { currency_format: { iso_code: "USD", decimal_digits: 2 } } } });
+        if (path.endsWith("/categories"))
+          return json({ data: { category_groups: [{ id: "g1", name: "Subscriptions", hidden: false, internal: false, deleted: false, categories }] } });
+        if (path.endsWith("/payees"))
+          return json({ data: { payees: [{ id: "p-priv", name: "Virtual Card", transfer_account_id: null, deleted: false }] } });
+        if (path.endsWith("/accounts"))
+          return json({ data: { accounts: [{ id: "a1", name: "Checking", type: "checking", on_budget: true, closed: false, note: null, balance: 1000, cleared_balance: 900, uncleared_balance: 100, transfer_payee_id: null, deleted: false }] } });
+        if (path.includes("/months/")) return json({ data: { month } });
+        if (path.endsWith("/scheduled_transactions")) return json({ data: { scheduled_transactions: [] } });
+        if (path.endsWith("/transactions/t5")) return json({ data: { transaction: transactions[4] } });
+        return json({ data: { transactions } });
+      });
+    });
+
+    const call = async (name: string, args: Record<string, unknown>) => {
+      const client = await connect();
+      // Caches output schemas, so the client validates structuredContent.
+      await client.listTools();
+      const res = await client.callTool({ name, arguments: args });
+      expect(res.isError, JSON.stringify(res.content)).toBeFalsy();
+      return res.structuredContent as Record<string, any>;
+    };
+
+    test("query_transactions resolves names, groups, and pages", async () => {
+      const q = await call("query_transactions", { categories: ["netflix"], group_by: "month", limit: 2 });
+      expect(q.matched.categories).toEqual([{ id: "c-net", name: "🎥 Netflix" }]);
+      expect(q.count).toBe(4);
+      expect(q.groups.map((g: { key: string }) => g.key)).toEqual(["2026-08-01", "2026-09-01", "2026-10-01", "2026-11-01"]);
+      expect(q.rows).toEqual([
+        { id: "t6", part_id: "s2", date: "2026-11-02", amount: -2000, payee: "Store", category: "🎥 Netflix", account: "Checking", memo: "weekly shop" },
+        expect.objectContaining({ id: "t3" }),
+      ]);
+      expect(q.next_offset).toBe(2);
+      expect(requestedUrls().some((u) => u.pathname.endsWith("/categories"))).toBe(true);
+    });
+
+    test("month: current becomes this month's date range", async () => {
+      await call("query_transactions", { month: "current" });
+      const u = requestedUrls().find((x) => x.pathname.endsWith("/transactions"))!;
+      expect(u.searchParams.get("since_date")).toMatch(/^\d{4}-\d{2}-01$/);
+      expect(u.searchParams.get("until_date")).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    });
+
+    test("an unknown name is a tool error, not an empty result", async () => {
+      const client = await connect();
+      const res = await client.callTool({ name: "query_transactions", arguments: { payees: ["Nobody"] } });
+      expect(res.isError).toBe(true);
+    });
+
+    test("find_recurring_charges, get_snapshot, suggest_split, and compact get_month fit their schemas", async () => {
+      const rec = await call("find_recurring_charges", { since_date: "2026-01-01", include_lapsed: true });
+      expect(rec.series).toEqual([expect.objectContaining({ payee: "Virtual Card", cadence: "monthly", typical_amount: -9820 })]);
+      const snap = await call("get_snapshot", { recent_days: 60 });
+      expect(snap.ready_to_assign).toBe(7000);
+      expect(snap.accounts[0]).toMatchObject({ cleared: 900, working: 1000 });
+      const split = await call("suggest_split", { transaction_id: "t5" });
+      expect(split.suggestions[0].subtransactions).toEqual([
+        { amount_milliunits: -14190, category_id: "c-spo" },
+        { amount_milliunits: -9820, category_id: "c-net" },
+      ]);
+      const m = await call("get_month", { only: ["underfunded", "overspent"], compact: true });
+      expect(m.groups).toBeUndefined();
+      expect(m.categories.map((c: { id: string }) => c.id)).toEqual(["c-net", "c-food"]);
+    });
+
+    test("update_transactions sends the id a category_name resolves to and reports balances", async () => {
+      const client = await connect();
+      const res = await client.callTool({
+        name: "update_transactions",
+        arguments: { updates: [{ transaction_id: "t5", category_name: "spotify", approved: true }] },
+      });
+      expect(res.isError).toBeFalsy();
+      const patch = fetchMock.mock.calls.find(([, init]) => init?.method === "PATCH")!;
+      expect(JSON.parse(patch[1].body).transactions[0]).toEqual({ id: "t5", category_id: "c-spo", approved: true });
+      expect(res.structuredContent).toMatchObject({
+        ready_to_assign: 7000,
+        category_balances: [{ id: "c-spo", name: "Spotify" }],
+      });
+    });
+
+    test("assign_to_categories funds a goal by name", async () => {
+      const client = await connect();
+      const res = await client.callTool({
+        name: "assign_to_categories",
+        arguments: { moves: [{ category_name: "Netflix", fund_goal: true }] },
+      });
+      expect(res.isError).toBeFalsy();
+      const patch = fetchMock.mock.calls.find(([, init]) => init?.method === "PATCH")!;
+      expect(new URL(patch[0]).pathname).toBe("/v1/plans/last-used/months/2026-11-01/categories/c-net");
+      expect(JSON.parse(patch[1].body)).toEqual({ category: { budgeted: 9820 } });
     });
   });
 

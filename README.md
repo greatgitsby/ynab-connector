@@ -34,9 +34,13 @@ Read tools:
 | `list_plans` | All plans visible to the connected YNAB account, archived ones included |
 | `list_accounts` | Accounts with balances, bank-link health, and last reconciliation |
 | `list_months` | Income, assigned, activity, Ready to Assign, and age of money for each month in a range |
-| `get_month` | One month's categories, grouped by category group; defaults to the current month |
+| `get_snapshot` | A compact overview in one call: Ready to Assign, uncategorized and unapproved transactions, overspent and underfunded totals, account balances (cleared and working), and recent imports |
+| `get_month` | One month's categories, grouped by category group; defaults to the current month. Can keep only underfunded, overspent, nonzero, or goal categories, as a compact list |
 | `get_category` | One category in one month, optionally with its month-by-month history and whether its goal was funded each month |
-| `list_transactions` | Transactions for the plan or one account, category, payee, or month over any date range, with totals by month |
+| `query_transactions` | Compact transaction rows filtered by any number of accounts, categories, and payees (names or ids) and text search, paged, and grouped by payee, category, month, or account with count, total, typical amount, and first and last date |
+| `list_transactions` | Transactions as full YNAB objects for the plan or one account, category, payee, or month over any date range, with totals by month |
+| `find_recurring_charges` | Subscriptions and bills: repeat charges on a steady cadence, with typical amount, current category, and next expected date |
+| `suggest_split` | Ways to split an aggregate charge (such as Privacy.com) into categories whose past amounts or goal targets add up to it |
 | `list_scheduled_transactions` | Upcoming scheduled bills, paychecks, and transfers that aren't in balances yet |
 | `list_money_movements` | Assignments and moves between categories, with each category's net flow and moves out of savings goals flagged |
 | `list_payees` | Payees, optionally filtered by part of their name |
@@ -49,11 +53,11 @@ Write tools need write access (see [Permissions](#permissions)):
 
 | Tool | What it does |
 | --- | --- |
-| `assign_to_categories` | Set a month's `budgeted` amount on one or more categories, as absolute milliunits. Moves money between categories or funds them from Ready to Assign. |
+| `assign_to_categories` | Set, add to, or subtract from a month's `budgeted` amount on categories by name or id, fund a goal's shortfall, or fund every underfunded goal except named ones. Has a dry run, and reports Ready to Assign before and after. |
 | `set_category_goals` | Create, change, or remove category goals (targets). Previews unless called with `apply: true`. |
 | `create_categories` | Create categories in existing groups, each optionally with a goal. Refuses a name another category already has. |
 | `update_categories` | Rename categories or move them to another group. Refuses a name another category already has. |
-| `update_transactions` | Edit existing transactions in bulk: category, approval, memo, flag, cleared status, payee, or splits. |
+| `update_transactions` | Edit existing transactions in bulk: category (by name or id), approval, memo, flag, cleared status, payee, or splits. Reports the resulting category balances and Ready to Assign. |
 | `reconcile_account` | Reconcile an account against a bank statement balance. Locks cleared transactions only when every transaction is approved and categorized and the balances match. |
 | `rename_payees` | Rename one or more payees. Refuses a name another payee already has. |
 | `merge_payees` | Move every transaction and scheduled transaction from duplicate payees to one payee. Previews unless called with `apply: true`; reports anything YNAB's API can't move. |

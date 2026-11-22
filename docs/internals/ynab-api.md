@@ -18,7 +18,7 @@ explain. Domain meaning is in the [glossary](./glossary.md).
 - **`GET /months/{month}` returns categories unordered.** Take group order from `GET /categories`.
 - **Category and payee listings return hybrid rows.** By category, each split part is its own row
   (`type: "subtransaction"`, `parent_transaction_id`) carrying the part's payee, usually null, not
-  the parent's. By payee, splits come back whole with `category_name: "Split"`. Neither double
+  the parent's. By payee, splits come back whole with `category_name: "Split"` and an empty `subtransactions`, so the parts are lost; `query_transactions` and `suggest_split` filter the plan listing by payee instead. Neither double
   counts, so totals are safe. Plan, account, and month listings nest `subtransactions` instead.
   Every listing leaves out pending bank transactions.
 - **Some names are stored HTML-escaped.** Most payees come back as typed ("AT&T"), but some,

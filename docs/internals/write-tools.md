@@ -23,9 +23,15 @@ not an implementation detail. Mistakes are fixed by another write, never by dele
 - **Batched per resource.** One `update_transactions` call and one `assign_to_categories` call cover
   a typical triage pass. Per-operation tools would mean a click-through per transaction in the client's
   approval UI.
-- **Absolute values, not deltas.** `assign_to_categories` takes the new `budgeted`, so a retry
-  lands on the same state and the chat shows "was $400, now $450". There is no balance
-  validation: drawing from Ready to Assign or overspending on purpose is legitimate.
+- **Absolute results, relative requests allowed.** `assign_to_categories` takes a new total
+  (`set_budgeted_milliunits`), a signed change (`add_milliunits`), or `fund_goal`, but always reports
+  the absolute before and after, so the chat still shows "was $400, now $450". A set or a goal
+  funding lands on the same state when retried; an add does not, so the tool is not marked
+  idempotent. Relative moves exist because "fund every target except X" and "move $50 from A to B"
+  otherwise cost a read and arithmetic in the model. `fund_underfunded` refuses the call when an
+  `except` name matches nothing, since guessing would spend money the user meant to protect. There
+  is no balance validation: drawing from Ready to Assign or overspending on purpose is legitimate.
+  `dry_run` returns the same report without writing.
 - **Existing transactions only.** `date`, top-level `amount`, and `account_id` are excluded from
   `update_transactions` to keep the model out of data correction. `subtransactions` splits a
   plain transaction in place, so it keeps its id, `import_id`, and bank match. YNAB's API refuses
@@ -42,9 +48,15 @@ not an implementation detail. Mistakes are fixed by another write, never by dele
   `assign_to_categories` loops. Every item is tried, each gets its own result, and nothing rolls
   back. The model reads the per-item results and recovers.
 - **Return shape.** Text for the model to quote, plus `structuredContent` with YNAB's post-write
-  state, so the model needn't re-fetch. Writes declare no `outputSchema` yet.
+  state, so the model needn't re-fetch. `assign_to_categories` and `update_transactions` end with a
+  re-read of the month: Ready to Assign, and for `update_transactions` the balances of the
+  categories the transactions now use. Writes declare no `outputSchema` yet.
+- **Names.** `assign_to_categories` and `update_transactions` accept category names where they
+  take a category id, resolved by
+  [`resolve.ts`](../../src/resolve.ts). A write needs exactly one match, so an ambiguous name is a
+  per-item error listing the candidates; a filter on a read takes every match instead.
 - **Annotations.** Writes are `destructiveHint: true` (they overwrite prior values) and
-  `idempotentHint: true`.
+  `idempotentHint: true`, except `assign_to_categories`, whose `add_milliunits` repeats.
 - **No connector-side safety layer** beyond the write gate, with two exceptions. The client's per-call
   approval is the human in the loop, and it works because the arguments show the change. A client
   that auto-approves tool calls removes it. `merge_payees` and `set_category_goals` are the exceptions,

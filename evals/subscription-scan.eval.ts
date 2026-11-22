@@ -173,6 +173,7 @@ describe("find_recurring_charges", () => {
     const floor = Math.min(...subs.map((x) => rank(x)!));
     const leaks = habits.filter((x) => rank(x)! >= floor).map((x) => x.payee);
     expect(leaks, "habitual payees rank with subscriptions").toEqual([]);
+    expect(all.map((x) => x.payee), "card payments are not subscriptions").not.toContain("Apple Card Payment");
   });
 
   // The 11/9 charge is unsplit in the fixture, so both read as late, not lapsed.

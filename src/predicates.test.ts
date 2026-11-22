@@ -1,6 +1,7 @@
 import { describe, test, expect } from "vitest";
 import type { Account, Category, Transaction } from "./ynab";
 import {
+  isCardPaymentPayee,
   isSpendingCategory,
   isInflowRta,
   isUncategorizedInternal,
@@ -153,5 +154,13 @@ describe("isSavingsCategory", () => {
     for (const [overrides, expected] of cases) {
       expect(isSavingsCategory(cat(overrides)), JSON.stringify(overrides)).toBe(expected);
     }
+  });
+});
+
+describe("isCardPaymentPayee", () => {
+  test("card payments recorded as spending, not merchants that mention cards", () => {
+    for (const p of ["Apple Card Payment", "CHASE CREDIT CARD PAYMENT", "Payment, Thank You", "AMEX Autopay", "Citi ePayment"])
+      expect(isCardPaymentPayee(p), p).toBe(true);
+    for (const p of ["Apple", "Card Factory", "PayPal", null]) expect(isCardPaymentPayee(p), String(p)).toBe(false);
   });
 });

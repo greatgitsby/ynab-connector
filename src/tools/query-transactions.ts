@@ -24,6 +24,7 @@ import {
   resolveAll,
   type Named,
 } from "../resolve";
+import { isCardPaymentPayee } from "../predicates";
 
 // ---- Result type (zod is the source of truth; see docs/internals/structured-output.md)
 
@@ -77,23 +78,32 @@ export interface RowFilter {
   accountIds?: ReadonlySet<string>;
   categoryIds?: ReadonlySet<string>;
   payeeIds?: ReadonlySet<string>;
-  search?: string;
+  search?: string | string[];
   excludeTransfers?: boolean;
   direction?: "outflow" | "inflow";
 }
 
+// Any term matches. Each term is split on " OR " too, and a term with " AND "
+// needs every part. Otherwise a term is a literal substring.
+const searchTerms = (search: string | string[] | undefined): string[][] =>
+  [search ?? []]
+    .flat()
+    .flatMap((t) => t.split(/\s+OR\s+/))
+    .map((t) => t.split(/\s+AND\s+/).map(normalizeName).filter(Boolean))
+    .filter((t) => t.length);
+
 export const filterRows = (rows: FlatRow[], f: RowFilter): FlatRow[] => {
-  const needle = f.search ? normalizeName(f.search) : "";
+  const terms = searchTerms(f.search);
   return rows.filter((r) => {
     if (f.accountIds && !f.accountIds.has(r.account_id)) return false;
     if (f.categoryIds && !(r.category_id && f.categoryIds.has(r.category_id))) return false;
     if (f.payeeIds && !(r.payee_id && f.payeeIds.has(r.payee_id))) return false;
-    if (f.excludeTransfers && r.transfer) return false;
+    if (f.excludeTransfers && (r.transfer || isCardPaymentPayee(r.payee))) return false;
     if (f.direction === "outflow" && r.amount >= 0) return false;
     if (f.direction === "inflow" && r.amount <= 0) return false;
-    if (needle) {
+    if (terms.length) {
       const hay = normalizeName(`${r.payee ?? ""} ${r.memo ?? ""}`);
-      if (!hay.includes(needle)) return false;
+      if (!terms.some((t) => t.every((part) => hay.includes(part)))) return false;
     }
     return true;
   });
@@ -252,10 +262,11 @@ const DESCRIPTION =
   "Search and summarize transactions in one call, with compact rows (date, amount, payee, category, account, memo, id). " +
   "Each split part is its own row with its own category, so category totals are exact; `id` is always the transaction id update_transactions takes. " +
   "Filter by any number of accounts, categories, and payees (names or ids; a name matches case- and emoji-insensitively, and every payee or category with that name counts), " +
-  "text `search` over payee and memo, dates, direction, and type. Filters of one kind are OR'd, different kinds AND'd. " +
+  "text `search` over payee and memo (a substring; several terms as an array or joined with OR match any, AND needs all), dates, direction, and type. Filters of one kind are OR'd, different kinds AND'd. " +
   "group_by payee, category, month, or account returns per-group count, total, typical (median) amount, min, max, and first and last date. " +
   "Rows come newest first, `limit` per page (default 100, or 0 when grouping), paged with `offset`/`next_offset`; totals and groups always cover every match. " +
-  "Without dates it searches all history. Pick `fields` to shrink rows. Amounts are milliunits, outflows negative. Pending bank transactions are not in YNAB's API.";
+  "exclude_transfers also drops credit card payments recorded as spending (payees like \"Apple Card Payment\" or \"Autopay\"). " +
+  "Without dates it searches all history. Pick `fields` to shrink rows; choosing `id` shows ids in the text too. Amounts are milliunits, outflows negative. Pending bank transactions are not in YNAB's API.";
 
 export const registerQueryTransactions = (
   server: McpServer,
@@ -272,7 +283,10 @@ export const registerQueryTransactions = (
         accounts: z.array(z.string()).optional().describe("Account names or ids."),
         categories: z.array(z.string()).optional().describe('Category names, "Group: Name", or ids.'),
         payees: z.array(z.string()).optional().describe("Payee names or ids."),
-        search: z.string().optional().describe("Text in the payee name or memo, case-insensitive."),
+        search: z
+          .union([z.string(), z.array(z.string()).min(1)])
+          .optional()
+          .describe('Text in the payee name or memo, case-insensitive. Several terms match any: ["Anthropic", "Claude"] or "Anthropic OR Claude". "a AND b" needs both.'),
         month: monthParam.optional().describe("One month; replaces since_date/until_date."),
         since_date: dateParam.optional(),
         until_date: dateParam.optional(),
@@ -344,7 +358,8 @@ export const registerQueryTransactions = (
           },
         });
         const pageRows = rows.slice(args.offset, args.offset + limit);
-        return result(renderQuery(q, pageRows, { includeIds: args.include_ids }), q);
+        const includeIds = args.include_ids || !!args.fields?.includes("id");
+        return result(renderQuery(q, pageRows, { includeIds }), q);
       } catch (e) {
         return handleError(e);
       }

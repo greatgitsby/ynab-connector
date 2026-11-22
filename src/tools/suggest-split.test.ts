@@ -54,9 +54,27 @@ describe("computeSplitSuggestions", () => {
       ["spotify", "netflix"],
       ["spotify", "misc"],
     ]);
+    expect(s.suggestions.map((g) => g.confidence)).toEqual(["medium", "medium"]);
     expect(s.suggestions[0].subtransactions).toEqual([
       { amount_milliunits: -14190, category_id: "spotify" },
       { amount_milliunits: -9820, category_id: "netflix" },
     ]);
+  });
+
+  test("at most one goal-only part, amount-only matches are low, and no no-op single part", () => {
+    const goal = (id: string, amount: number): Candidate =>
+      ({ category_id: id, category_name: id, amount, source: "goal", times: 0, goal_match: true, uncharged: true });
+    const seen = (id: string, amount: number, times: number): Candidate =>
+      ({ category_id: id, category_name: id, amount, source: "history", times, goal_match: false, uncharged: false });
+    const candidates = [goal("fastmail", 50000), goal("home", 25000), goal("google", 24990), seen("slush", 3990, 1), seen("netflix", 46000, 3)];
+    const parts = (amount: number, category_id: string | null = null) =>
+      computeSplitSuggestions(
+        { amount, tx: category_id ? { ...hist(category_id, amount), id: "t" } : null, alreadySplit: false, candidates },
+        { iso: "USD", maxParts: 5, maxSuggestions: 5 },
+      ).suggestions.map((g) => [g.parts.map((p) => p.category_id).sort().join("+"), g.confidence]);
+    // fastmail + home + google also sums, on goal targets alone.
+    expect(parts(-99990)).toEqual([["fastmail+netflix+slush", "low"]]);
+    expect(parts(-3990, "slush")).toEqual([]);
+    expect(parts(-3990, "other")).toEqual([["slush", "medium"]]);
   });
 });

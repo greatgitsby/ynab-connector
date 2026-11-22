@@ -14,7 +14,8 @@ read and write access. That gives the Connector access to:
 
 - Your plans (names, IDs, currency): read
 - Accounts and balances: read
-- Categories and category groups: read
+- Categories and category groups: read, and create, rename, or move
+  categories between groups
 - Category goals (targets): read and edit (create, change, remove)
 - Transactions and split transactions: read and edit (categorize, approve,
   memo, flag, mark cleared or reconciled, set payee, split across categories)
@@ -23,8 +24,9 @@ read and write access. That gives the Connector access to:
   between categories, fund from Ready to Assign)
 - Your YNAB user ID, used as an internal identifier (see below)
 
-The Connector does not create new transactions, delete anything, manage
-scheduled transactions, or rename or merge payees or categories. YNAB's
+The Connector does not create new transactions, delete anything, hide
+categories, or manage scheduled transactions beyond pointing them at a
+merged payee. YNAB's
 OAuth grants full access or none. If you want read-only access, don't
 authorize the Connector, or revoke its access in YNAB at any time (see
 "Revoking access and deleting data" below). Connections authorized before

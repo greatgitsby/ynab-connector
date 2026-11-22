@@ -226,7 +226,14 @@ export class YnabClient {
       `/plans/${planId}/categories`,
     );
   }
-  updateCategory(planId: string, categoryId: string, body: SaveCategoryGoal) {
+  createCategory(planId: string, body: NewCategory) {
+    return this.request<{ data: { category: Category } }>(
+      "POST",
+      `/plans/${planId}/categories`,
+      { category: body },
+    );
+  }
+  updateCategory(planId: string, categoryId: string, body: SaveCategory) {
     return this.request<{ data: { category: Category } }>(
       "PATCH",
       `/plans/${planId}/categories/${categoryId}`,
@@ -407,4 +414,14 @@ export interface SaveCategoryGoal {
   goal_target_date?: string | null;
   goal_needs_whole_amount?: boolean;
   goal_frequency?: "monthly" | "weekly" | "yearly";
+}
+
+export interface SaveCategory extends SaveCategoryGoal {
+  name?: string;
+  category_group_id?: string;
+}
+
+export interface NewCategory extends SaveCategoryGoal {
+  name: string;
+  category_group_id: string;
 }

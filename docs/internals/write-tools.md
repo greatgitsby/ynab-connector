@@ -8,12 +8,14 @@ stays in the "review and clean up" lane, not manual data entry.
 
 Supported: setting a category's monthly `budgeted` (`assign_to_categories`); editing existing
 transactions, including categorize, approve, memo, flag, `cleared`, payee, and splits
-(`update_transactions`); creating, changing, and removing category goals (`set_category_goals`); locking cleared transactions as reconciled (`reconcile_account`); and
+(`update_transactions`); creating, changing, and removing category goals (`set_category_goals`); creating, renaming, and
+moving categories between groups (`create_categories`, `update_categories`); locking cleared transactions as reconciled (`reconcile_account`); and
 payee cleanup, renaming payees (`rename_payees`) and consolidating duplicates (`merge_payees`).
 `list_payees` and `review_payees` are the read companions for canonicalizing payees.
 
 Excluded: creating manual transactions, deletes (payees included), scheduled transaction edits other
-than a merge re-pointing their payee, and category rename/move. Adding any of these is a scope decision for the maintainer,
+than a merge re-pointing their payee, and hiding categories, which the API can't do (see
+[YNAB API](./ynab-api.md)). Adding any of these is a scope decision for the maintainer,
 not an implementation detail. Mistakes are fixed by another write, never by deleting.
 
 ## Shape
@@ -73,8 +75,15 @@ savings-balance (TB, TBD) goals, every-N-months cadences, or a due day. So a rem
 `goal_frequency` that replaces a goal, may be impossible to undo from chat; that is why
 `set_category_goals` previews and shows the current goal first.
 
-Hiding was requested along with goals and left out because YNAB's API can't do it (see
-[YNAB API](./ynab-api.md)). The tool description tells the model to send the user to YNAB for it.
+## Categories
+
+`create_categories` and `update_categories` don't preview: their arguments show the whole change, and
+a rename or move is undone by another call. A created category can't be deleted through the API, so
+a mistaken one is renamed or the user deletes it in YNAB. Both refuse a name another live category
+already has, hidden ones included, because YNAB accepts duplicates and the model then can't tell
+them apart when categorizing. A goal on a new category goes through `goalBody`, the same rules
+`set_category_goals` applies to a category without a goal. Hiding is left out because the API can't
+do it; the tool descriptions send the user to YNAB for it.
 
 ## Write access
 

@@ -34,9 +34,15 @@ explain. Domain meaning is in the [glossary](./glossary.md).
 - **Updating a scheduled transaction is a full `PUT`.** Omitted fields are cleared, `date` (the next
   occurrence) must be in the future per the spec, and the body has no `subtransactions`, so split
   scheduled transactions can't be written.
-- **Categories can't be hidden through the API.** `PATCH /categories/{id}` drops `hidden`
+- **Categories can't be hidden or deleted through the API.** `PATCH /categories/{id}` drops `hidden`
   without an error (a body with only `hidden` is a 400, "param is missing"), and moving a category
-  into the internal Hidden Categories group is refused. Checked against v1.89.
+  into the internal Hidden Categories group is refused. There is no `DELETE`. Checked against v1.91.
+- **Category names needn't be unique.** `POST /categories` and a rename via `PATCH` accept a name
+  another category already has.
+- **A category group's `internal` flag doesn't mean YNAB owns it.** Groups made from YNAB's starter
+  template, which users rename and fill, also read `internal: true`. YNAB itself refuses to put a
+  category in Internal Master Category, Credit Card Payments, or Hidden Categories ("category group
+  cannot be an internal category group"), so don't filter on the flag. Checked against v1.91.
 - **Category goal `PATCH` traps** (v1.89, checked against a test plan):
   - `goal_target: null` removes the goal. The category then reads `goal_type: null`,
     `goal_target: 0`, not `null`.

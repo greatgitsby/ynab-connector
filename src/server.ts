@@ -20,15 +20,17 @@ import { registerReviewPayees } from "./tools/review-payees";
 import { registerRenamePayees } from "./tools/rename-payees";
 import { registerMergePayees } from "./tools/merge-payees";
 import { registerSetCategoryGoals } from "./tools/set-category-goals";
+import { registerCreateCategories } from "./tools/create-categories";
+import { registerUpdateCategories } from "./tools/update-categories";
 
-export const SERVER_VERSION = "0.5.0";
+export const SERVER_VERSION = "0.6.0";
 
 const INSTRUCTIONS =
   "YNAB (You Need A Budget) connector. Tools follow YNAB's API: list_* and get_* return YNAB objects with YNAB's field names, and reflect_* tools are multi-month reports. " +
   'Every plan-scoped tool takes an optional plan_id; it defaults to "last-used" (the most recently used plan), so call list_plans only when the user has several plans. ' +
   'Money in text is already formatted in the plan\'s currency; structured output and write tools use YNAB milliunits (1000 = 1.00), and outflows are negative. Months are "YYYY-MM-01" or "current"; dates are "YYYY-MM-DD". Add include_ids for "— id <uuid>" on each text line; structured output always carries ids. ' +
   "Start with triage_inbox for what needs attention, or get_month for this month's categories. list_scheduled_transactions shows upcoming bills and transfers that are not yet in balances. list_money_movements shows assignments and moves between categories, including money taken from savings goals. list_transactions narrows to an account, category, payee, or month over any date range and totals the matches; find payee ids with list_payees. review_payees finds duplicate and little-used payees. " +
-  "Write tools (assign_to_categories, set_category_goals, update_transactions, reconcile_account, rename_payees, merge_payees) edit category amounts and goals and existing transactions, reconcile an account against a statement, and rename or consolidate payees. merge_payees and set_category_goals preview unless called with apply: true. YNAB's API can't hide categories; the user hides them in YNAB. They need a connection with write scope; if one returns a \"read-only\" error, ask the user to disconnect and reconnect the connector in their MCP client.";
+  "Write tools (assign_to_categories, set_category_goals, create_categories, update_categories, update_transactions, reconcile_account, rename_payees, merge_payees) edit category amounts and goals, create, rename, and move categories, edit existing transactions, reconcile an account against a statement, and rename or consolidate payees. merge_payees and set_category_goals preview unless called with apply: true. YNAB's API can't hide or delete categories; the user does that in YNAB. They need a connection with write scope; if one returns a \"read-only\" error, ask the user to disconnect and reconnect the connector in their MCP client.";
 
 // Builds the MCP server for one request. The server is stateless: the
 // Worker creates a fresh instance per request (see index.ts), and everything
@@ -69,6 +71,8 @@ export const buildServer = (props: Props): McpServer => {
   registerRenamePayees(server, getClient, getProps);
   registerMergePayees(server, getClient, getProps);
   registerSetCategoryGoals(server, getClient, getProps);
+  registerCreateCategories(server, getClient, getProps);
+  registerUpdateCategories(server, getClient, getProps);
 
   return server;
 };

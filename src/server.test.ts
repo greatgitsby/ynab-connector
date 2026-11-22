@@ -43,6 +43,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 const EXPECTED_TOOLS = [
   "assign_to_categories",
+  "create_categories",
   "get_category",
   "get_month",
   "list_accounts",
@@ -60,6 +61,7 @@ const EXPECTED_TOOLS = [
   "review_payees",
   "set_category_goals",
   "triage_inbox",
+  "update_categories",
   "update_transactions",
 ];
 
@@ -107,6 +109,8 @@ describe("tool discovery", () => {
       "rename_payees",
       "merge_payees",
       "set_category_goals",
+      "create_categories",
+      "update_categories",
     ]);
     for (const t of tools) {
       expect(t.annotations?.readOnlyHint, t.name).toBe(!writes.has(t.name));
@@ -330,6 +334,14 @@ describe("tool calls", () => {
     });
     expect(split.isError).toBe(true);
     expect((split.content as Array<{ text: string }>)[0].text).toContain("read-only");
+    for (const [name, args] of [
+      ["create_categories", { categories: [{ category_group_id: "g1", name: "Claude" }] }],
+      ["update_categories", { changes: [{ category_id: "c1", name: "Claude" }] }],
+    ] as const) {
+      const res = await client.callTool({ name, arguments: args });
+      expect(res.isError, name).toBe(true);
+      expect((res.content as Array<{ text: string }>)[0].text, name).toContain("read-only");
+    }
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

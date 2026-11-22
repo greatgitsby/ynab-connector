@@ -11,7 +11,7 @@ import { result, handleError, fmtMoney, fmtCategoryLine } from "../format";
 export const MonthReportSchema = MonthSummarySchema.extend({
   iso: z.string(),
   groups: z.array(
-    z.object({ name: z.string(), categories: z.array(CategorySchema) }),
+    z.object({ id: z.string(), name: z.string(), categories: z.array(CategorySchema) }),
   ),
 });
 export type MonthReport = z.infer<typeof MonthReportSchema>;
@@ -52,7 +52,8 @@ export const computeMonthReport = (
   const at = (m: Map<string, number>, id: string) => m.get(id) ?? Infinity;
   const groups = [...byGroup]
     .sort(([a], [b]) => at(groupIndex, a) - at(groupIndex, b))
-    .map(([, g]) => ({
+    .map(([id, g]) => ({
+      id,
       name: g.name,
       categories: g.categories.sort(
         (a, b) => at(catIndex, a.id) - at(catIndex, b.id),
@@ -80,7 +81,7 @@ export const renderMonthReport = (
   if (report.note) out.push(`Note: ${report.note}`);
   out.push("");
   for (const g of report.groups) {
-    out.push(`## ${g.name}`);
+    out.push(opts.includeIds ? `## ${g.name} — id ${g.id}` : `## ${g.name}`);
     for (const c of g.categories) {
       out.push(fmtCategoryLine(c, report.month, iso, opts.includeIds));
     }

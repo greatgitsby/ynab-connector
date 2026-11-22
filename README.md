@@ -51,12 +51,14 @@ Write tools need write access (see [Permissions](#permissions)):
 | --- | --- |
 | `assign_to_categories` | Set a month's `budgeted` amount on one or more categories, as absolute milliunits. Moves money between categories or funds them from Ready to Assign. |
 | `set_category_goals` | Create, change, or remove category goals (targets). Previews unless called with `apply: true`. |
+| `create_categories` | Create categories in existing groups, each optionally with a goal. Refuses a name another category already has. |
+| `update_categories` | Rename categories or move them to another group. Refuses a name another category already has. |
 | `update_transactions` | Edit existing transactions in bulk: category, approval, memo, flag, cleared status, payee, or splits. |
 | `reconcile_account` | Reconcile an account against a bank statement balance. Locks cleared transactions only when every transaction is approved and categorized and the balances match. |
 | `rename_payees` | Rename one or more payees. Refuses a name another payee already has. |
 | `merge_payees` | Move every transaction and scheduled transaction from duplicate payees to one payee. Previews unless called with `apply: true`; reports anything YNAB's API can't move. |
 
-The connector deliberately leaves out creating manual transactions, deleting anything (payees included), creating or editing scheduled transactions other than re-pointing their payee in a merge, and renaming, moving, or hiding categories (YNAB's API can't hide them). [Write tools](docs/internals/write-tools.md) explains why.
+The connector deliberately leaves out creating manual transactions, deleting anything (payees included), creating or editing scheduled transactions other than re-pointing their payee in a merge, and hiding categories (YNAB's API can't hide them). [Write tools](docs/internals/write-tools.md) explains why.
 
 ## How auth works
 

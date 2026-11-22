@@ -98,6 +98,23 @@ describe("computeRecurring", () => {
     ]);
   });
 
+  test("two subscriptions on interleaved dates are two monthly series, not one biweekly guess", () => {
+    const apple = { payee: "Apple", payee_id: "p-apple" };
+    const r = scan(
+      ["06", "07", "08", "09", "10", "11"].flatMap((m) => [row(`2026-${m}-05`, -2990, apple), row(`2026-${m}-19`, -999, apple)]),
+    );
+    expect(r.series.map((s) => [s.typical_amount, s.cadence])).toEqual([
+      [-2990, "monthly"],
+      [-999, "monthly"],
+    ]);
+  });
+
+  test("a varying bill with no repeating amount is still one series", () => {
+    const util = { payee: "Power Co", payee_id: "p-pow" };
+    const r = scan([row("2026-08-10", -9000, util), row("2026-09-10", -15000, util), row("2026-10-10", -12000, util), row("2026-11-10", -11000, util)]);
+    expect(r.series.map((s) => [s.payee, s.count, s.steady_amount])).toEqual([["Power Co", 4, false]]);
+  });
+
   test("a price change folds the old series into the new one", () => {
     const apple = { payee: "Apple", payee_id: "p-apple" };
     const r = scan([

@@ -249,9 +249,9 @@ const linkPriceChanges = (list: Series[]): Series[] => {
   return out;
 };
 
-// Per payee: the payee's whole history if it keeps a cadence (a utility bill
-// that varies), else each exact amount that does (two Apple subscriptions, or
-// several Privacy.com cards behind one payee).
+// Per payee: each exact amount that keeps a cadence (two Apple subscriptions,
+// or several Privacy.com cards behind one payee), else the payee's whole
+// history if it does (a utility bill that varies).
 export const computeRecurring = (
   rows: FlatRow[],
   opts: {
@@ -283,11 +283,6 @@ export const computeRecurring = (
   const series: Series[] = [];
   for (const group of byPayee.values()) {
     if (group.every((r) => !r.payee_id && !r.payee)) continue;
-    const whole = detectSeries(group, opts);
-    if (whole) {
-      series.push(whole);
-      continue;
-    }
     const byAmount = new Map<number, FlatRow[]>();
     for (const r of group) byAmount.set(r.amount, [...(byAmount.get(r.amount) ?? []), r]);
     const found: Series[] = [];
@@ -295,7 +290,11 @@ export const computeRecurring = (
       const s = detectSeries(same, opts);
       if (s) found.push(s);
     }
-    series.push(...linkPriceChanges(found));
+    // The whole payee only when no exact amount repeats (a bill that varies).
+    // Mixing amounts beside repeating ones guesses: two monthly subscriptions
+    // on interleaved dates read as one biweekly series.
+    const whole = found.length ? null : detectSeries(group, opts);
+    series.push(...(whole ? [whole] : linkPriceChanges(found)));
   }
   const kept = series
     .filter((s) => opts.includeLapsed || s.status !== "lapsed")
@@ -361,7 +360,8 @@ const DESCRIPTION =
   "its usual category (the most common across charges), the next expected date, a monthly equivalent, whether a scheduled transaction already covers it, " +
   "a status: active, late (overdue by under one cycle), or lapsed (probably cancelled; hidden unless include_lapsed), " +
   "and a confidence (high, medium, low) that it is a subscription rather than habitual spending such as coffee or rides. " +
-  "Several subscriptions behind one payee, such as Privacy.com cards, come back as separate series by amount. A renamed payee (\"Google\" then \"Google One\") stays one series, " +
+  "Each exact amount that repeats is its own series, so several subscriptions behind one payee, such as Privacy.com cards, come back separately; " +
+  "a payee's varying charges are one series only when no single amount repeats (a utility bill). Charges this leaves out are not guessed at: check them with query_transactions. A renamed payee (\"Google\" then \"Google One\") stays one series, " +
   "and a price change folds the old price into the new series as previous_amount. Page with limit and offset. " +
   "Looks back 400 days by default; a yearly charge needs min_occurrences within the window. Transfers and credit card payments are excluded; income only with include_income.";
 

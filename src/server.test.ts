@@ -62,7 +62,6 @@ const EXPECTED_TOOLS = [
   "rename_payees",
   "review_payees",
   "set_category_goals",
-  "suggest_split",
   "triage_inbox",
   "update_categories",
   "update_transactions",
@@ -564,15 +563,10 @@ describe("tool calls", () => {
       expect(res.isError).toBe(true);
     });
 
-    test("get_snapshot, suggest_split, and compact get_month fit their schemas", async () => {
+    test("get_snapshot and compact get_month fit their schemas", async () => {
       const snap = await call("get_snapshot", { recent_days: 60 });
       expect(snap.ready_to_assign).toBe(7000);
       expect(snap.accounts[0]).toMatchObject({ cleared: 900, working: 1000 });
-      const split = await call("suggest_split", { transaction_id: "t5" });
-      expect(split.suggestions[0].subtransactions).toEqual([
-        { amount_milliunits: -14190, category_id: "c-spo" },
-        { amount_milliunits: -9820, category_id: "c-net" },
-      ]);
       const m = await call("get_month", { only: ["underfunded", "overspent"], compact: true });
       expect(m.groups).toBeUndefined();
       expect(m.categories.map((c: { id: string }) => c.id)).toEqual(["c-net", "c-food"]);

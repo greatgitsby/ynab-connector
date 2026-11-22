@@ -45,19 +45,11 @@ const t = (
   extra: Partial<FixtureTx> = {},
 ): FixtureTx => ({ id: `tx-${String(++n).padStart(3, "0")}-${date}`, date, amount, payee, category, ...extra });
 
-export const TX = {
-  // Case 10: a yearly charge whose memo names it.
-  discord: t("2026-05-26", -99990, "Privacy.com", "Trey Comma", { memo: "Discord Nitro (yearly)" }),
-  // Case 11: Tesla FSD, coincidentally the Tesla Premium Connectivity goal.
-  fsdOct: t("2026-10-05", -108110, "Privacy.com", "Trey Comma"),
-  // Case 12: already in the only category its history points to.
-  privacy399: t("2026-09-11", -3990, "Privacy.com", "Trey Comma"),
-  // What worked: the 11/9 Netflix + Spotify charge, before it was split.
-  privacy2401: t("2026-11-09", -24010, "Privacy.com", null),
-};
-
 export const TRANSACTIONS: FixtureTx[] = [
-  ...Object.values(TX),
+  t("2026-05-26", -99990, "Privacy.com", "Trey Comma", { memo: "Discord Nitro (yearly)" }),
+  t("2026-10-05", -108110, "Privacy.com", "Trey Comma"),
+  t("2026-09-11", -3990, "Privacy.com", "Trey Comma"),
+  t("2026-11-09", -24010, "Privacy.com", null),
 
   // Privacy.com cards.
   t("2026-06-08", -9820, "Privacy.com", "🎥 Netflix"),

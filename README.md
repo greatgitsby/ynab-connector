@@ -39,7 +39,6 @@ Read tools:
 | `get_category` | One category in one month, optionally with its month-by-month history and whether its goal was funded each month |
 | `query_transactions` | Compact transaction rows filtered by any number of accounts, categories, and payees (names or ids) and text search, paged, and grouped by payee, category, month, or account with count, total, typical amount, and first and last date |
 | `list_transactions` | Transactions as full YNAB objects for the plan or one account, category, payee, or month over any date range, with totals by month |
-| `suggest_split` | Ways to split an aggregate charge (such as Privacy.com) into categories whose past amounts or goal targets add up to it, each with a confidence |
 | `list_scheduled_transactions` | Upcoming scheduled bills, paychecks, and transfers that aren't in balances yet |
 | `list_money_movements` | Assignments and moves between categories, with each category's net flow and moves out of savings goals flagged |
 | `list_payees` | Payees, optionally filtered by part of their name |

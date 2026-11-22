@@ -1,7 +1,6 @@
 // A slice of a real plan, read on 2026-11-22 for the subscription-scan rerun
 // (2026-05-22 to 2026-11-22). Ids are synthetic; dates, amounts, payees,
-// categories, memos, and goal targets are as read. Rows marked "habitual" stand
-// in for the coffee, Uber, IKEA, Taco Bell, AMC, and Amazon false positives.
+// categories, memos, and goal targets are as read.
 
 export interface FixtureTx {
   id: string;
@@ -24,8 +23,6 @@ export interface FixtureCategory {
 export const CATEGORIES: FixtureCategory[] = [
   { name: "🎉 NFFF", group: "💳 Discretionary" },
   { name: "Trey Comma", group: "💳 Discretionary" },
-  { name: "👔 Eating Out", group: "💳 Discretionary", goal_target: 650000 },
-  { name: "🚙 Transportation", group: "💳 Fixed Costs", goal_target: 270000 },
   { name: "🏠 Home Care", group: "💳 Fixed Costs", goal_target: 25000 },
   { name: "HBO Max", group: "💳 Monthly Subscriptions" },
   { name: "Google One", group: "💳 Monthly Subscriptions", goal_target: 1990 },
@@ -79,7 +76,7 @@ export const TRANSACTIONS: FixtureTx[] = [
   t("2026-10-07", -14190, "Privacy.com", "🎶 Spotify + HULU"),
   t("2026-11-03", -3230, "Privacy.com", "Trey Comma"),
 
-  // Anthropic, renamed to "Anthropic Claude" after 9/2 (case 4).
+  // Anthropic, renamed to "Anthropic Claude" after 9/2.
   t("2026-06-09", -109200, "Anthropic", "Trey Comma"),
   t("2026-07-02", -194140, "Anthropic", "Trey Comma"),
   t("2026-08-02", -218400, "Anthropic", "Trey Comma"),
@@ -87,14 +84,14 @@ export const TRANSACTIONS: FixtureTx[] = [
   t("2026-10-02", -218400, "Anthropic Claude", "Trey Comma"),
   t("2026-11-02", -218400, "Anthropic Claude", "Trey Comma"),
 
-  // Google One, with one charge under "Google" (case 5).
+  // Google One, with one charge under "Google".
   t("2026-06-28", -1990, "Google One", "🎉 NFFF"),
   t("2026-07-28", -1990, "Google One", "🎉 NFFF"),
   t("2026-08-28", -1990, "Google One", "🎉 NFFF"),
   t("2026-09-28", -1990, "Google", "Trey Comma"),
   t("2026-10-28", -1990, "Google One", "🎉 NFFF"),
 
-  // Apple: $17.46 mostly iCloud (case 7); iCloud $6.54 → $7.63 (case 8).
+  // Apple: $17.46 mostly iCloud; iCloud $6.54 → $7.63.
   t("2026-05-24", -10910, "Apple", "iCloud"),
   t("2026-06-09", -15990, "Apple", "iCloud"),
   t("2026-06-22", -6540, "Apple", "iCloud"),
@@ -121,7 +118,7 @@ export const TRANSACTIONS: FixtureTx[] = [
   t("2026-11-04", -17460, "Apple", "🎉 NFFF"),
   t("2026-11-06", -19990, "Apple", "🎉 NFFF"),
 
-  // Prime Video $18.55 → $21.83 (case 8), plus a separate $12.00 channel.
+  // Prime Video $18.55 → $21.83, plus a separate $12.00 channel.
   t("2026-05-25", -12000, "Amazon Prime Video Channels", "🎉 NFFF"),
   t("2026-06-04", -18550, "Amazon Prime Video Channels", "🎉 NFFF"),
   t("2026-06-25", -12000, "Amazon Prime Video Channels", "🎉 NFFF"),
@@ -147,32 +144,4 @@ export const TRANSACTIONS: FixtureTx[] = [
   t("2026-10-26", -1813920, "Apple Card Payment", "🎉 NFFF", { account: "Checking" }),
   // A real YNAB transfer, which exclude_transfers already drops.
   t("2026-10-15", -500000, "Transfer : Savings", null, { account: "Checking", transfer: true }),
-
-  // Habitual spending that min_occurrences 2 reads as recurring (case 9).
-  t("2026-10-03", -6450, "Blue Bottle Coffee", "👔 Eating Out"),
-  t("2026-10-10", -5200, "Blue Bottle Coffee", "👔 Eating Out"),
-  t("2026-09-12", -23110, "Uber", "🚙 Transportation"),
-  t("2026-09-26", -18740, "Uber", "🚙 Transportation"),
-  t("2026-08-16", -84210, "IKEA", "🎉 NFFF"),
-  t("2026-09-15", -31480, "IKEA", "🎉 NFFF"),
-  t("2026-10-18", -14320, "Taco Bell", "👔 Eating Out"),
-  t("2026-10-25", -11870, "Taco Bell", "👔 Eating Out"),
-  t("2026-09-20", -38500, "AMC", "🎉 NFFF"),
-  t("2026-10-20", -42100, "AMC", "🎉 NFFF"),
-  t("2026-07-20", -10800, "Amazon", "🎉 NFFF"),
-  t("2026-10-19", -10800, "Amazon", "🎉 NFFF"),
 ];
-
-// Payees whose series should rank as subscriptions, and the habitual ones
-// that should rank below every one of them (case 9).
-export const SUBSCRIPTION_PAYEES = ["Privacy.com", "Anthropic Claude", "Amazon Prime Video Channels"];
-export const HABITUAL_PAYEES = ["Blue Bottle Coffee", "Uber", "IKEA", "Taco Bell", "AMC", "Amazon"];
-
-// Case 3: 43 monthly subscriptions, enough to push structured JSON past 8 KiB.
-export const manySubscriptions = (count = 43): FixtureTx[] =>
-  Array.from({ length: count }, (_, i) => {
-    const payee = `Subscription Service Number ${String(i + 1).padStart(2, "0")}`;
-    return ["2026-07-15", "2026-08-15", "2026-09-15", "2026-10-15", "2026-11-15"].map((d) =>
-      t(d, -(1000 + i * 10), payee, "Trey Comma"),
-    );
-  }).flat();

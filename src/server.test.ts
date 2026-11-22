@@ -44,7 +44,6 @@ afterEach(() => vi.unstubAllGlobals());
 const EXPECTED_TOOLS = [
   "assign_to_categories",
   "create_categories",
-  "find_recurring_charges",
   "get_category",
   "get_month",
   "get_snapshot",
@@ -565,9 +564,7 @@ describe("tool calls", () => {
       expect(res.isError).toBe(true);
     });
 
-    test("find_recurring_charges, get_snapshot, suggest_split, and compact get_month fit their schemas", async () => {
-      const rec = await call("find_recurring_charges", { since_date: "2026-01-01", include_lapsed: true });
-      expect(rec.series).toEqual([expect.objectContaining({ payee: "Privacy.com", cadence: "monthly", typical_amount: -9820 })]);
+    test("get_snapshot, suggest_split, and compact get_month fit their schemas", async () => {
       const snap = await call("get_snapshot", { recent_days: 60 });
       expect(snap.ready_to_assign).toBe(7000);
       expect(snap.accounts[0]).toMatchObject({ cleared: 900, working: 1000 });

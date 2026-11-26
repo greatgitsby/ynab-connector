@@ -123,3 +123,19 @@ describe("/authorize consent", () => {
     expect(store.size).toBe(0);
   });
 });
+
+describe("/callback errors", () => {
+  it("echoes only an OAuth error code, never error_description", async () => {
+    const { env } = makeEnv();
+    const res = await ynabAuthHandler.fetch(
+      new Request(`${ORIGIN}/callback?error=access_denied&error_description=Call+555-0100+to+unlock`),
+      env,
+      ctx,
+    );
+    expect(res.status).toBe(400);
+    expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    const body = await res.text();
+    expect(body).toContain("(access_denied)");
+    expect(body).not.toContain("555");
+  });
+});

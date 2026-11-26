@@ -215,3 +215,21 @@ describe("YnabClient", () => {
     });
   });
 });
+
+describe("YnabClient path ids", () => {
+  test("encodes ids so they can't leave their path segment", async () => {
+    const stub = stubFetch(() => okResponse({ data: { category: {} } }));
+    try {
+      const client = new YnabClient("tok");
+      await client.updateCategory("p/1", "../../payees/x?y=1", { name: "n" });
+      await client.listTransactions("p", { accountId: "a/b" });
+      expect(stub.calls.map((c) => new URL(c.url).pathname)).toEqual([
+        "/v1/plans/p%2F1/categories/..%2F..%2Fpayees%2Fx%3Fy%3D1",
+        "/v1/plans/p/accounts/a%2Fb/transactions",
+      ]);
+      expect(() => client.getTransaction("p", "..")).toThrow("Invalid id");
+    } finally {
+      stub.restore();
+    }
+  });
+});

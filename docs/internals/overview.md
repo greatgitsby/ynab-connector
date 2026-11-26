@@ -12,9 +12,16 @@ exchanges the YNAB code ([`ynab-auth.ts`](../../src/ynab-auth.ts)). `completeAut
 encrypts the YNAB access and refresh tokens into the grant's `props`. The provider decrypts them on
 each request and hands them to `buildServer(props)`.
 
-`OAUTH_KV` holds only provider state (clients, auth codes, hashed token secrets) and the
-short-lived state that bridges `/authorize` to `/callback`. Losing it signs users out; it never held
-YNAB credentials.
+`OAUTH_KV` holds provider state (clients, auth codes, hashed token secrets, and grants) and the
+short-lived state that bridges `/authorize` to `/callback`. A grant carries the YNAB tokens encrypted
+under a key wrapped with the client's token, so KV alone can't decrypt them. Losing KV signs users
+out.
+
+`/authorize` shows a consent page naming the client and its `redirect_uri` host before it sends the
+user to YNAB. Don't skip it: anyone can register a client, and YNAB's own page names this
+connector, not the client receiving the grant (the MCP spec's "confused deputy"). Approval is a
+same-origin POST bound to the state cookie. `/register` and `/authorize` are rate limited per IP;
+`/token` is not, because hosted clients refresh every user's token from shared IPs.
 
 The token audience is bound to `MCP_RESOURCE`, which must stay `https://ynab.mcp.moen.ai/mcp`
 in production because existing grants carry it. `wrangler dev` overrides it through `.dev.vars`.

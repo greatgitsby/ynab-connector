@@ -301,10 +301,14 @@ const handleCallback = async (
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
   if (!code) {
-    const err = url.searchParams.get("error_description") ??
-      url.searchParams.get("error") ??
-      "Missing code parameter";
-    return errorResponse(`YNAB returned: ${err}`);
+    // Anyone can put text in these query params, so echo only an OAuth error
+    // code, never error_description.
+    const err = url.searchParams.get("error") ?? "";
+    return errorResponse(
+      /^[a-z_]{1,64}$/.test(err)
+        ? `YNAB authorization was not completed (${err}).`
+        : "YNAB authorization was not completed.",
+    );
   }
 
   let oauthReq: AuthRequest;
@@ -317,6 +321,7 @@ const handleCallback = async (
   }
 
   let tokens;
+  let ynabUserId: string;
   try {
     tokens = await exchangeYnabCode({
       client_id: env.YNAB_CLIENT_ID,
@@ -324,17 +329,19 @@ const handleCallback = async (
       code,
       redirect_uri: new URL("/callback", request.url).href,
     });
+    // YNAB user id is stable per account — use it both as the OAuth userId
+    // and as a prop so tools can log/identify the active user.
+    const { data } = await new YnabClient(tokens.access_token).getUser();
+    ynabUserId = data.user.id;
   } catch (e) {
     if (e instanceof YnabError) {
-      return errorResponse(`Token exchange failed: ${e.status} ${e.body}`, 502);
+      return errorResponse(
+        `Could not finish connecting to YNAB (YNAB answered ${e.status}). Try connecting again.`,
+        502,
+      );
     }
     throw e;
   }
-
-  // YNAB user id is stable per account — use it both as the OAuth userId and
-  // as a prop so tools can log/identify the active user.
-  const { data } = await new YnabClient(tokens.access_token).getUser();
-  const ynabUserId = data.user.id;
   const ynabExpiresAt = Math.floor(Date.now() / 1000) + tokens.expires_in;
 
   const props: Props = {

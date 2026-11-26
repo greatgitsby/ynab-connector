@@ -223,7 +223,7 @@ const handleConsent = async (
 
 const CONSENT_PAGE_HEADERS = {
   "Content-Security-Policy":
-    "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'",
+    "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; frame-ancestors 'none'; base-uri 'none'",
   "X-Frame-Options": "DENY",
   "X-Content-Type-Options": "nosniff",
   "Cache-Control": "no-store",

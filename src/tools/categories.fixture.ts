@@ -5,21 +5,20 @@ const cat = (
   name: string,
   group: string,
   over: Partial<Category> = {},
-): Category =>
-  ({
-    id,
-    name,
-    category_group_id: group,
-    hidden: false,
-    internal: false,
-    deleted: false,
-    budgeted: 0,
-    activity: 0,
-    balance: 0,
-    goal_type: null,
-    goal_target: 0,
-    ...over,
-  }) as Category;
+): Category => ({
+  id,
+  name,
+  category_group_id: group,
+  hidden: false,
+  internal: false,
+  deleted: false,
+  budgeted: 0,
+  activity: 0,
+  balance: 0,
+  goal_type: null,
+  goal_target: 0,
+  ...over,
+});
 
 const group = (
   id: string,
@@ -36,7 +35,7 @@ const group = (
     deleted: false,
     categories,
     ...over,
-  }) as CategoryGroup;
+  });
 
 export const groups = (): CategoryGroup[] => [
   group("int", "Internal Master Category", [

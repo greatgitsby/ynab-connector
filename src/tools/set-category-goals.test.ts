@@ -11,19 +11,18 @@ const M = "2026-11-01";
 
 const cat = (
   over: Partial<Category> & { id: string; name: string },
-): Category =>
-  ({
-    category_group_id: "g1",
-    hidden: false,
-    internal: false,
-    deleted: false,
-    budgeted: 0,
-    activity: 0,
-    balance: 0,
-    goal_type: null,
-    goal_target: 0,
-    ...over,
-  }) as Category;
+): Category => ({
+  category_group_id: "g1",
+  hidden: false,
+  internal: false,
+  deleted: false,
+  budgeted: 0,
+  activity: 0,
+  balance: 0,
+  goal_type: null,
+  goal_target: 0,
+  ...over,
+});
 
 const need = cat({
   id: "need",

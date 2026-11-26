@@ -25,24 +25,23 @@ const account = (over: Partial<Account>): Account => ({
   ...over,
 });
 
-const tx = (over: Partial<Transaction> & { id: string }): Transaction =>
-  ({
-    date: "2026-05-15",
-    amount: -10_000,
-    memo: null,
-    cleared: "cleared",
-    approved: true,
-    account_id: "acc-1",
-    account_name: "Checking",
-    payee_id: null,
-    payee_name: "Store",
-    category_id: "cat-1",
-    category_name: "Groceries",
-    flag_color: null,
-    transfer_account_id: null,
-    deleted: false,
-    ...over,
-  }) as Transaction;
+const tx = (over: Partial<Transaction> & { id: string }): Transaction => ({
+  date: "2026-05-15",
+  amount: -10_000,
+  memo: null,
+  cleared: "cleared",
+  approved: true,
+  account_id: "acc-1",
+  account_name: "Checking",
+  payee_id: null,
+  payee_name: "Store",
+  category_id: "cat-1",
+  category_name: "Groceries",
+  flag_color: null,
+  transfer_account_id: null,
+  deleted: false,
+  ...over,
+});
 
 describe("computeReconciliation", () => {
   test("verified + matching: only cleared (non-reconciled) txns are lockable", () => {
@@ -176,7 +175,7 @@ describe("applyReconcile", () => {
     return {
       client: {
         updateTransactionsBulk,
-      } as Pick<YnabClient, "updateTransactionsBulk">,
+      },
       bodies,
     };
   };

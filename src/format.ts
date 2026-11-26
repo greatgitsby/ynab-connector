@@ -25,7 +25,7 @@ export const text = (s: string) => ({
 //    `structuredContent` means a real computed result.
 export const result = <S>(s: string, structured: S) => ({
   content: [{ type: "text" as const, text: s }],
-  structuredContent: structured as S,
+  structuredContent: structured,
 });
 
 // Tool execution error (isError: true), so the client and model can tell a

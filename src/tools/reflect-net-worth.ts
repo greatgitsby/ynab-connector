@@ -62,8 +62,9 @@ export const computeNetWorth = (
     const cutoff = monthEndDate(month);
     const balance = new Map(live.map((a) => [a.id, a.balance]));
     for (const t of transactions) {
-      if (t.date > cutoff && balance.has(t.account_id)) {
-        balance.set(t.account_id, balance.get(t.account_id)! - t.amount);
+      const before = balance.get(t.account_id);
+      if (t.date > cutoff && before !== undefined) {
+        balance.set(t.account_id, before - t.amount);
       }
     }
     const snap = snapshot([...balance.values()]);

@@ -67,10 +67,11 @@ export type AssignToCategoriesResult = z.infer<
   typeof AssignToCategoriesResultSchema
 >;
 
-const monthRefs = (m: MonthDetail): Named[] =>
+const monthRefs = (m: MonthDetail): (Named & { category: Category })[] =>
   m.categories
     .filter((c) => !c.deleted && !c.internal)
     .map((c) => ({
+      category: c,
       id: c.id,
       name: c.name,
       group: c.category_group_name,
@@ -119,9 +120,7 @@ export const planMoves = (
     const r = resolveOne(monthRefs(detail), move.category, "category");
     if (!r.ok) return fail(r.error);
     const key = `${detail.month}|${r.matches[0].id}`;
-    const c =
-      working.get(key) ??
-      detail.categories.find((x) => x.id === r.matches[0].id)!;
+    const c = working.get(key) ?? r.matches[0].category;
     let after: number;
     switch (move.op.kind) {
       case "set":
@@ -178,17 +177,19 @@ export const applyAssignToCategories = async (
       ...(req.fundUnderfunded ? [req.fundUnderfunded.month] : []),
     ]),
   ];
-  const months = new Map<string, MonthDetail>();
-  await Promise.all(
-    keys.map(async (k) =>
-      months.set(k, (await client.getMonth(planId, k)).data.month),
+  const loaded = await Promise.all(
+    keys.map(
+      async (k) => [k, (await client.getMonth(planId, k)).data.month] as const,
     ),
   );
+  const months = new Map(loaded);
 
   let moves = req.moves;
-  if (req.fundUnderfunded) {
-    const { month, except } = req.fundUnderfunded;
-    const detail = months.get(month)!;
+  const fund = req.fundUnderfunded;
+  const fundMonth = fund && loaded.find(([k]) => k === fund.month);
+  if (fund && fundMonth) {
+    const { month, except } = fund;
+    const [, detail] = fundMonth;
     const explicit = planMoves(req.moves, months)
       .filter((r): r is AssignMoveOk => r.ok && r.month === detail.month)
       .map((r) => r.category_id);
@@ -310,7 +311,13 @@ const moveSchema = z
     fund_goal: z.literal(true).optional(),
   })
   .refine(
-    (m) => (m.category_id === undefined) !== (m.category_name === undefined),
+    (
+      m,
+    ): m is typeof m &
+      (
+        | { category_id: string; category_name?: undefined }
+        | { category_id?: undefined; category_name: string }
+      ) => (m.category_id === undefined) !== (m.category_name === undefined),
     {
       message: "Give exactly one of category_id or category_name.",
     },
@@ -330,7 +337,7 @@ type MoveArg = z.infer<typeof moveSchema>;
 
 export const toAssignMove = (m: MoveArg): AssignMoveInput => ({
   month: m.month,
-  category: (m.category_id ?? m.category_name)!,
+  category: m.category_id ?? m.category_name,
   op:
     m.set_budgeted_milliunits !== undefined
       ? { kind: "set", amount: m.set_budgeted_milliunits }

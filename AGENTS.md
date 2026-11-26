@@ -50,7 +50,7 @@ Architecture and its constraints: [overview](docs/internals/overview.md). Vocabu
 - Result types are zod schemas; derive the TS type with `z.infer`. Never hand-write an interface beside a schema. Input schemas live at module level, and their types come from `z.infer` too.
 - `structuredContent` keys are snake_case.
 - A result with several outcomes is a discriminated union on a literal (`status`, `kind`, `ok`), each variant carrying only its own fields. No boolean flags with fields that mean something only when a flag is set, and no optional fields that are always present together. Branch with an exhaustive `switch`.
-- No `as` casts (`as const` is fine); the one cast is the YNAB response in `YnabClient.request`. Don't add `!`: return what the next step needs instead of looking it up again.
+- No `as` casts (`as const` is fine); the one cast is the YNAB response in `YnabClient.request`. No `!`: return what the next step needs instead of looking it up again, and let a zod `refine` type predicate carry what validation proved.
 - A compute function takes what it needs as required arguments. No optional parameter with a fallback for tests' sake. Three or more arguments, or two of the same type, go in one object.
 - Money stays in milliunits until render. Format with `fmtMoney`.
 - Interpret goals through `interpretGoal` / `GoalView`, never raw `goal_*` fields; decide underfunded with `isUnderfunded`. Filter through `src/predicates.ts`, not inline boolean expressions on the YNAB shape.

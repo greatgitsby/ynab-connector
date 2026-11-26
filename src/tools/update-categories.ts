@@ -7,11 +7,9 @@ import type {
   SaveCategory,
   YnabClient,
 } from "../ynab";
-import { YnabError } from "../ynab";
-import { handleError, result, scopeDeniedError } from "../format";
+import { groupError, nameTakenError } from "../category-writes";
+import { handleError, result, scopeDeniedError, errorMessage } from "../format";
 import type { Props } from "../ynab-auth";
-
-// ---- Input + Result types
 
 export const CategoryChangeSchema = z.object({
   category_id: z.string(),
@@ -49,41 +47,6 @@ export type UpdateCategoriesResult = z.infer<
   typeof UpdateCategoriesResultSchema
 >;
 
-// ---- Compute (pure)
-
-// YNAB accepts a duplicate name, but then the two can't be told apart when
-// categorizing, so both create and rename refuse one.
-export const nameTakenError = (
-  name: string,
-  groups: CategoryGroup[],
-  exceptId?: string,
-): string | null => {
-  const want = name.trim().toLowerCase();
-  for (const g of groups) {
-    if (g.deleted) continue;
-    const c = (g.categories ?? []).find(
-      (c) =>
-        !c.deleted && c.id !== exceptId && c.name.trim().toLowerCase() === want,
-    );
-    if (c) {
-      const hidden = c.hidden || g.hidden ? ", hidden" : "";
-      return `Category "${c.name}" (id ${c.id}, in ${g.name}${hidden}) already has that name.`;
-    }
-  }
-  return null;
-};
-
-export const groupError = (
-  groupId: string,
-  groups: CategoryGroup[],
-): string | null => {
-  if (groups.some((g) => g.id === groupId && !g.deleted)) return null;
-  const live = groups
-    .filter((g) => !g.deleted)
-    .map((g) => `${g.name} (id ${g.id})`);
-  return `No such category group. Groups: ${live.join(", ")}.`;
-};
-
 // Credit Card Payments categories are tied to their card; YNAB's `internal`
 // flag can't identify that group, since template groups carry it too.
 const isCardPaymentGroup = (g: CategoryGroup | undefined) =>
@@ -92,7 +55,9 @@ const isCardPaymentGroup = (g: CategoryGroup | undefined) =>
 export const changeBody = (
   change: CategoryChange,
   groups: CategoryGroup[],
-): { body: SaveCategory } | { error: string } => {
+):
+  | { body: SaveCategory; category: Category; group: CategoryGroup }
+  | { error: string } => {
   const group = groups.find((g) =>
     (g.categories ?? []).some((c) => c.id === change.category_id),
   );
@@ -119,10 +84,9 @@ export const changeBody = (
     body.category_group_id = change.category_group_id;
   }
   if (Object.keys(body).length === 0) return { error: "Nothing to change." };
-  return { body };
+  return { body, category, group };
 };
 
-// Moves a category within the local copy so later changes in the batch see it.
 const place = (groups: CategoryGroup[], updated: Category): CategoryGroup[] =>
   groups.map((g) => {
     const rest = (g.categories ?? []).filter((c) => c.id !== updated.id);
@@ -132,15 +96,6 @@ const place = (groups: CategoryGroup[], updated: Category): CategoryGroup[] =>
         g.id === updated.category_group_id ? [...rest, updated] : rest,
     };
   });
-
-// ---- Effectful: one PATCH per change, in input order, never short-circuit
-
-const errorMessage = (e: unknown) =>
-  e instanceof YnabError
-    ? `YNAB ${e.status}: ${e.body}`
-    : e instanceof Error
-      ? e.message
-      : String(e);
 
 export const updateCategories = async (
   client: YnabClient,
@@ -160,9 +115,7 @@ export const updateCategories = async (
       });
       continue;
     }
-    const before = groups
-      .flatMap((g) => g.categories ?? [])
-      .find((c) => c.id === change.category_id)!;
+    const before = planned.category;
     try {
       const { data } = await client.updateCategory(
         planId,
@@ -174,7 +127,7 @@ export const updateCategories = async (
         category_id: change.category_id,
         before_name: before.name,
         after_name: data.category.name,
-        before_group: groupName(before.category_group_id),
+        before_group: planned.group.name,
         after_group: groupName(data.category.category_group_id),
       });
       groups = place(groups, data.category);
@@ -188,8 +141,6 @@ export const updateCategories = async (
   }
   return { results };
 };
-
-// ---- Render (pure)
 
 export const renderUpdateCategories = (out: UpdateCategoriesResult): string => {
   const n = out.results.length;
@@ -211,8 +162,6 @@ export const renderUpdateCategories = (out: UpdateCategoriesResult): string => {
   });
   return [header, ...lines].join("\n");
 };
-
-// ---- MCP tool registration
 
 const DESCRIPTION =
   "Rename categories or move them to another category group. Find category and group ids " +

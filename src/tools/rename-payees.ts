@@ -2,11 +2,9 @@ import { z } from "zod";
 import { planIdParam } from "../schemas";
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { Payee, YnabClient } from "../ynab";
-import { YnabError } from "../ynab";
-import { handleError, result, scopeDeniedError } from "../format";
+import { handleError, result, scopeDeniedError, errorMessage } from "../format";
+import { normalizeName } from "../resolve";
 import type { Props } from "../ynab-auth";
-
-// ---- Result type
 
 const RenameResultSchema = z.discriminatedUnion("ok", [
   z.object({
@@ -24,12 +22,11 @@ export const RenamePayeesResultSchema = z.object({
 });
 export type RenamePayeesResult = z.infer<typeof RenamePayeesResultSchema>;
 
-export interface RenameInput {
-  payee_id: string;
-  name: string;
-}
-
-// ---- Compute (pure): why a rename must not be sent, or null
+const RenameInputSchema = z.object({
+  payee_id: z.string(),
+  name: z.string().trim().min(1).max(500),
+});
+export type RenameInput = z.infer<typeof RenameInputSchema>;
 
 export const renameRefusal = (
   input: RenameInput,
@@ -40,26 +37,15 @@ export const renameRefusal = (
   if (payee.transfer_account_id) {
     return "Transfer payees take their name from the account; rename the account in YNAB instead.";
   }
-  const name = input.name.trim().toLowerCase();
+  const name = normalizeName(input.name);
   const taken = payees.find(
-    (p) =>
-      !p.deleted && p.id !== payee.id && p.name.trim().toLowerCase() === name,
+    (p) => !p.deleted && p.id !== payee.id && normalizeName(p.name) === name,
   );
-  // Two payees with one name can't be told apart in YNAB.
   if (taken) {
     return `Payee "${taken.name}" (id ${taken.id}) already has that name; use merge_payees to combine them.`;
   }
   return null;
 };
-
-// ---- Effectful: one PATCH per rename, in input order, never short-circuit
-
-const errorMessage = (e: unknown) =>
-  e instanceof YnabError
-    ? `YNAB ${e.status}: ${e.body}`
-    : e instanceof Error
-      ? e.message
-      : String(e);
 
 export const applyRenamePayees = async (
   client: YnabClient,
@@ -86,7 +72,6 @@ export const applyRenamePayees = async (
         before_name: payees[i].name,
         after_name: updated.data.payee.name,
       });
-      // Later renames in the batch check against the new name.
       payees[i] = updated.data.payee;
     } catch (e) {
       results.push({
@@ -99,8 +84,6 @@ export const applyRenamePayees = async (
   return { results };
 };
 
-// ---- Render (pure)
-
 export const renderRenamePayeesResult = (out: RenamePayeesResult): string => {
   const okCount = out.results.filter((r) => r.ok).length;
   const errCount = out.results.length - okCount;
@@ -112,8 +95,6 @@ export const renderRenamePayeesResult = (out: RenamePayeesResult): string => {
   );
   return [header, ...lines].join("\n");
 };
-
-// ---- MCP tool registration
 
 const DESCRIPTION =
   "Rename one or more payees. Every transaction on a payee shows the new " +
@@ -141,14 +122,7 @@ export const registerRenamePayees = (
       },
       inputSchema: {
         plan_id: planIdParam,
-        renames: z
-          .array(
-            z.object({
-              payee_id: z.string(),
-              name: z.string().trim().min(1).max(500),
-            }),
-          )
-          .min(1),
+        renames: z.array(RenameInputSchema).min(1),
       },
     },
     async ({ plan_id, renames }) => {

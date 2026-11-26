@@ -2,12 +2,7 @@ import { z } from "zod";
 import type { Transaction } from "./ynab";
 import { fmtMoney } from "./format";
 
-// One line per categorized amount: a plain transaction, or one part of a
-// split. A full YNAB transaction is ~800 bytes of JSON; a row is a tenth of
-// that, which is what lets a few hundred fit in one tool result.
 export interface FlatRow {
-  // The transaction's id, which update_transactions takes. For a split part,
-  // the parent's id; the part's own id is `part_id`.
   id: string;
   part_id: string | null;
   date: string;
@@ -26,9 +21,6 @@ export interface FlatRow {
   imported: boolean;
 }
 
-// Handles both listing shapes: nested `subtransactions` (plan, account,
-// month) and hybrid part rows (category, payee). A part inherits the
-// parent's payee and memo when it has none of its own.
 export const flattenTransactions = (txs: Transaction[]): FlatRow[] =>
   txs
     .filter((t) => !t.deleted)
@@ -103,9 +95,13 @@ export const rowFieldsParam = z
     `Row fields to return. Default: ${DEFAULT_ROW_FIELDS.join(", ")}. A split part also carries part_id when id is chosen. Null memo and flag are left out.`,
   );
 
-// Only the chosen fields appear, so every key is optional.
 export const RowSchema = z.object({
-  id: z.string().optional(),
+  id: z
+    .string()
+    .optional()
+    .describe(
+      "Transaction id for update_transactions. A split part carries its parent's id here and its own in part_id.",
+    ),
   part_id: z.string().optional(),
   date: z.string().optional(),
   amount: z.number().int().optional(),
@@ -126,16 +122,18 @@ export const pickRow = (
   r: FlatRow,
   fields: readonly RowField[] = DEFAULT_ROW_FIELDS,
 ): Row => {
-  const out: Row = {};
-  for (const f of fields) {
-    if ((f === "memo" || f === "flag") && r[f] == null) continue;
-    (out as Record<string, unknown>)[f] = r[f];
-    if (f === "id" && r.part_id) out.part_id = r.part_id;
-  }
-  return out;
+  const entries = fields.flatMap((f) => {
+    if ((f === "memo" || f === "flag") && r[f] == null) return [];
+    if (f === "id" && r.part_id)
+      return [
+        [f, r[f]],
+        ["part_id", r.part_id],
+      ];
+    return [[f, r[f]]];
+  });
+  return RowSchema.parse(Object.fromEntries(entries));
 };
 
-// Takes a FlatRow or a picked Row; fields a Row left out are skipped.
 export const fmtRowLine = (
   r: {
     id?: string;
@@ -166,13 +164,4 @@ export const median = (xs: number[]): number => {
   const s = [...xs].sort((a, b) => a - b);
   const mid = s.length >> 1;
   return s.length % 2 ? s[mid] : Math.round((s[mid - 1] + s[mid]) / 2);
-};
-
-export const todayIso = (now = new Date()): string =>
-  now.toISOString().slice(0, 10);
-
-export const addDays = (date: string, days: number): string => {
-  const d = new Date(`${date}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().slice(0, 10);
 };

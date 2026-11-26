@@ -10,13 +10,6 @@ import {
 import { isInflowRta, isUncategorizedInternal } from "../predicates";
 import { result, handleError, padMoney } from "../format";
 
-// ---- Result types (zod is the single source of truth; the TS types are
-// inferred and the schema doubles as the tool's outputSchema — see docs/internals/structured-output.md).
-// Money is in milliunits; the per-month maps are keyed by month ("YYYY-MM-01")
-// and emitted as JSON objects (z.record) so structuredContent round-trips —
-// a Map would serialize to "{}". Averages stay z.number().
-
-// Per-month milliunit amounts keyed by month ("YYYY-MM-01").
 const MonthlySchema = z.record(z.string(), z.number());
 
 const PayeeIncomeRowSchema = z.object({
@@ -36,7 +29,6 @@ export type ExpenseCategoryRow = z.infer<typeof ExpenseCategoryRowSchema>;
 const ExpenseGroupSchema = z.object({
   name: z.string(),
   rows: z.array(ExpenseCategoryRowSchema),
-  // Group subtotal per month.
   monthly: MonthlySchema,
 });
 export type ExpenseGroup = z.infer<typeof ExpenseGroupSchema>;
@@ -44,22 +36,16 @@ export type ExpenseGroup = z.infer<typeof ExpenseGroupSchema>;
 export const IncomeExpensePivotSchema = z.object({
   plan_name: z.string(),
   iso: z.string(),
-  // Months actually present in the window, chronological order.
   window: z.array(z.string()),
   truncation_note: z.string().nullable(),
   income: z.object({
-    // Sorted by total income desc.
     rows: z.array(PayeeIncomeRowSchema),
-    // Sum of all income rows per month.
     monthly: MonthlySchema,
   }),
-  // Synthetic Uncategorized row hoisted above the groups, or null if absent.
   uncategorized: ExpenseCategoryRowSchema.nullable(),
-  // In plan.category_groups order, hidden groups omitted, empty groups dropped.
   groups: z.array(ExpenseGroupSchema),
   totals: z.object({
     expense: MonthlySchema,
-    // income + expense (expense activity is already negative).
     net: MonthlySchema,
   }),
 });
@@ -70,10 +56,6 @@ export interface ComputeOpts {
   until: string;
 }
 
-// ---- Compute (pure)
-
-// Internal working rows use Maps while aggregating; they are converted to the
-// JSON-friendly Record shape (mapToRecord) at the return boundary.
 interface PayeeIncomeAgg {
   label: string;
   monthly: Map<string, number>;
@@ -117,7 +99,6 @@ export const computeIncomeExpensePivot = (
     if (inflowRtaId) break;
   }
 
-  // Income by payee — sourced from Inflow: Ready to Assign transactions.
   const incomeByPayee = new Map<string, PayeeIncomeAgg>();
   const addIncome = (payee: string | null, date: string, amount: number) => {
     const mKey = `${date.slice(0, 7)}-01`;
@@ -148,7 +129,6 @@ export const computeIncomeExpensePivot = (
     }
   }
 
-  // Group name lookup + visible group order from plan.category_groups.
   const groupNameById = new Map<string, string>();
   const groupOrder: string[] = [];
   const hiddenGroupIds = new Set<string>();
@@ -159,7 +139,6 @@ export const computeIncomeExpensePivot = (
     else groupOrder.push(grp.name);
   }
 
-  // Expense rows aggregated across the window. Uncategorized is hoisted.
   const expenseRows = new Map<string, ExpenseCategoryAgg>();
   let uncategorized: ExpenseCategoryAgg | null = null;
   for (const m of monthsInWindow) {
@@ -189,7 +168,6 @@ export const computeIncomeExpensePivot = (
       row.monthly.set(m.month, cat.activity);
     }
   }
-  // Drop zero-activity categories.
   for (const [id, row] of expenseRows) {
     if (![...row.monthly.values()].some((v) => v !== 0)) {
       expenseRows.delete(id);
@@ -202,7 +180,6 @@ export const computeIncomeExpensePivot = (
     uncategorized = null;
   }
 
-  // Income totals per month.
   const incomeTotal = new Map<string, number>();
   for (const r of incomeByPayee.values()) {
     for (const k of window) {
@@ -215,7 +192,6 @@ export const computeIncomeExpensePivot = (
     return bt - at;
   });
 
-  // Build expense groups (plan order, most-negative row first within each).
   const rowsByGroup = new Map<string, ExpenseCategoryAgg[]>();
   for (const row of expenseRows.values()) {
     const arr = rowsByGroup.get(row.groupName);
@@ -292,8 +268,6 @@ export const computeIncomeExpensePivot = (
     },
   };
 };
-
-// ---- Render (pure)
 
 export interface RenderOpts {
   includeIds: boolean;
@@ -383,8 +357,6 @@ export const renderIncomeExpensePivot = (
 
   return out.join("\n").trimEnd();
 };
-
-// ---- MCP tool registration
 
 const DESCRIPTION =
   "Reflect: income against expense for each month in a range (default the " +

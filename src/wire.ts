@@ -7,11 +7,6 @@ import { z } from "zod";
 // Enums stay plain strings so a new YNAB value can't fail outputSchema
 // validation at call time.
 //
-// Every milliunit field has `*_formatted` (display string in the plan's
-// currency) and `*_currency` (decimal amount) siblings. They are declared so
-// the schema matches the wire, but tools compute and format from milliunits
-// only.
-//
 // Every schema is a looseObject: YNAB objects pass through verbatim, so a
 // field a later API version adds must not fail validation. A strict z.object
 // emits `additionalProperties: false`, and the client rejects the whole call.
@@ -277,7 +272,6 @@ export const PayeeLocationSchema = z.looseObject({
   longitude: z.string(),
   deleted: z.boolean(),
 });
-export type PayeeLocation = z.infer<typeof PayeeLocationSchema>;
 
 // GET /plans/{id} is a full export: flat summary rows that reference
 // accounts, payees, and categories by id only, so the detail rows' name

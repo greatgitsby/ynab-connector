@@ -5,16 +5,11 @@ import type { Payee, YnabClient } from "../ynab";
 import { PayeeSchema } from "../wire";
 import { result, handleError } from "../format";
 
-// ---- Result type (zod is the source of truth; see docs/internals/structured-output.md)
-
 export const PayeeListSchema = z.object({
-  // Shortest name first, capped at `limit`.
   payees: z.array(PayeeSchema),
   total_matched: z.number().int(),
 });
 export type PayeeList = z.infer<typeof PayeeListSchema>;
-
-// ---- Compute (pure)
 
 export const computePayeeList = (
   payees: Payee[],
@@ -30,8 +25,6 @@ export const computePayeeList = (
   return { payees: all.slice(0, limit), total_matched: all.length };
 };
 
-// ---- Render (pure)
-
 export const renderPayeeList = (list: PayeeList, query: string): string => {
   const q = query.trim();
   if (!list.payees.length) return q ? `No payees match "${q}".` : "No payees.";
@@ -46,8 +39,6 @@ export const renderPayeeList = (list: PayeeList, query: string): string => {
   );
   return [header, ...lines].join("\n");
 };
-
-// ---- MCP tool registration
 
 const DESCRIPTION =
   "List payees, optionally only those whose name contains `query` " +

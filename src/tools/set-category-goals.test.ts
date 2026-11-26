@@ -45,9 +45,7 @@ describe("goalBody", () => {
   test("remove_goal sends goal_target: null", () => {
     expect(
       goalBody({ category_id: "need", remove_goal: true }, need, M),
-    ).toEqual({
-      body: { goal_target: null },
-    });
+    ).toHaveProperty("body", { goal_target: null });
   });
 
   test("sends only the fields given, including a null date to clear it", () => {
@@ -62,12 +60,10 @@ describe("goalBody", () => {
         need,
         M,
       ),
-    ).toEqual({
-      body: {
-        goal_target: 400000,
-        goal_target_date: null,
-        goal_needs_whole_amount: false,
-      },
+    ).toHaveProperty("body", {
+      goal_target: 400000,
+      goal_target_date: null,
+      goal_needs_whole_amount: false,
     });
     expect(
       goalBody(
@@ -75,7 +71,7 @@ describe("goalBody", () => {
         tb,
         M,
       ),
-    ).toEqual({ body: { goal_target: 50000, goal_frequency: "weekly" } });
+    ).toHaveProperty("body", { goal_target: 50000, goal_frequency: "weekly" });
   });
 
   test("refuses what YNAB would reject or silently mis-store", () => {

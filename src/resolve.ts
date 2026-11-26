@@ -1,8 +1,5 @@
 import type { Account, CategoryGroup, Payee } from "./ynab";
 
-// Name-or-id lookup for categories, payees, and accounts, so callers can say
-// "Groceries" instead of fetching a list to find its uuid.
-
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const isUuid = (s: string): boolean => UUID.test(s.trim());
 
@@ -19,10 +16,7 @@ export const normalizeName = (s: string): string =>
 export interface Named {
   id: string;
   name: string;
-  // Category group name, so "Group: Name" can pick between same-named
-  // categories.
   group?: string;
-  // Hidden or closed. Used only to break ties toward the live one.
   inactive?: boolean;
 }
 
@@ -31,8 +25,6 @@ export type Resolution<T> =
 
 const label = (x: Named) => (x.group ? `${x.group}: ${x.name}` : x.name);
 
-// Every candidate a reference could mean: the id itself, an exact
-// (normalized) name, "Group: Name", and only then names containing it.
 const candidates = <T extends Named>(items: T[], ref: string): T[] => {
   const byId = items.filter((x) => x.id === ref.trim());
   if (byId.length) return byId;
@@ -49,7 +41,6 @@ const candidates = <T extends Named>(items: T[], ref: string): T[] => {
 
 const notFound = (kind: string, ref: string) => `No ${kind} matches "${ref}".`;
 
-// For filters: every match counts, so "Apple" covers two payees named Apple.
 export const resolveAll = <T extends Named>(
   items: T[],
   ref: string,
@@ -61,8 +52,6 @@ export const resolveAll = <T extends Named>(
     : { ok: false, error: notFound(kind, ref) };
 };
 
-// For writes: exactly one, or an error naming the choices. A live match wins
-// over hidden or closed ones of the same name.
 export const resolveOne = <T extends Named>(
   items: T[],
   ref: string,

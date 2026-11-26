@@ -4,7 +4,6 @@ import {
   computeQuery,
   filterRows,
   QueryResultSchema,
-  sortRows,
 } from "./query-transactions";
 
 const row = (id: string, over: Partial<FlatRow> = {}): FlatRow => ({
@@ -122,7 +121,7 @@ describe("computeQuery", () => {
   };
 
   test("groups by payee with count, total, typical, and date span; totals cover every row", () => {
-    const q = computeQuery(sortRows(rows), {
+    const { query: q } = computeQuery(rows, {
       ...base,
       groupBy: "payee",
       limit: 0,
@@ -148,7 +147,7 @@ describe("computeQuery", () => {
   });
 
   test("months group chronologically; the group cap keeps the count", () => {
-    const q = computeQuery(sortRows(rows), {
+    const { query: q } = computeQuery(rows, {
       ...base,
       groupBy: "month",
       groupLimit: 1,
@@ -159,11 +158,14 @@ describe("computeQuery", () => {
   });
 
   test("pages newest first", () => {
-    const sorted = sortRows(rows);
-    const p1 = computeQuery(sorted, { ...base, limit: 4 });
+    const { query: p1 } = computeQuery(rows, { ...base, limit: 4 });
     expect(p1.rows.map((r) => r.id)).toEqual(["t7", "t5", "t4", "t3"]);
     expect(p1.next_offset).toBe(4);
-    const p2 = computeQuery(sorted, { ...base, limit: 4, offset: 4 });
+    const { query: p2 } = computeQuery(rows, {
+      ...base,
+      limit: 4,
+      offset: 4,
+    });
     expect(p2.rows.map((r) => r.id)).toEqual(["t6", "t2", "t1"]);
     expect(p2.next_offset).toBeNull();
   });

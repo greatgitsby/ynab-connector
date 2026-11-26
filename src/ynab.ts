@@ -41,14 +41,12 @@ export class YnabError extends Error {
   }
 }
 
-// Parsed, not cast: these tokens are stored in the grant, and a malformed
-// response must fail here rather than strand the grant with undefined tokens.
 const YnabTokenResponseSchema = z.looseObject({
   access_token: z.string(),
   refresh_token: z.string(),
   expires_in: z.number(),
 });
-export type YnabTokenResponse = z.infer<typeof YnabTokenResponseSchema>;
+type YnabTokenResponse = z.infer<typeof YnabTokenResponseSchema>;
 
 export const ynabAuthorizeUrl = (params: {
   client_id: string;
@@ -143,10 +141,6 @@ const seg = (id: string): string => {
   return encodeURIComponent(id);
 };
 
-// Token rotation is not this client's job: the OAuthProvider's
-// tokenExchangeCallback (src/token-refresh.ts) refreshes the YNAB token when
-// the MCP client refreshes its own, and persists the result in the grant. A 401 here
-// surfaces as a YnabError like any other failure.
 export class YnabClient {
   constructor(private token: string) {}
 
@@ -171,23 +165,16 @@ export class YnabClient {
     });
     const text = await res.text();
     if (!res.ok) throw new YnabError(res.status, text);
-    // YNAB data is typed, not validated: a field YNAB changes should reach the
+    // Typed, not validated: a field YNAB adds or changes should reach the
     // tool as-is rather than fail every call.
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion
     return text ? (JSON.parse(text) as T) : ({} as T);
   }
 
-  // YNAB /user — returns just `{ data: { user: { id } } }`. The id is the
-  // stable per-account identifier we hand to `completeAuthorization` as userId.
   getUser() {
     return this.request<{ data: { user: { id: string } } }>("GET", "/user");
   }
 
-  // Plans
-  //
-  // YNAB v1.79 (2026-03) made `/plans` the resource path and renamed the
-  // response keys (`plans` → `plans`, `plan` → `plan`). This codebase
-  // follows YNAB's current vocabulary throughout.
   listPlans() {
     return this.request<{
       data: { plans: Plan[]; default_plan?: Plan | null };
@@ -201,9 +188,6 @@ export class YnabClient {
       `/plans/${seg(planId)}`,
     );
   }
-  // Lightweight: just date/currency format. Use this instead of getPlan
-  // when a tool only needs the currency code (e.g. for structured output's
-  // `iso` field) — getPlan returns the entire plan payload.
   getPlanSettings(planId: string) {
     return this.request<{
       data: {
@@ -215,13 +199,11 @@ export class YnabClient {
     }>("GET", `/plans/${seg(planId)}/settings`);
   }
 
-  // The plan's ISO currency code, for formatting milliunits.
   async planIso(planId: string): Promise<string> {
     const { data } = await this.getPlanSettings(planId);
     return data.settings.currency_format?.iso_code ?? "USD";
   }
 
-  // Accounts
   listAccounts(planId: string) {
     return this.request<{ data: { accounts: Account[] } }>(
       "GET",
@@ -234,7 +216,6 @@ export class YnabClient {
       `/plans/${seg(planId)}/accounts/${seg(accountId)}`,
     );
   }
-  // Categories
   listCategories(planId: string) {
     return this.request<{ data: { category_groups: CategoryGroup[] } }>(
       "GET",
@@ -261,7 +242,6 @@ export class YnabClient {
       `/plans/${seg(planId)}/months/${seg(month)}/categories/${seg(categoryId)}`,
     );
   }
-  // Months
   listMonths(planId: string) {
     return this.request<{ data: { months: MonthSummary[] } }>(
       "GET",
@@ -288,12 +268,6 @@ export class YnabClient {
     );
   }
 
-  // Transactions
-  //
-  // One listing over YNAB's five transaction endpoints. At most one scope
-  // applies. Account and month listings return split parents with
-  // `subtransactions`; category and payee listings return hybrid rows, one per
-  // split part. `sinceDate` defaults to ALL_TIME, not YNAB's one-year default.
   listTransactions(planId: string, opts: TransactionQuery = {}) {
     const scope = opts.accountId
       ? `/accounts/${seg(opts.accountId)}`
@@ -327,7 +301,6 @@ export class YnabClient {
     }>("PATCH", `/plans/${seg(planId)}/transactions`, body);
   }
 
-  // Payees
   listPayees(planId: string) {
     return this.request<{ data: { payees: Payee[] } }>(
       "GET",
@@ -342,7 +315,6 @@ export class YnabClient {
     );
   }
 
-  // Scheduled transactions
   listScheduledTransactions(planId: string) {
     return this.request<{
       data: { scheduled_transactions: ScheduledTransaction[] };
@@ -373,12 +345,18 @@ export class YnabClient {
   }
 }
 
-// Convert milliunits (YNAB internal format) to dollars.
 export const fromMilli = (m: number) => m / 1000;
 
-// A single subtransaction in a write payload. Only the fields the connector's
-// tools are willing to set are listed — YNAB tolerates extras but we don't
-// expose them. `amount` is the only field YNAB requires.
+export const FLAG_COLORS = [
+  "red",
+  "orange",
+  "yellow",
+  "green",
+  "blue",
+  "purple",
+] as const;
+export type FlagColor = (typeof FLAG_COLORS)[number];
+
 export interface SaveSubTransaction {
   amount: number;
   payee_id?: string | null;
@@ -387,10 +365,6 @@ export interface SaveSubTransaction {
   memo?: string | null;
 }
 
-// Subset of `SaveTransactionWithOptionalFields` from YNAB's OpenAPI spec — the
-// fields the connector's update tool can set. Notably excludes `date`,
-// `amount`, and `account_id`, which the connector deliberately doesn't expose
-// for editing bank-imported rows.
 export interface SaveTransactionFields {
   category_id?: string | null;
   payee_id?: string | null;
@@ -398,12 +372,10 @@ export interface SaveTransactionFields {
   memo?: string | null;
   approved?: boolean;
   cleared?: "cleared" | "uncleared" | "reconciled";
-  flag_color?: "red" | "orange" | "yellow" | "green" | "blue" | "purple" | null;
+  flag_color?: FlagColor | null;
   subtransactions?: SaveSubTransaction[];
 }
 
-// Bulk-update row: identifies the transaction by `id` and carries any of the
-// settable fields. YNAB requires `id` (or `import_id`); we always pass `id`.
 export interface SaveTransactionWithId extends SaveTransactionFields {
   id: string;
 }
@@ -424,12 +396,15 @@ export interface SaveScheduledTransaction {
 // The goal fields of YNAB's `SaveCategory`, the only ones the connector sends.
 // `goal_target: null` removes the goal. `hidden` is not among them: YNAB drops
 // it (see docs/internals/ynab-api.md).
-export interface SaveCategoryGoal {
-  goal_target?: number | null;
-  goal_target_date?: string | null;
-  goal_needs_whole_amount?: boolean;
-  goal_frequency?: "monthly" | "weekly" | "yearly";
-}
+export const GOAL_FREQUENCIES = ["monthly", "weekly", "yearly"] as const;
+
+export const SaveCategoryGoalSchema = z.object({
+  goal_target: z.number().int().nullable().optional(),
+  goal_target_date: z.string().nullable().optional(),
+  goal_needs_whole_amount: z.boolean().optional(),
+  goal_frequency: z.enum(GOAL_FREQUENCIES).optional(),
+});
+export type SaveCategoryGoal = z.infer<typeof SaveCategoryGoalSchema>;
 
 export interface SaveCategory extends SaveCategoryGoal {
   name?: string;

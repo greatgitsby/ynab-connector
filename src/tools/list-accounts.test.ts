@@ -24,7 +24,7 @@ describe("computeAccountList", () => {
   test("hides closed accounts by default", () => {
     const r = computeAccountList(
       [account({ id: "open" }), account({ id: "closed", closed: true })],
-      { includeClosed: false },
+      { includeClosed: false, iso: "USD" },
     );
     expect(r.accounts.map((a) => a.id)).toEqual(["open"]);
   });
@@ -32,7 +32,7 @@ describe("computeAccountList", () => {
   test("keeps closed accounts when includeClosed is true", () => {
     const r = computeAccountList(
       [account({ id: "open" }), account({ id: "closed", closed: true })],
-      { includeClosed: true },
+      { includeClosed: true, iso: "USD" },
     );
     expect(r.accounts).toHaveLength(2);
   });
@@ -71,7 +71,7 @@ describe("renderAccountList", () => {
           on_budget: false,
         }),
       ],
-      { includeClosed: false },
+      { includeClosed: false, iso: "USD" },
     );
     const out = renderAccountList(r, { includeIds: true });
     expect(out).toContain(
@@ -97,7 +97,7 @@ describe("renderAccountList", () => {
           direct_import_in_error: true,
         }),
       ],
-      { includeClosed: false },
+      { includeClosed: false, iso: "USD" },
     );
     const out = renderAccountList(r, { includeIds: false });
     expect(out).toContain("linked ✓, last reconciled 2026-04-30");
@@ -107,6 +107,7 @@ describe("renderAccountList", () => {
   test("omits link info for unlinked accounts", () => {
     const r = computeAccountList([account({ name: "Cash" })], {
       includeClosed: false,
+      iso: "USD",
     });
     const out = renderAccountList(r, { includeIds: false });
     expect(out).not.toContain("linked");

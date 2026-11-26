@@ -73,9 +73,17 @@ describe("planMoves", () => {
   test("set, add, and fund_goal compute before/after; names resolve", () => {
     const r = planMoves(
       [
-        { month: "2026-05-01", category: "groceries", op: { set: 450000 } },
-        { month: "2026-05-01", category: "cat-b", op: { add: -50000 } },
-        { month: "2026-05-01", category: "Netflix", op: { fundGoal: true } },
+        {
+          month: "2026-05-01",
+          category: "groceries",
+          op: { kind: "set", amount: 450000 },
+        },
+        {
+          month: "2026-05-01",
+          category: "cat-b",
+          op: { kind: "add", amount: -50000 },
+        },
+        { month: "2026-05-01", category: "Netflix", op: { kind: "fund_goal" } },
       ],
       months,
     );
@@ -109,8 +117,12 @@ describe("planMoves", () => {
   test("a second move on one category sees the first", () => {
     const r = planMoves(
       [
-        { month: "2026-05-01", category: "cat-s", op: { add: 1000 } },
-        { month: "2026-05-01", category: "cat-s", op: { fundGoal: true } },
+        {
+          month: "2026-05-01",
+          category: "cat-s",
+          op: { kind: "add", amount: 1000 },
+        },
+        { month: "2026-05-01", category: "cat-s", op: { kind: "fund_goal" } },
       ],
       months,
     ) as AssignMoveOk[];
@@ -130,10 +142,22 @@ describe("planMoves", () => {
     ]);
     const r = planMoves(
       [
-        { month: "2026-05-01", category: "Nope", op: { set: 1 } },
-        { month: "2026-05-01", category: "cat-a", op: { fundGoal: true } },
-        { month: "2026-05-01", category: "Dining", op: { set: 1 } },
-        { month: "2026-05-01", category: "Fun: Dining", op: { set: 1 } },
+        {
+          month: "2026-05-01",
+          category: "Nope",
+          op: { kind: "set", amount: 1 },
+        },
+        { month: "2026-05-01", category: "cat-a", op: { kind: "fund_goal" } },
+        {
+          month: "2026-05-01",
+          category: "Dining",
+          op: { kind: "set", amount: 1 },
+        },
+        {
+          month: "2026-05-01",
+          category: "Fun: Dining",
+          op: { kind: "set", amount: 1 },
+        },
       ],
       dup,
     );
@@ -184,11 +208,11 @@ describe("toAssignMove", () => {
     ).toEqual({
       month: "current",
       category: "X",
-      op: { add: -5 },
+      op: { kind: "add", amount: -5 },
     });
     expect(
       toAssignMove({ month: "current", category_id: "c", fund_goal: true }).op,
-    ).toEqual({ fundGoal: true });
+    ).toEqual({ kind: "fund_goal" });
   });
 });
 
@@ -232,8 +256,16 @@ describe("applyAssignToCategories", () => {
     const { client, patches } = stubClient({ rtaAfter: 940000 });
     const out = (await applyAssignToCategories(client, "p", {
       moves: [
-        { month: "2026-05-01", category: "cat-a", op: { add: 60000 } },
-        { month: "2026-05-01", category: "cat-b", op: { set: 200000 } },
+        {
+          month: "2026-05-01",
+          category: "cat-a",
+          op: { kind: "add", amount: 60000 },
+        },
+        {
+          month: "2026-05-01",
+          category: "cat-b",
+          op: { kind: "set", amount: 200000 },
+        },
       ],
       dryRun: false,
     })) as AssignToCategoriesResult;
@@ -264,7 +296,13 @@ describe("applyAssignToCategories", () => {
   test("fund_underfunded skips categories the explicit moves already cover", async () => {
     const { client, patches } = stubClient();
     await applyAssignToCategories(client, "p", {
-      moves: [{ month: "2026-05-01", category: "cat-n", op: { set: 1000 } }],
+      moves: [
+        {
+          month: "2026-05-01",
+          category: "cat-n",
+          op: { kind: "set", amount: 1000 },
+        },
+      ],
       fundUnderfunded: { month: "2026-05-01", except: [] },
       dryRun: false,
     });
@@ -278,8 +316,16 @@ describe("applyAssignToCategories", () => {
     const { client } = stubClient({ fail: "cat-a" });
     const out = (await applyAssignToCategories(client, "p", {
       moves: [
-        { month: "2026-05-01", category: "cat-a", op: { set: 1 } },
-        { month: "2026-05-01", category: "cat-b", op: { set: 1 } },
+        {
+          month: "2026-05-01",
+          category: "cat-a",
+          op: { kind: "set", amount: 1 },
+        },
+        {
+          month: "2026-05-01",
+          category: "cat-b",
+          op: { kind: "set", amount: 1 },
+        },
       ],
       dryRun: false,
     })) as AssignToCategoriesResult;

@@ -5,17 +5,14 @@ import type { Account, MonthDetail, Transaction, YnabClient } from "../ynab";
 import { fmtMoney, handleError, result } from "../format";
 import {
   RowSchema,
-  addDays,
   fmtRowLine,
   flattenTransactions,
   pickRow,
-  todayIso,
   type FlatRow,
 } from "../rows";
+import { addDays, todayIso } from "../month-window";
 import { computeTriageInbox } from "./triage-inbox";
 import { isTrackingAccount } from "../predicates";
-
-// ---- Result type (zod is the source of truth; see docs/internals/structured-output.md)
 
 const CategoryAmountSchema = z.object({
   id: z.string(),
@@ -30,7 +27,6 @@ const AccountRowSchema = z.object({
   on_budget: z.boolean(),
   cleared: z.number().int(),
   uncleared: z.number().int(),
-  // cleared + uncleared, YNAB's `balance`.
   working: z.number().int(),
   linked: z.boolean(),
   link_error: z.boolean(),
@@ -47,7 +43,6 @@ export const SnapshotSchema = z.object({
   month: z.string(),
   ready_to_assign: z.number().int(),
   age_of_money: z.number().int().nullable(),
-  // Same membership as triage_inbox, as compact rows, newest first.
   uncategorized: SectionSchema,
   unapproved: SectionSchema,
   overspent: z.object({
@@ -60,14 +55,10 @@ export const SnapshotSchema = z.object({
     total: z.number().int(),
     categories: z.array(CategoryAmountSchema),
   }),
-  // Open accounts, on-plan first.
   accounts: z.array(AccountRowSchema),
-  // Imported transactions dated within the last `recent_days`, newest first.
   recent_imports: SectionSchema,
 });
 export type Snapshot = z.infer<typeof SnapshotSchema>;
-
-// ---- Compute (pure)
 
 export const computeSnapshot = (
   input: {
@@ -146,12 +137,7 @@ export const computeSnapshot = (
   };
 };
 
-// ---- Render (pure)
-
-export const renderSnapshot = (
-  s: Snapshot,
-  opts: { includeIds: boolean },
-): string => {
+const renderSnapshot = (s: Snapshot, opts: { includeIds: boolean }): string => {
   const { iso } = s;
   const out = [
     `Snapshot for ${s.month.slice(0, 7)}`,
@@ -196,8 +182,6 @@ export const renderSnapshot = (
   section("Recent imports", s.recent_imports);
   return out.join("\n").trimEnd();
 };
-
-// ---- MCP tool registration
 
 const DESCRIPTION =
   "A compact snapshot of the plan in one call: Ready to Assign, age of money, uncategorized and unapproved transactions (as compact rows), " +

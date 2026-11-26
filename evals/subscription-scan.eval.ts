@@ -2,14 +2,6 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { plan } from "./harness";
 import { CATEGORIES, TRANSACTIONS } from "./fixtures/subscription-scan";
 
-// Failures from a 2026-11-22 subscription-scan run, one eval each. They
-// grade the outcome an agent needs, not an implementation: where the tool has
-// no way to express the answer yet, the eval names the contract it checks
-// (e.g. a `confidence` field) so a fix can meet it. "Regression" evals guard
-// what already worked in that run. Cases 3 to 9 covered find_recurring_charges
-// and 10 to 12 suggest_split, both since removed: the agent finds recurring
-// charges with query_transactions and works out splits itself.
-
 const SCAN = { since_date: "2026-05-22" };
 
 const p = plan(TRANSACTIONS, CATEGORIES);
@@ -28,7 +20,6 @@ describe("query_transactions", () => {
       "an OR query should match, not return nothing",
     ).toBe(6);
 
-    // Several terms in one call: an array, or OR in the string.
     const asArray = await p.call("query_transactions", {
       search: ["Arcade", "Navi"],
       since_date: SCAN.since_date,

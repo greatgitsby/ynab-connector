@@ -1,7 +1,6 @@
 import { describe, test, expect, afterEach, vi } from "bun:test";
 import { ALL_TIME, YnabClient } from "./ynab";
 
-// Captures the args of each fetch call so we can assert on URL / method / body.
 type FetchCall = { url: string; init: RequestInit };
 
 const okResponse = (body: unknown): Response =>
@@ -87,8 +86,6 @@ describe("YnabClient", () => {
       return url;
     };
 
-    // YNAB v1.85 defaults since_date to one year ago when omitted, so every
-    // scope must send an explicit lower bound.
     test("routes each scope to its YNAB endpoint and always sends since_date", async () => {
       const cases: [Parameters<YnabClient["listTransactions"]>[1], string][] = [
         [{}, "/v1/plans/p1/transactions"],

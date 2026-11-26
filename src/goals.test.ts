@@ -22,8 +22,6 @@ const cat = (overrides: Partial<Category>): Category => ({
   ...overrides,
 });
 
-// nextGoalDate rolls recurring goals forward past "today", so pin the clock to
-// a date consistent with the fixtures' refMonth (2026-05).
 beforeAll(() => {
   setSystemTime(new Date("2026-05-15T12:00:00Z"));
 });
@@ -116,7 +114,6 @@ describe("interpretGoal", () => {
       }),
       "2026-05-01",
     );
-    // refMonth=2026-05, m2b=3 → projects to 2026-07-15 (already future).
     expect(view?.nextDueDate).toBe("2026-07-15");
     expect(view?.isRecurring).toBe(true);
   });
@@ -157,7 +154,6 @@ describe("snoozed goals", () => {
     );
     expect(view?.snoozed).toBe(true);
     expect(view?.label).toContain("snoozed this month");
-    // YNAB's own underfunded figure is passed through untouched.
     expect(view?.underfundedThisMonth).toBe(40_000);
   });
 

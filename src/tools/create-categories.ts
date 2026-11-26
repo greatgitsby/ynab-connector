@@ -1,21 +1,19 @@
 import { z } from "zod";
 import { planIdParam } from "../schemas";
 import type { McpServer } from "@modelcontextprotocol/server";
-import type { Category, CategoryGroup, NewCategory, YnabClient } from "../ynab";
-import { YnabError } from "../ynab";
-import { handleError, result, scopeDeniedError } from "../format";
+import type { CategoryGroup, NewCategory, YnabClient } from "../ynab";
+import { handleError, result, scopeDeniedError, errorMessage } from "../format";
 import { interpretGoal } from "../goals";
 import { resolveMonth } from "../month-window";
 import type { Props } from "../ynab-auth";
-import { GoalChangeSchema, goalBody } from "./set-category-goals";
-import { groupError, nameTakenError } from "./update-categories";
+import {
+  GoalFieldsSchema,
+  goalFields,
+  groupError,
+  nameTakenError,
+} from "../category-writes";
 
-// ---- Input + Result types
-
-export const NewCategorySchema = GoalChangeSchema.omit({
-  category_id: true,
-  remove_goal: true,
-}).extend({
+export const NewCategorySchema = GoalFieldsSchema.extend({
   category_group_id: z
     .string()
     .describe(
@@ -31,7 +29,6 @@ const ResultSchema = z.discriminatedUnion("ok", [
     category_id: z.string(),
     name: z.string(),
     group: z.string(),
-    // GoalView label; null means no goal.
     goal: z.string().nullable(),
   }),
   z.object({ ok: z.literal(false), name: z.string(), error: z.string() }),
@@ -45,12 +42,9 @@ export type CreateCategoriesResult = z.infer<
   typeof CreateCategoriesResultSchema
 >;
 
-// ---- Compute (pure): the POST body, or why not to send it
-
 export const newCategoryBody = (
   input: NewCategoryInput,
   groups: CategoryGroup[],
-  refMonth: string,
 ): { body: NewCategory } | { error: string } => {
   const { category_group_id, name, ...goal } = input;
   const badGroup = groupError(category_group_id, groups);
@@ -61,32 +55,10 @@ export const newCategoryBody = (
   if (Object.values(goal).every((v) => v === undefined)) return { body };
   if (goal.goal_target === undefined)
     return { error: "A goal needs goal_target." };
-  // A new category has no goal, so the goal rules are those for a goalless one.
-  const goalless: Category = {
-    id: "",
-    category_group_id,
-    name,
-    hidden: false,
-    internal: false,
-    deleted: false,
-    budgeted: 0,
-    activity: 0,
-    balance: 0,
-    goal_type: null,
-  };
-  const planned = goalBody({ category_id: "", ...goal }, goalless, refMonth);
+  const planned = goalFields(goal, null);
   if ("error" in planned) return planned;
   return { body: { ...body, ...planned.body } };
 };
-
-// ---- Effectful: one POST per category, in input order, never short-circuit
-
-const errorMessage = (e: unknown) =>
-  e instanceof YnabError
-    ? `YNAB ${e.status}: ${e.body}`
-    : e instanceof Error
-      ? e.message
-      : String(e);
 
 export const createCategories = async (
   client: YnabClient,
@@ -101,7 +73,7 @@ export const createCategories = async (
   let groups = data.category_groups;
   const results: CreateCategoryResult[] = [];
   for (const input of inputs) {
-    const planned = newCategoryBody(input, groups, refMonth);
+    const planned = newCategoryBody(input, groups);
     if ("error" in planned) {
       results.push({ ok: false, name: input.name, error: planned.error });
       continue;
@@ -117,7 +89,6 @@ export const createCategories = async (
         group: group?.name ?? category.category_group_id,
         goal: interpretGoal(category, refMonth, iso)?.label ?? null,
       });
-      // Later items in the batch see the new name.
       groups = groups.map((g) =>
         g === group
           ? { ...g, categories: [...(g.categories ?? []), category] }
@@ -129,8 +100,6 @@ export const createCategories = async (
   }
   return { results };
 };
-
-// ---- Render (pure)
 
 export const renderCreateCategories = (out: CreateCategoriesResult): string => {
   const n = out.results.length;
@@ -147,8 +116,6 @@ export const renderCreateCategories = (out: CreateCategoriesResult): string => {
   );
   return [header, ...lines].join("\n");
 };
-
-// ---- MCP tool registration
 
 const DESCRIPTION =
   "Create one or more categories in existing category groups, each optionally with a goal " +

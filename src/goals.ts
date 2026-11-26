@@ -1,23 +1,14 @@
 import type { Category } from "./ynab";
 import { fmtMoney } from "./format";
+import { addMonths, todayIso } from "./month-window";
 
-// Interpreted form of a YNAB Goal. Hides the goal_* matrix from callers.
-// Returned by interpretGoal(); null when the Category carries no goal.
 export interface GoalView {
-  // YNAB's goal_type: TB, TBD, MF, NEED, or DEBT.
   type: string;
-  // Pre-formatted suffix as used in category line rendering, e.g.
-  //   "$500/month, by 2026-08-01, needs $200 more this month"
   label: string;
-  // Raw target in milliunits — for callers that build their own line.
   targetAmount: number;
-  // Cadence suffix, e.g. "/month", "/week", " every 3 months", or "" for one-shot goals.
   cadenceLabel: string;
-  // Next due date as YYYY-MM-DD, or null when the goal has no date.
   nextDueDate: string | null;
-  // Milliunits still needed this month to stay on pace. 0 when fully funded.
   underfundedThisMonth: number;
-  // True for any cadence > 0; false for single-target goals.
   isRecurring: boolean;
   // True when the user snoozed the goal during the reference month
   // (YNAB v1.76 `goal_snoozed_at`). Snoozes apply to a single month.
@@ -26,8 +17,8 @@ export interface GoalView {
 
 // MF (monthly funding) targets are per-month; all other types are total
 // targets. Cadence-to-months conversion per YNAB API:
-//   1 = monthly (× frequency), 2 = weekly (no monthly equivalent — caller
-//   falls back to months_to_budget), 3..12 = every (cadence - 1) months,
+//   1 = monthly (× frequency), 2 = weekly (no monthly equivalent, so the
+//   caller falls back to months_to_budget), 3..12 = every (cadence - 1) months,
 //   13 = yearly (× frequency, so 12 × freq months), 14 = every 2 years.
 const cadenceMonths = (c: Category): number | null => {
   const cadence = c.goal_cadence ?? 0;
@@ -39,14 +30,9 @@ const cadenceMonths = (c: Category): number | null => {
   return null;
 };
 
-const addMonths = (year: number, month1: number, delta: number) => {
-  const t = new Date(Date.UTC(year, month1 - 1 + delta, 1));
-  return [t.getUTCFullYear(), t.getUTCMonth() + 1] as const;
-};
-
 // For recurring goals, YNAB keeps goal_target_date pinned to the original
 // anchor (often years in the past) and tracks the next occurrence via
-// goal_months_to_budget — months remaining in the current goal period,
+// goal_months_to_budget, the months left in the current goal period
 // counting the reference month. Project to the next occurrence and then keep
 // adding the cadence interval until the date is strictly in the future (YNAB
 // can still report a current-month deadline for a goal that's already met,
@@ -60,25 +46,17 @@ const nextGoalDate = (c: Category, refMonth: string): string | null => {
   const recurring = (c.goal_cadence ?? 0) > 0;
   const m2b = c.goal_months_to_budget;
   if (!recurring || m2b == null || m2b < 1) return target;
-  const [refY, refM] = refMonth.split("-").map(Number);
-  const anchorDay = target.slice(8, 10);
-  let [y, mo] = addMonths(refY, refM, m2b - 1);
+  const dueIn = (month: string) =>
+    `${month.slice(0, 7)}-${target.slice(8, 10)}`;
+  let month = addMonths(refMonth, m2b - 1);
   const step = cadenceMonths(c);
   if (step != null && step > 0) {
-    const today = new Date();
-    const todayIso = `${today.getUTCFullYear()}-${String(today.getUTCMonth() + 1).padStart(2, "0")}-${String(today.getUTCDate()).padStart(2, "0")}`;
-    while (`${y}-${String(mo).padStart(2, "0")}-${anchorDay}` <= todayIso) {
-      [y, mo] = addMonths(y, mo, step);
-    }
+    const today = todayIso();
+    while (dueIn(month) <= today) month = addMonths(month, step);
   }
-  return `${y}-${String(mo).padStart(2, "0")}-${anchorDay}`;
+  return dueIn(month);
 };
 
-// Human-readable cadence label so `$67` doesn't get misread as a monthly
-// target when it's actually weekly. Cadence codes per YNAB API:
-//   0 = single goal (no cadence); 1 = monthly × freq; 2 = weekly × freq;
-//   3..12 = every (cadence - 1) months; 13 = yearly × freq; 14 = every 2 years.
-// MF goals always represent a monthly funding amount regardless of cadence.
 const buildCadenceLabel = (c: Category): string => {
   if (c.goal_type === "MF") return "/month";
   const cadence = c.goal_cadence ?? 0;
@@ -120,6 +98,9 @@ export const interpretGoal = (
     snoozed,
   };
 };
+
+export const isUnderfunded = (g: GoalView | null): g is GoalView =>
+  g != null && !g.snoozed && g.underfundedThisMonth > 0;
 
 export const fmtGoalSuffix = (
   c: Category,

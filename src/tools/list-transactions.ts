@@ -17,14 +17,10 @@ import {
   text,
 } from "../format";
 
-// ---- Result type (zod is the source of truth; see docs/internals/structured-output.md)
-
 export const TransactionListSchema = z.object({
   iso: z.string(),
-  // Totals cover every matching transaction, not just the listed ones.
   count: z.number().int(),
   total: z.number().int(),
-  // Net amount per month ("YYYY-MM-01"), chronological.
   by_month: z.array(
     z.object({
       month: z.string(),
@@ -32,12 +28,9 @@ export const TransactionListSchema = z.object({
       total: z.number().int(),
     }),
   ),
-  // Most recent first, capped at `limit`.
   transactions: z.array(TransactionSchema),
 });
 export type TransactionList = z.infer<typeof TransactionListSchema>;
-
-// ---- Compute (pure)
 
 export const computeTransactionList = (
   fetched: Transaction[],
@@ -64,8 +57,6 @@ export const computeTransactionList = (
     transactions: sorted.slice(0, opts.limit),
   };
 };
-
-// ---- Render (pure)
 
 export const renderTransactionList = (
   list: TransactionList,
@@ -96,8 +87,6 @@ export const renderTransactionList = (
   }
   return out.join("\n");
 };
-
-// ---- MCP tool registration
 
 const DESCRIPTION =
   "Transactions in a plan, most recent first, with the count, net total, and " +

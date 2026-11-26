@@ -86,7 +86,6 @@ const transactions = [
   tx("t1", "sb", "2026-10-01"),
   tx("t2", "sb", "2026-10-20"),
   tx("t3", "sb2", "2025-01-01"),
-  // A split whose part names a different payee counts for both.
   tx("t4", "sbw", "2026-03-03", [{ payee_id: "bb" }, { payee_id: "sbw" }]),
   tx("t5", "amz", "2026-01-01"),
   tx("t6", "amz", "2026-02-01"),
@@ -160,8 +159,6 @@ describe("computePayeeReview", () => {
   });
 
   test("groups only names that match once formatting is ignored", () => {
-    // Not grouped: Main St, Amazon Payroll/Web Services, Apple Card Payment,
-    // Costco Gas, Venmo Jane Doe.
     expect(groupIds(review())).toEqual([
       ["sb", "sb2"],
       ["amz", "amz2"],

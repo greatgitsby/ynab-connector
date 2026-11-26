@@ -10,7 +10,6 @@ import {
   YnabError,
 } from "./ynab";
 
-// Env fields this handler needs from wrangler config + secrets.
 export interface AuthEnv {
   OAUTH_PROVIDER: OAuthHelpers;
   OAUTH_KV: KVNamespace;
@@ -18,17 +17,12 @@ export interface AuthEnv {
   YNAB_CLIENT_SECRET: string;
 }
 
-// What gets encrypted into the bearer token issued back to the MCP client and
-// surfaces as `this.props` inside YnabMcp.
 export const PropsSchema = z.looseObject({
   ynabUserId: z.string(),
   ynabAccessToken: z.string(),
   ynabRefreshToken: z.string(),
-  // unix seconds; tools refresh proactively or reactively on 401.
   ynabExpiresAt: z.number(),
-  // True when the YNAB token was issued with write scope. Absent on tokens
-  // issued before write support shipped — treated as false by write tools.
-  canWrite: z.boolean().optional(),
+  canWrite: z.boolean().default(false),
 });
 export type Props = z.infer<typeof PropsSchema>;
 
@@ -45,7 +39,7 @@ const AuthRequestSchema = z.looseObject({
   issuer: z.string().optional(),
 }) satisfies z.ZodType<AuthRequest>;
 
-const STATE_TTL = 600; // 10 min — covers a slow user typing their YNAB password.
+const STATE_TTL_SECONDS = 600;
 const STATE_KEY = (token: string) => `oauth:state:${token}`;
 
 const cookieFromRequest = (req: Request, name: string): string | null => {
@@ -61,7 +55,7 @@ const cookieFromRequest = (req: Request, name: string): string | null => {
 const SESSION_COOKIE = "__Host-YNAB_STATE";
 
 const setSessionCookie = (stateHash: string) =>
-  `${SESSION_COOKIE}=${stateHash}; HttpOnly; Secure; Path=/; SameSite=Lax; Max-Age=${STATE_TTL}`;
+  `${SESSION_COOKIE}=${stateHash}; HttpOnly; Secure; Path=/; SameSite=Lax; Max-Age=${STATE_TTL_SECONDS}`;
 
 const clearSessionCookie = () =>
   `${SESSION_COOKIE}=; HttpOnly; Secure; Path=/; SameSite=Lax; Max-Age=0`;
@@ -76,29 +70,23 @@ const sha256Hex = async (input: string): Promise<string> => {
     .join("");
 };
 
-// Stash the parsed client authorize request in KV under a random state
-// token, and return the hash of that token so we can bind it to the user's
-// session via cookie. The hash-in-cookie pattern means a leaked state in
-// referrer logs alone can't complete the flow.
 const storeState = async (
   req: AuthRequest,
   kv: KVNamespace,
 ): Promise<{ state: string; cookie: string }> => {
   const state = crypto.randomUUID();
   await kv.put(STATE_KEY(state), JSON.stringify(req), {
-    expirationTtl: STATE_TTL,
+    expirationTtl: STATE_TTL_SECONDS,
   });
   const cookie = setSessionCookie(await sha256Hex(state));
   return { state, cookie };
 };
 
 const readState = async (
-  state: string | null,
+  state: string,
   request: Request,
   kv: KVNamespace,
 ): Promise<AuthRequest> => {
-  if (!state) throw new Error("Missing state parameter");
-
   const stored = await kv.get(STATE_KEY(state));
   if (!stored) throw new Error("Invalid or expired state");
 
@@ -117,8 +105,9 @@ const consumeState = async (
   kv: KVNamespace,
 ): Promise<AuthRequest> => {
   const state = new URL(request.url).searchParams.get("state");
+  if (!state) throw new Error("Missing state parameter");
   const oauthReq = await readState(state, request, kv);
-  await kv.delete(STATE_KEY(state!));
+  await kv.delete(STATE_KEY(state));
   return oauthReq;
 };
 
@@ -131,10 +120,6 @@ const errorResponse = (msg: string, status = 400) =>
     },
   });
 
-// Exported as the OAuthProvider's defaultHandler. It owns every URL that the
-// provider doesn't claim itself (/.well-known/*, /authorize, /token, /register
-// are all handled by the provider before we see them — actually /authorize
-// is mounted on us; the provider just routes there).
 export const ynabAuthHandler = {
   async fetch(
     request: Request,
@@ -249,9 +234,7 @@ const CONSENT_PAGE_HEADERS = {
 const escapeHtml = (s: string) =>
   s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
-// Where the grant ends up. A client's name is self-chosen; the host of its
-// redirect_uri is what it can't fake.
-const describeUri = (uri: string): string => {
+const uriHost = (uri: string): string => {
   try {
     const u = new URL(uri);
     return u.protocol === "https:" || u.protocol === "http:"
@@ -262,15 +245,15 @@ const describeUri = (uri: string): string => {
   }
 };
 
-export const renderConsentPage = (
+const renderConsentPage = (
   oauthReq: AuthRequest,
   clientName: string | undefined,
   state: string,
 ): string => {
   const name = clientName?.trim() || "An unnamed app";
-  const dest = describeUri(oauthReq.redirectUri);
+  const dest = uriHost(oauthReq.redirectUri);
   const cimdHost = oauthReq.clientId.startsWith("https://")
-    ? describeUri(oauthReq.clientId)
+    ? uriHost(oauthReq.clientId)
     : null;
   const identity =
     cimdHost && cimdHost !== dest
@@ -309,6 +292,9 @@ ${identity}
 </html>`;
 };
 
+const oauthErrorCode = (raw: string | null): string | null =>
+  raw && /^[a-z_]{1,64}$/.test(raw) ? raw : null;
+
 const handleCallback = async (
   request: Request,
   env: AuthEnv,
@@ -316,11 +302,9 @@ const handleCallback = async (
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
   if (!code) {
-    // Anyone can put text in these query params, so echo only an OAuth error
-    // code, never error_description.
-    const err = url.searchParams.get("error") ?? "";
+    const err = oauthErrorCode(url.searchParams.get("error"));
     return errorResponse(
-      /^[a-z_]{1,64}$/.test(err)
+      err
         ? `YNAB authorization was not completed (${err}).`
         : "YNAB authorization was not completed.",
     );
@@ -344,8 +328,6 @@ const handleCallback = async (
       code,
       redirect_uri: new URL("/callback", request.url).href,
     });
-    // YNAB user id is stable per account — use it both as the OAuth userId
-    // and as a prop so tools can log/identify the active user.
     const { data } = await new YnabClient(tokens.access_token).getUser();
     ynabUserId = data.user.id;
   } catch (e) {

@@ -36,10 +36,6 @@ const INSTRUCTIONS =
   "list_scheduled_transactions shows upcoming bills and transfers that are not yet in balances. list_money_movements shows assignments and moves between categories, including money taken from savings goals. review_payees finds duplicate and little-used payees. " +
   "Write tools (assign_to_categories, set_category_goals, create_categories, update_categories, update_transactions, reconcile_account, rename_payees, merge_payees) edit category amounts and goals, create, rename, and move categories, edit existing transactions, reconcile an account against a statement, and rename or consolidate payees. assign_to_categories and update_transactions accept category names as well as ids, and report Ready to Assign and category balances after the write; assign_to_categories also adds or subtracts, funds goals, funds every underfunded goal except named ones, and has dry_run. merge_payees and set_category_goals preview unless called with apply: true. YNAB's API can't hide or delete categories; the user does that in YNAB. They need a connection with write scope; if one returns a \"read-only\" error, ask the user to disconnect and reconnect the connector in their MCP client.";
 
-// Builds the MCP server for one request. The server is stateless: the
-// Worker creates a fresh instance per request (see index.ts), and everything
-// user-specific arrives in `props`, decrypted from the bearer token by
-// OAuthProvider.
 export const buildServer = (props: Props): McpServer => {
   const server = new McpServer(
     {
@@ -49,7 +45,6 @@ export const buildServer = (props: Props): McpServer => {
       description:
         "Read and edit your YNAB (You Need A Budget) plans, accounts, categories, and transactions.",
       websiteUrl: "https://github.com/greatgitsby/ynab-connector",
-      // Without an icon, clients fall back to the moen.ai favicon.
       icons: [
         {
           src: "https://ynab.mcp.moen.ai/icon.svg",

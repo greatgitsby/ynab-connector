@@ -34,11 +34,13 @@ describe("renameRefusal", () => {
     );
   });
 
-  test("refuses another live payee's name, ignoring case, and points to merge_payees", () => {
+  test("refuses another live payee's name, ignoring case, emoji, and punctuation, and points to merge_payees", () => {
     expect(renameRefusal({ payee_id: "a", name: " amazon " }, payees)).toMatch(
       /merge_payees/,
     );
-    // A deleted payee's name is free, and so is a case change of one's own name.
+    expect(
+      renameRefusal({ payee_id: "a", name: "📦 Amazon!" }, payees),
+    ).toMatch(/merge_payees/);
     expect(
       renameRefusal({ payee_id: "a", name: "Old Name" }, payees),
     ).toBeNull();

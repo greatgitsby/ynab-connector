@@ -19,8 +19,6 @@ import {
   IncomeExpensePivotSchema,
 } from "./reflect-income-expense";
 
-// ---- Fixtures
-
 const cat = (overrides: Partial<Category>): Category => ({
   id: "cat-x",
   category_group_id: "grp-x",
@@ -74,9 +72,6 @@ const tx = (overrides: Partial<Transaction>): Transaction => ({
   ...overrides,
 });
 
-// A plan with three months (March/April/May 2026), two visible groups
-// ("Monthly Bills" and "Fun"), one hidden group ("Old Stuff"), an Inflow:RTA
-// category, and an Uncategorized internal category.
 const fixturePlan = (): PlanDetail => ({
   id: "plan-1",
   name: "Test Plan",
@@ -211,7 +206,6 @@ const fixturePlan = (): PlanDetail => ({
   ],
 });
 
-// Transactions: two payees feeding Inflow:RTA over the window.
 const fixtureTxs = (): Transaction[] => [
   tx({
     id: "t-1",
@@ -280,7 +274,6 @@ describe("computeIncomeExpensePivot", () => {
     expect(r.uncategorized).not.toBeNull();
     expect(r.uncategorized?.label).toBe("Uncategorized Transactions");
     expect(r.uncategorized?.monthly["2026-03-01"]).toBe(-25_000);
-    // April and May had zero Uncategorized activity in the fixture.
     expect(r.uncategorized?.monthly["2026-04-01"]).toBe(0);
     expect(r.uncategorized?.monthly["2026-05-01"]).toBe(0);
   });
@@ -301,7 +294,6 @@ describe("computeIncomeExpensePivot", () => {
     });
     expect(r.groups.map((g) => g.name)).toEqual(["Monthly Bills", "Fun"]);
     const bills = r.groups[0];
-    // Rent (-6M total) should sort before Groceries (-1.05M total).
     expect(bills.rows.map((r) => r.label)).toEqual(["Rent", "Groceries"]);
   });
 
@@ -320,7 +312,6 @@ describe("computeIncomeExpensePivot", () => {
       since: "2026-03-01",
       until: "2026-05-01",
     });
-    // March expense = -2,000,000 (rent) - 300,000 (groceries) - 50,000 (games) - 25,000 (uncat) = -2,375,000.
     expect(r.totals.expense["2026-03-01"]).toBe(-2_375_000);
   });
 
@@ -379,7 +370,7 @@ describe("computeIncomeExpensePivot", () => {
             amount: 2_000_000,
             memo: null,
             payee_id: null,
-            payee_name: null, // falls back to parent
+            payee_name: null,
             category_id: "rta",
             category_name: null,
           },

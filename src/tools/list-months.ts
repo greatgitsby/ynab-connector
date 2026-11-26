@@ -6,16 +6,11 @@ import { MonthSummarySchema } from "../wire";
 import { result, handleError, padMoney } from "../format";
 import { resolveMonthRange } from "../month-window";
 
-// ---- Result type (zod is the source of truth; see docs/internals/structured-output.md)
-
 export const MonthListSchema = z.object({
   iso: z.string(),
-  // Chronological.
   months: z.array(MonthSummarySchema),
 });
 export type MonthList = z.infer<typeof MonthListSchema>;
-
-// ---- Compute (pure)
 
 export const computeMonthList = (
   months: MonthSummary[],
@@ -26,8 +21,6 @@ export const computeMonthList = (
     .filter((m) => !m.deleted && m.month >= opts.since && m.month <= opts.until)
     .sort((a, b) => a.month.localeCompare(b.month)),
 });
-
-// ---- Render (pure)
 
 const COL = 14;
 
@@ -46,8 +39,6 @@ export const renderMonthList = (list: MonthList): string => {
   }
   return out.join("\n");
 };
-
-// ---- MCP tool registration
 
 const DESCRIPTION =
   "Plan-level totals for each month in a range: income, assigned " +

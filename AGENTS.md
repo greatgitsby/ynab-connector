@@ -10,7 +10,7 @@ Think of these instructions as good defaults, not hard rules. The developer's pr
 
 1. **Changing `MCP_RESOURCE`.** Every token's audience is bound to `https://ynab.mcp.moen.ai/mcp`. Any other production value signs every user out.
 2. **Refreshing YNAB tokens anywhere but `src/token-refresh.ts`.** YNAB refresh tokens rotate. Refreshing inside a tool call races concurrent calls and strands the grant with a spent token.
-3. **Skipping the write gate.** Every write handler checks `getProps().canWrite` before any YNAB call. Tokens from before write support deserialize with `canWrite === undefined`; treat that as `false`.
+3. **Skipping the write gate.** Every write handler checks `getProps().canWrite` before any YNAB call. Tokens from before write support carry no `canWrite`; `PropsSchema` defaults it to `false`. Keep that default.
 4. **Pruning `wrangler.jsonc` migrations.** Keep both migration entries, including the `v2` `deleted_classes` one. Cloudflare replays the history by tag.
 5. **Writing to a real plan.** Try writes only against a dedicated test plan. See [development](docs/operations/development.md#calling-ynab-directly).
 6. **Widening the write surface quietly.** Manual transaction creation, deletes, scheduled transaction edits (beyond `merge_payees` re-pointing a payee), are excluded on purpose. Category goals are writable only through `set_category_goals`, and category names and groups only through `create_categories` and `update_categories`. See [write tools](docs/internals/write-tools.md).

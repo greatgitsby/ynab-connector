@@ -2,9 +2,18 @@ import { describe, test, expect } from "bun:test";
 import type { Category, MonthDetail, Transaction } from "../ynab";
 import {
   computeTriageInbox,
+  type ComputeOpts,
   renderTriageInbox,
   TriageInboxSchema,
 } from "./triage-inbox";
+
+const triage = (
+  uncategorized: Transaction[],
+  unapproved: Transaction[],
+  month: MonthDetail,
+  opts: Partial<ComputeOpts> = {},
+) =>
+  computeTriageInbox(uncategorized, unapproved, month, { iso: "USD", ...opts });
 
 const cat = (overrides: Partial<Category>): Category => ({
   id: "cat-x",
@@ -63,7 +72,7 @@ describe("computeTriageInbox", () => {
         approved: true,
       }),
     ];
-    const r = computeTriageInbox(uncatTxs, [], monthDetail());
+    const r = triage(uncatTxs, [], monthDetail());
     expect(r.uncategorized.map((t) => t.id)).toEqual(["b", "c", "a"]);
   });
 
@@ -76,12 +85,12 @@ describe("computeTriageInbox", () => {
         approved: false,
       }),
     ];
-    const r = computeTriageInbox(uncatTxs, [], monthDetail());
+    const r = triage(uncatTxs, [], monthDetail());
     expect(r.uncategorized).toHaveLength(1);
   });
 
   test("leaves out tracking-account txs from both transaction sections", () => {
-    const r = computeTriageInbox(
+    const r = triage(
       [tx({ id: "bank" }), tx({ id: "401k", account_id: "acc-401k" })],
       [
         tx({ id: "bank-unapproved", category_id: "c1", approved: false }),
@@ -96,7 +105,7 @@ describe("computeTriageInbox", () => {
 
   test("dedupes autoCategorized against uncategorized by tx id", () => {
     const shared = tx({ id: "shared", date: "2026-05-10", approved: false });
-    const r = computeTriageInbox(
+    const r = triage(
       [shared],
       [shared, tx({ id: "auto-only", date: "2026-05-05", approved: false })],
       monthDetail(),
@@ -120,7 +129,7 @@ describe("computeTriageInbox", () => {
         }),
       ],
     });
-    const r = computeTriageInbox([], [], md);
+    const r = triage([], [], md);
     expect(r.overspent.map((c) => c.id)).toEqual(["deep", "small"]);
   });
 
@@ -139,10 +148,17 @@ describe("computeTriageInbox", () => {
           goal_target: 500_000,
           goal_type: "MF",
         }),
+        cat({
+          id: "snoozed",
+          goal_under_funded: 900_000,
+          goal_target: 900_000,
+          goal_type: "MF",
+          goal_snoozed_at: "2026-05-03T00:00:00Z",
+        }),
         cat({ id: "no-goal" }),
       ],
     });
-    const r = computeTriageInbox([], [], md);
+    const r = triage([], [], md);
     expect(r.underfunded.map((u) => u.id)).toEqual(["big-gap", "small-gap"]);
     expect(r.underfunded[0].cadence_label).toBe("/month");
     expect(r.underfunded[0].goal_target).toBe(500_000);
@@ -150,7 +166,7 @@ describe("computeTriageInbox", () => {
   });
 
   test("readyToAssign reads from month.to_be_budgeted", () => {
-    const r = computeTriageInbox([], [], monthDetail({ to_be_budgeted: 999 }));
+    const r = triage([], [], monthDetail({ to_be_budgeted: 999 }));
     expect(r.ready_to_assign).toBe(999);
   });
 
@@ -167,7 +183,7 @@ describe("computeTriageInbox", () => {
         }),
       ],
     });
-    const r = computeTriageInbox(
+    const r = triage(
       [tx({ id: "u-1", date: "2026-05-10" })],
       [tx({ id: "a-1", date: "2026-05-08", approved: false })],
       md,
@@ -178,7 +194,7 @@ describe("computeTriageInbox", () => {
 
 describe("renderTriageInbox", () => {
   const inbox = () =>
-    computeTriageInbox(
+    triage(
       [tx({ id: "u-1", payee_name: "Mystery", date: "2026-05-10" })],
       [
         tx({

@@ -29,7 +29,6 @@ const fetched: Transaction[] = [
   tx("t1", { date: "2026-03-10", amount: -10_000 }),
   tx("t3", { date: "2026-05-02", amount: -5_000 }),
   tx("t2", { date: "2026-03-20", amount: -2_500 }),
-  // A split parent from the account endpoint, with a deleted part.
   tx("p2", {
     date: "2026-03-05",
     amount: -3_000,
@@ -76,7 +75,6 @@ const fetched: Transaction[] = [
       },
     ],
   }),
-  // A hybrid split part from the category endpoint.
   tx("s1", {
     date: "2026-05-01",
     amount: -1_500,

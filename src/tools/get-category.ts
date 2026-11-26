@@ -1,12 +1,11 @@
 import { z } from "zod";
+import { interpretGoal } from "../goals";
 import { includeIdsParam, monthParam, planIdParam } from "../schemas";
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { Category, MonthDetail, YnabClient } from "../ynab";
 import { CategorySchema } from "../wire";
 import { result, handleError, fmtMoney, fmtCategoryLine } from "../format";
 import { resolveMonth, resolveMonthWindow } from "../month-window";
-
-// ---- Result type (zod is the source of truth; see docs/internals/structured-output.md)
 
 const HistoryRowSchema = z.object({
   month: z.string(),
@@ -15,7 +14,6 @@ const HistoryRowSchema = z.object({
   balance: z.number().int(),
   goal_target: z.number().int().nullable(),
   goal_under_funded: z.number().int().nullable(),
-  // True when the goal was fully funded that month; null without a goal.
   goal_met: z.boolean().nullable(),
 });
 
@@ -23,13 +21,10 @@ export const CategoryReportSchema = z.object({
   iso: z.string(),
   month: z.string(),
   category: CategorySchema,
-  // Chronological, ending at `month`. Empty unless since_month was given.
   history: z.array(HistoryRowSchema),
   truncation_note: z.string().nullable(),
 });
 export type CategoryReport = z.infer<typeof CategoryReportSchema>;
-
-// ---- Compute (pure)
 
 // `planMonths` comes from GET /plans/{id}, whose per-month goal_* fields are
 // that month's own funding state.
@@ -44,16 +39,16 @@ export const computeCategoryReport = (
   const history = (win?.months ?? []).flatMap((m) => {
     const c = m.categories.find((x) => x.id === category.id);
     if (!c) return [];
-    const hasGoal = !!c.goal_type && c.goal_target != null;
+    const goal = interpretGoal(c, m.month);
     return [
       {
         month: m.month,
         budgeted: c.budgeted,
         activity: c.activity,
         balance: c.balance,
-        goal_target: hasGoal ? (c.goal_target ?? null) : null,
-        goal_under_funded: hasGoal ? (c.goal_under_funded ?? 0) : null,
-        goal_met: hasGoal ? (c.goal_under_funded ?? 0) <= 0 : null,
+        goal_target: goal ? goal.targetAmount : null,
+        goal_under_funded: goal ? goal.underfundedThisMonth : null,
+        goal_met: goal ? goal.underfundedThisMonth === 0 : null,
       },
     ];
   });
@@ -65,8 +60,6 @@ export const computeCategoryReport = (
     truncation_note: win?.truncation_note ?? null,
   };
 };
-
-// ---- Render (pure)
 
 export const renderCategoryReport = (
   r: CategoryReport,
@@ -100,8 +93,6 @@ export const renderCategoryReport = (
   if (r.truncation_note) out.push(r.truncation_note);
   return out.join("\n");
 };
-
-// ---- MCP tool registration
 
 const DESCRIPTION =
   "One category in one month (default current): assigned (budgeted), " +

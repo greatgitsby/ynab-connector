@@ -49,6 +49,19 @@ export const buildServer = (props: Props): McpServer => {
       description:
         "Read and edit your YNAB (You Need A Budget) plans, accounts, categories, and transactions.",
       websiteUrl: "https://github.com/greatgitsby/ynab-connector",
+      // Without an icon, clients fall back to the moen.ai favicon.
+      icons: [
+        {
+          src: "https://ynab.mcp.moen.ai/icon.svg",
+          mimeType: "image/svg+xml",
+          sizes: ["any"],
+        },
+        {
+          src: "https://ynab.mcp.moen.ai/icon.png",
+          mimeType: "image/png",
+          sizes: ["512x512"],
+        },
+      ],
     },
     { instructions: INSTRUCTIONS },
   );

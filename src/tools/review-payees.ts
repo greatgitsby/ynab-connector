@@ -307,8 +307,8 @@ export const renderPayeeReview = (
 
 const DESCRIPTION =
   "Review payees for cleanup. By default it returns the first page of three " +
-  'sections: likely duplicates, names stored with HTML entities ("Board ' +
-  '&amp; Brew"), and little-used payees. Set `show` to one section, plus ' +
+  'sections: likely duplicates, names stored with HTML entities ("Bread ' +
+  '&amp; Butter"), and little-used payees. Set `show` to one section, plus ' +
   '`offset`, to page through it; `show: "all"` lists every payee by use. ' +
   "`query` narrows every section to names containing it, e.g. `query: " +
   '"starbucks"` to judge all of one merchant\'s payees. Duplicates are ' +

@@ -212,7 +212,9 @@ describe("setCategoryGoals", () => {
     expect(out.results.map((r) => r.ok)).toEqual([true, true, true, false]);
     const text = renderSetCategoryGoals(out);
     expect(text).toContain("nothing changed yet");
-    expect(text).toContain("Piano Lessons: $350.00/month; will remove the goal");
+    expect(text).toContain(
+      "Piano Lessons: $350.00/month; will remove the goal",
+    );
     expect(text).toContain("apply: true");
   });
 

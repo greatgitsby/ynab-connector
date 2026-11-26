@@ -172,8 +172,14 @@ describe("computePayeeReview", () => {
 
   test("flags names stored with HTML entities", () => {
     expect(review().html_escaped!.items).toEqual([
-      expect.objectContaining({ id: "brew1", unescaped_name: "Bread & Butter" }),
-      expect.objectContaining({ id: "brew2", unescaped_name: "Bread & Butter" }),
+      expect.objectContaining({
+        id: "brew1",
+        unescaped_name: "Bread & Butter",
+      }),
+      expect.objectContaining({
+        id: "brew2",
+        unescaped_name: "Bread & Butter",
+      }),
     ]);
   });
 

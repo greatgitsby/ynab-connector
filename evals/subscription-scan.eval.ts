@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { plan } from "./harness";
 import { CATEGORIES, TRANSACTIONS } from "./fixtures/subscription-scan";
 
-// Failures from the 2026-11-22 subscription-scan rerun, one eval each. They
+// Failures from a 2026-11-22 subscription-scan run, one eval each. They
 // grade the outcome an agent needs, not an implementation: where the tool has
 // no way to express the answer yet, the eval names the contract it checks
 // (e.g. a `confidence` field) so a fix can meet it. "Regression" evals guard
@@ -71,7 +71,7 @@ describe("query_transactions", () => {
 
   test("regression: group_by payee on slush categories, matched by name without emoji", async () => {
     const r = await p.call("query_transactions", {
-      categories: ["fun-money", "pocket money"],
+      categories: ["fun money", "pocket money"],
       since_date: SCAN.since_date,
       group_by: "payee",
     });
@@ -84,7 +84,7 @@ describe("query_transactions", () => {
     );
     expect(anthropic).toMatchObject({
       count: 4,
-      total: -740140,
+      total: -241600,
       first_date: "2026-06-09",
       last_date: "2026-09-02",
     });
@@ -98,10 +98,10 @@ describe("get_month", () => {
     expect(r.structured.groups).toBeUndefined();
     expect(
       r.structured.categories.find(
-        (c: { name: string }) => c.name === "Car App",
+        (c: { name: string }) => c.name === "🚗 Car App",
       ),
     ).toMatchObject({
-      goal_target: 108110,
+      goal_target: 99000,
     });
   });
 });

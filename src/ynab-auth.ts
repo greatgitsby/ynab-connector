@@ -78,12 +78,11 @@ const storeState = async (
   return { state, cookie };
 };
 
-const consumeState = async (
+const readState = async (
+  state: string | null,
   request: Request,
   kv: KVNamespace,
 ): Promise<AuthRequest> => {
-  const url = new URL(request.url);
-  const state = url.searchParams.get("state");
   if (!state) throw new Error("Missing state parameter");
 
   const stored = await kv.get(STATE_KEY(state));
@@ -94,12 +93,27 @@ const consumeState = async (
   if (cookieHash !== (await sha256Hex(state))) {
     throw new Error("State token does not match session");
   }
-  await kv.delete(STATE_KEY(state));
   return JSON.parse(stored) as AuthRequest;
 };
 
+const consumeState = async (
+  request: Request,
+  kv: KVNamespace,
+): Promise<AuthRequest> => {
+  const state = new URL(request.url).searchParams.get("state");
+  const oauthReq = await readState(state, request, kv);
+  await kv.delete(STATE_KEY(state!));
+  return oauthReq;
+};
+
 const errorResponse = (msg: string, status = 400) =>
-  new Response(msg, { status, headers: { "content-type": "text/plain" } });
+  new Response(msg, {
+    status,
+    headers: {
+      "content-type": "text/plain; charset=utf-8",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
 
 // Exported as the OAuthProvider's defaultHandler. It owns every URL that the
 // provider doesn't claim itself (/.well-known/*, /authorize, /token, /register
@@ -115,6 +129,9 @@ export const ynabAuthHandler = {
 
     if (url.pathname === "/authorize" && request.method === "GET") {
       return handleAuthorize(request, env);
+    }
+    if (url.pathname === "/authorize" && request.method === "POST") {
+      return handleConsent(request, env);
     }
     if (url.pathname === "/callback" && request.method === "GET") {
       return handleCallback(request, env);
@@ -142,19 +159,138 @@ const handleAuthorize = async (
     );
   }
   if (!oauthReq.clientId) return errorResponse("Missing client_id");
+  const client = await env.OAUTH_PROVIDER.lookupClient(oauthReq.clientId);
+  if (!client) return errorResponse("Unknown client_id");
 
   const { state, cookie } = await storeState(oauthReq, env.OAUTH_KV);
-  const redirectUri = new URL("/callback", request.url).href;
+  return new Response(renderConsentPage(oauthReq, client.clientName, state), {
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "Set-Cookie": cookie,
+      ...CONSENT_PAGE_HEADERS,
+    },
+  });
+};
+
+// Anyone can register a client (dynamic registration, or a metadata document
+// on their own domain) and send a user to /authorize. YNAB's own consent page
+// names this connector, not that client, and YNAB can skip it for a user who
+// approved us before. Without this step a link could hand the user's YNAB
+// token to whoever registered the redirect_uri. See the MCP spec's
+// "Confused Deputy Problem".
+const handleConsent = async (
+  request: Request,
+  env: AuthEnv,
+): Promise<Response> => {
+  if (request.headers.get("Origin") !== new URL(request.url).origin) {
+    return errorResponse("Cross-origin request refused", 403);
+  }
+  const form = await request.formData();
+  const state = form.get("state");
+
+  let oauthReq: AuthRequest;
+  try {
+    oauthReq = await readState(
+      typeof state === "string" ? state : null,
+      request,
+      env.OAUTH_KV,
+    );
+  } catch (e) {
+    return errorResponse(
+      `State validation failed: ${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
+
+  if (form.get("action") !== "approve") {
+    await env.OAUTH_KV.delete(STATE_KEY(state as string));
+    const denied = new URL(oauthReq.redirectUri);
+    denied.searchParams.set("error", "access_denied");
+    if (oauthReq.state) denied.searchParams.set("state", oauthReq.state);
+    if (oauthReq.issuer) denied.searchParams.set("iss", oauthReq.issuer);
+    return new Response(null, {
+      status: 302,
+      headers: { Location: denied.href, "Set-Cookie": clearSessionCookie() },
+    });
+  }
+
   const location = ynabAuthorizeUrl({
     client_id: env.YNAB_CLIENT_ID,
-    redirect_uri: redirectUri,
-    state,
+    redirect_uri: new URL("/callback", request.url).href,
+    state: state as string,
   });
+  return new Response(null, { status: 302, headers: { Location: location } });
+};
 
-  return new Response(null, {
-    status: 302,
-    headers: { Location: location, "Set-Cookie": cookie },
-  });
+const CONSENT_PAGE_HEADERS = {
+  "Content-Security-Policy":
+    "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'",
+  "X-Frame-Options": "DENY",
+  "X-Content-Type-Options": "nosniff",
+  "Cache-Control": "no-store",
+  // Not no-referrer: that makes browsers send `Origin: null` on the form POST.
+  "Referrer-Policy": "same-origin",
+};
+
+const escapeHtml = (s: string) =>
+  s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
+// Where the grant ends up. A client's name is self-chosen; the host of its
+// redirect_uri is what it can't fake.
+const describeUri = (uri: string): string => {
+  try {
+    const u = new URL(uri);
+    return u.protocol === "https:" || u.protocol === "http:"
+      ? u.host
+      : `${u.protocol}//${u.host}`;
+  } catch {
+    return uri;
+  }
+};
+
+export const renderConsentPage = (
+  oauthReq: AuthRequest,
+  clientName: string | undefined,
+  state: string,
+): string => {
+  const name = clientName?.trim() || "An unnamed app";
+  const dest = describeUri(oauthReq.redirectUri);
+  const cimdHost = /^https:\/\//.test(oauthReq.clientId)
+    ? describeUri(oauthReq.clientId)
+    : null;
+  const identity =
+    cimdHost && cimdHost !== dest
+      ? `<p>App identity published by <code>${escapeHtml(cimdHost)}</code>.</p>`
+      : "";
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Connect YNAB</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 16px/1.5 system-ui, sans-serif; max-width: 30rem; margin: 3rem auto; padding: 0 1rem; }
+  code { font-size: 1.05em; font-weight: 600; word-break: break-all; }
+  .warn { border-left: 3px solid #c80; padding-left: .75rem; }
+  .actions { display: flex; gap: .75rem; margin-top: 1.5rem; }
+  button { font: inherit; padding: .5rem 1.25rem; cursor: pointer; }
+</style>
+</head>
+<body>
+<h1>Connect YNAB?</h1>
+<p><strong>${escapeHtml(name)}</strong> wants full read and write access to your YNAB plans.</p>
+<p>If you approve, access is sent to <code>${escapeHtml(dest)}</code>.</p>
+${identity}
+<p class="warn">Approve only if you just started connecting YNAB in this app yourself. If a link from someone else brought you here, cancel.</p>
+<form method="post" action="/authorize">
+<input type="hidden" name="state" value="${escapeHtml(state)}">
+<div class="actions">
+<button type="submit" name="action" value="approve">Approve</button>
+<button type="submit" name="action" value="cancel">Cancel</button>
+</div>
+</form>
+</body>
+</html>`;
 };
 
 const handleCallback = async (

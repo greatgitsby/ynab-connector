@@ -47,11 +47,17 @@ Architecture and its constraints: [overview](docs/internals/overview.md). Vocabu
 
 - Say **Plan**, never "budget", except in YNAB wire fields (`budgeted`, `to_be_budgeted`, `on_budget`, …). See the [glossary](docs/internals/glossary.md).
 - Copy the shape of `src/tools/reflect-income-expense.ts` for a read tool and `src/tools/assign-to-categories.ts` for a write tool.
-- Result types are zod schemas; derive the TS type with `z.infer`. Never hand-write an interface beside a schema.
+- Result types are zod schemas; derive the TS type with `z.infer`. Never hand-write an interface beside a schema. Input schemas live at module level, and their types come from `z.infer` too.
+- `structuredContent` keys are snake_case.
+- A result with several outcomes is a discriminated union on a literal (`status`, `kind`, `ok`), each variant carrying only its own fields. No boolean flags with fields that mean something only when a flag is set, and no optional fields that are always present together. Branch with an exhaustive `switch`.
+- No `as` casts (`as const` is fine); the one cast is the YNAB response in `YnabClient.request`. Don't add `!`: return what the next step needs instead of looking it up again.
+- A compute function takes what it needs as required arguments. No optional parameter with a fallback for tests' sake. Three or more arguments, or two of the same type, go in one object.
 - Money stays in milliunits until render. Format with `fmtMoney`.
-- Interpret goals through `interpretGoal` / `GoalView`, never raw `goal_*` fields. Filter through `src/predicates.ts`, not inline boolean expressions on the YNAB shape.
-- Tool-local helpers stay in the tool file. `src/` holds only what several tools share.
-- Default to no comment. Write one only for a constraint, a YNAB quirk, or an invariant the code can't show.
+- Interpret goals through `interpretGoal` / `GoalView`, never raw `goal_*` fields; decide underfunded with `isUnderfunded`. Filter through `src/predicates.ts`, not inline boolean expressions on the YNAB shape.
+- Compare names with `normalizeName`, the way the resolver matches them, so a uniqueness check never lets in a name the resolver then calls ambiguous.
+- Tool-local helpers stay in the tool file. `src/` holds only what several tools share. Search `src/` before writing a helper: errors, dates, and months already have one.
+- Export only what another module or a test imports.
+- Default to no comment. Write one only for a constraint, a YNAB quirk, or an invariant the code can't show. A comment that explains our own surprising code means the code needs reshaping: rename, extract, or type it until the comment is unnecessary. No section banners, no field narration, no commented-out code.
 
 ## Issues and pull requests
 

@@ -34,7 +34,13 @@ type CompactCategory = z.infer<typeof CompactCategorySchema>;
 export const MonthReportSchema = MonthSummarySchema.extend({
   iso: z.string(),
   groups: z
-    .array(z.object({ id: z.string(), name: z.string(), categories: z.array(CategorySchema) }))
+    .array(
+      z.object({
+        id: z.string(),
+        name: z.string(),
+        categories: z.array(CategorySchema),
+      }),
+    )
     .optional(),
   categories: z.array(CompactCategorySchema).optional(),
 });
@@ -54,7 +60,11 @@ const matchesOnly = (c: Category, only: readonly Only[]): boolean =>
     }
   });
 
-const toCompact = (c: Category, group: string, month: string): CompactCategory => {
+const toCompact = (
+  c: Category,
+  group: string,
+  month: string,
+): CompactCategory => {
   const goal = interpretGoal(c, month);
   return {
     id: c.id,
@@ -84,7 +94,12 @@ const toCompact = (c: Category, group: string, month: string): CompactCategory =
 export const computeMonthReport = (
   monthDetail: MonthDetail,
   categoryGroups: CategoryGroup[],
-  opts: { includeHidden: boolean; iso: string; only?: readonly Only[]; compact?: boolean },
+  opts: {
+    includeHidden: boolean;
+    iso: string;
+    only?: readonly Only[];
+    compact?: boolean;
+  },
 ): MonthReport => {
   const { categories: monthCategories, ...summary } = monthDetail;
   const groupIndex = new Map(categoryGroups.map((g, i) => [g.id, i]));

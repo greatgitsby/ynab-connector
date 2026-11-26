@@ -2,12 +2,7 @@ import { z } from "zod";
 import { includeIdsParam, planIdParam } from "../schemas";
 import { CategorySchema, TransactionSchema } from "../wire";
 import type { McpServer } from "@modelcontextprotocol/server";
-import type {
-  Category,
-  MonthDetail,
-  Transaction,
-  YnabClient,
-} from "../ynab";
+import type { MonthDetail, Transaction, YnabClient } from "../ynab";
 import {
   result,
   handleError,
@@ -95,9 +90,7 @@ export const computeTriageInbox = (
     .sort((a, b) => a.balance - b.balance);
   const underfundedCats = monthCats
     .filter((cat) => (cat.goal_under_funded ?? 0) > 0)
-    .sort(
-      (a, b) => (b.goal_under_funded ?? 0) - (a.goal_under_funded ?? 0),
-    );
+    .sort((a, b) => (b.goal_under_funded ?? 0) - (a.goal_under_funded ?? 0));
 
   const underfunded: UnderfundedGoalRow[] = underfundedCats.map((cat) => {
     const goal = interpretGoal(cat, monthDetail.month, iso);

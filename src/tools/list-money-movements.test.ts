@@ -1,4 +1,4 @@
-import { describe, test, expect } from "vitest";
+import { describe, test, expect } from "bun:test";
 import type { Category, MoneyMovement } from "../ynab";
 import {
   computeMoneyMovements,
@@ -22,7 +22,11 @@ const cat = (id: string, overrides: Partial<Category> = {}): Category => ({
 const categories = [
   cat("Travel", { goal_type: "TBD", goal_target: 2_000_000 }),
   cat("Dining"),
-  cat("Rent", { goal_type: "NEED", goal_cadence: 1, goal_cadence_frequency: 1 }),
+  cat("Rent", {
+    goal_type: "NEED",
+    goal_cadence: 1,
+    goal_cadence_frequency: 1,
+  }),
 ];
 
 let n = 0;
@@ -74,7 +78,9 @@ describe("computeMoneyMovements", () => {
   test("drops deleted and out-of-range rows, names Ready to Assign", () => {
     const r = computeMoneyMovements(movements, categories, opts);
     expect(r.money_movements).toHaveLength(5);
-    expect(r.money_movements.at(-1)?.from_category_name).toBe("Ready to Assign");
+    expect(r.money_movements.at(-1)?.from_category_name).toBe(
+      "Ready to Assign",
+    );
   });
 
   test("flags only category-to-category moves out of savings goals", () => {
@@ -84,7 +90,9 @@ describe("computeMoneyMovements", () => {
         .filter((m) => m.from_savings)
         .map((m) => [m.from_category_name, m.to_category_name]),
     ).toEqual([["Travel", "Dining"]]);
-    expect(renderMoneyMovements(r, { includeIds: false, maxRows: 50 })).toContain(
+    expect(
+      renderMoneyMovements(r, { includeIds: false, maxRows: 50 }),
+    ).toContain(
       "## Moved out of savings goals (1)\n- 2026-10 $120.00 Travel → Dining",
     );
   });

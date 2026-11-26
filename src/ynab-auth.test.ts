@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
-import type { AuthRequest, OAuthHelpers } from "@cloudflare/workers-oauth-provider";
+import { describe, expect, it } from "bun:test";
+import type {
+  AuthRequest,
+  OAuthHelpers,
+} from "@cloudflare/workers-oauth-provider";
 import { ynabAuthHandler, type AuthEnv } from "./ynab-auth";
 
 const ORIGIN = "https://ynab.mcp.moen.ai";
@@ -25,7 +28,11 @@ const makeEnv = (clientName = 'Claude <script>alert("x")</script>') => {
     OAUTH_KV: kv as unknown as KVNamespace,
     OAUTH_PROVIDER: {
       parseAuthRequest: async () => oauthReq,
-      lookupClient: async () => ({ clientId: "client-1", redirectUris: [oauthReq.redirectUri], clientName }),
+      lookupClient: async () => ({
+        clientId: "client-1",
+        redirectUris: [oauthReq.redirectUri],
+        clientName,
+      }),
     } as unknown as OAuthHelpers,
     YNAB_CLIENT_ID: "ynab-client",
     YNAB_CLIENT_SECRET: "secret",
@@ -36,7 +43,11 @@ const makeEnv = (clientName = 'Claude <script>alert("x")</script>') => {
 const ctx = {} as ExecutionContext;
 
 const startFlow = async (env: AuthEnv) => {
-  const res = await ynabAuthHandler.fetch(new Request(`${ORIGIN}/authorize?client_id=client-1`), env, ctx);
+  const res = await ynabAuthHandler.fetch(
+    new Request(`${ORIGIN}/authorize?client_id=client-1`),
+    env,
+    ctx,
+  );
   const html = await res.text();
   const state = /name="state" value="([^"]+)"/.exec(html)![1];
   const cookie = res.headers.get("Set-Cookie")!.split(";")[0];
@@ -49,7 +60,10 @@ const post = (
 ) =>
   new Request(`${ORIGIN}/authorize`, {
     method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded", ...headers },
+    headers: {
+      "content-type": "application/x-www-form-urlencoded",
+      ...headers,
+    },
     body: new URLSearchParams(fields),
   });
 
@@ -59,7 +73,9 @@ describe("/authorize consent", () => {
     const { res, html } = await startFlow(env);
     expect(res.status).toBe(200);
     expect(res.headers.get("Location")).toBeNull();
-    expect(res.headers.get("Content-Security-Policy")).toContain("frame-ancestors 'none'");
+    expect(res.headers.get("Content-Security-Policy")).toContain(
+      "frame-ancestors 'none'",
+    );
     expect(html).toContain("<code>evil.example</code>");
     expect(html).toContain("Claude &#60;script&#62;");
     expect(html).not.toContain("<script>");
@@ -75,7 +91,9 @@ describe("/authorize consent", () => {
     );
     expect(res.status).toBe(302);
     const loc = new URL(res.headers.get("Location")!);
-    expect(loc.origin + loc.pathname).toBe("https://app.ynab.com/oauth/authorize");
+    expect(loc.origin + loc.pathname).toBe(
+      "https://app.ynab.com/oauth/authorize",
+    );
     expect(loc.searchParams.get("state")).toBe(state);
     expect(loc.searchParams.get("redirect_uri")).toBe(`${ORIGIN}/callback`);
     // /callback consumes it.
@@ -89,7 +107,11 @@ describe("/authorize consent", () => {
   ])("refuses %s", async (_, headers: Record<string, string>, status) => {
     const { env } = makeEnv();
     const { state } = await startFlow(env);
-    const res = await ynabAuthHandler.fetch(post({ state, action: "approve" }, headers), env, ctx);
+    const res = await ynabAuthHandler.fetch(
+      post({ state, action: "approve" }, headers),
+      env,
+      ctx,
+    );
     expect(res.status).toBe(status);
     expect(res.headers.get("Location")).toBeNull();
   });
@@ -99,7 +121,10 @@ describe("/authorize consent", () => {
     const victim = await startFlow(env);
     const other = await startFlow(env);
     const res = await ynabAuthHandler.fetch(
-      post({ state: victim.state, action: "approve" }, { Origin: ORIGIN, Cookie: other.cookie }),
+      post(
+        { state: victim.state, action: "approve" },
+        { Origin: ORIGIN, Cookie: other.cookie },
+      ),
       env,
       ctx,
     );
@@ -128,7 +153,9 @@ describe("/callback errors", () => {
   it("echoes only an OAuth error code, never error_description", async () => {
     const { env } = makeEnv();
     const res = await ynabAuthHandler.fetch(
-      new Request(`${ORIGIN}/callback?error=access_denied&error_description=Call+555-0100+to+unlock`),
+      new Request(
+        `${ORIGIN}/callback?error=access_denied&error_description=Call+555-0100+to+unlock`,
+      ),
       env,
       ctx,
     );

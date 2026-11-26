@@ -1,4 +1,4 @@
-import { describe, test, expect } from "vitest";
+import { describe, test, expect } from "bun:test";
 import type { Category, MonthDetail, Transaction } from "../ynab";
 import {
   computeTriageInbox,
@@ -180,7 +180,14 @@ describe("renderTriageInbox", () => {
   const inbox = () =>
     computeTriageInbox(
       [tx({ id: "u-1", payee_name: "Mystery", date: "2026-05-10" })],
-      [tx({ id: "a-1", payee_name: "Auto", date: "2026-05-08", approved: false })],
+      [
+        tx({
+          id: "a-1",
+          payee_name: "Auto",
+          date: "2026-05-08",
+          approved: false,
+        }),
+      ],
       monthDetail({
         categories: [
           cat({ id: "o-1", name: "Bills", balance: -100_000 }),

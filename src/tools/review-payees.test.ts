@@ -1,5 +1,10 @@
-import { describe, test, expect } from "vitest";
-import type { Payee, ScheduledTransaction, SubTransaction, Transaction } from "../ynab";
+import { describe, test, expect } from "bun:test";
+import type {
+  Payee,
+  ScheduledTransaction,
+  SubTransaction,
+  Transaction,
+} from "../ynab";
 import {
   computePayeeReview,
   payeeKey,
@@ -17,17 +22,32 @@ const p = (id: string, name: string, over: Partial<Payee> = {}): Payee => ({
   ...over,
 });
 
-const tx = (id: string, payee_id: string | null, date: string, subs: Partial<SubTransaction>[] = []) =>
+const tx = (
+  id: string,
+  payee_id: string | null,
+  date: string,
+  subs: Partial<SubTransaction>[] = [],
+) =>
   ({
     id,
     date,
     amount: -1000,
     payee_id,
     deleted: false,
-    subtransactions: subs.map((s, i) => ({ id: `${id}-${i}`, transaction_id: id, amount: -500, deleted: false, ...s })),
+    subtransactions: subs.map((s, i) => ({
+      id: `${id}-${i}`,
+      transaction_id: id,
+      amount: -500,
+      deleted: false,
+      ...s,
+    })),
   }) as Transaction;
 
-const st = (id: string, payee_id: string | null, subs: Partial<SubTransaction>[] = []) =>
+const st = (
+  id: string,
+  payee_id: string | null,
+  subs: Partial<SubTransaction>[] = [],
+) =>
   ({
     id,
     date_next: "2026-12-01",
@@ -75,7 +95,10 @@ const transactions = [
   tx("t9", "brew1", "2024-05-05"),
 ];
 
-const scheduled = [st("s1", "gym"), st("s2", null, [{ payee_id: "bb2", deleted: false }])];
+const scheduled = [
+  st("s1", "gym"),
+  st("s2", null, [{ payee_id: "bb2", deleted: false }]),
+];
 
 const opts = (over: Partial<ReviewOptions> = {}): ReviewOptions => ({
   maxUses: 1,
@@ -116,11 +139,23 @@ describe("computePayeeReview", () => {
     const all = review({ show: "all", limit: 500 });
     const usage = (id: string) => all.all!.items.find((u) => u.id === id);
     expect(all.payee_count).toBe(20);
-    expect(usage("sb")).toMatchObject({ transaction_count: 2, last_used: "2026-10-20" });
+    expect(usage("sb")).toMatchObject({
+      transaction_count: 2,
+      last_used: "2026-10-20",
+    });
     expect(usage("sbw")).toMatchObject({ transaction_count: 1 });
-    expect(usage("bb")).toMatchObject({ transaction_count: 1, last_used: "2026-03-03" });
-    expect(usage("bb2")).toMatchObject({ transaction_count: 0, scheduled_count: 1 });
-    expect(usage("never")).toMatchObject({ transaction_count: 0, last_used: null });
+    expect(usage("bb")).toMatchObject({
+      transaction_count: 1,
+      last_used: "2026-03-03",
+    });
+    expect(usage("bb2")).toMatchObject({
+      transaction_count: 0,
+      scheduled_count: 1,
+    });
+    expect(usage("never")).toMatchObject({
+      transaction_count: 0,
+      last_used: null,
+    });
     expect(usage("xfer")).toBeUndefined();
   });
 
@@ -143,9 +178,21 @@ describe("computePayeeReview", () => {
   });
 
   test("little used: at most max_uses transactions and nothing scheduled, oldest first", () => {
-    const little = (maxUses: number) => review({ maxUses }).little_used!.items.map((u) => u.id);
+    const little = (maxUses: number) =>
+      review({ maxUses }).little_used!.items.map((u) => u.id);
     expect([...little(0)].sort()).toEqual([
-      "amz2", "amzpay", "apple", "applecard", "aws", "brew2", "brew3", "costco", "costcogas", "never", "venmo", "venmojane",
+      "amz2",
+      "amzpay",
+      "apple",
+      "applecard",
+      "aws",
+      "brew2",
+      "brew3",
+      "costco",
+      "costcogas",
+      "never",
+      "venmo",
+      "venmojane",
     ]);
     expect(little(1).slice(12)).toEqual(["brew1", "sb2", "bb", "sbw"]);
   });
@@ -162,22 +209,33 @@ describe("computePayeeReview", () => {
     expect(r.little_used).toBeUndefined();
     expect(r.html_escaped).toBeUndefined();
     expect(r.duplicates!.total).toBe(4);
-    expect(groupIds(r)).toEqual([["amz", "amz2"], ["brew1", "brew3", "brew2"]]);
+    expect(groupIds(r)).toEqual([
+      ["amz", "amz2"],
+      ["brew1", "brew3", "brew2"],
+    ]);
     expect(review().all).toBeUndefined();
   });
 
   test("conforms to PayeeReviewSchema", () => {
     expect(() => PayeeReviewSchema.parse(review())).not.toThrow();
-    expect(() => PayeeReviewSchema.parse(review({ show: "all" }))).not.toThrow();
+    expect(() =>
+      PayeeReviewSchema.parse(review({ show: "all" })),
+    ).not.toThrow();
   });
 });
 
 describe("renderPayeeReview", () => {
   test("shows usage, ids, and how to fetch the next page", () => {
     const o = opts({ show: "duplicates", limit: 2 });
-    const text = renderPayeeReview(computePayeeReview(payees, transactions, scheduled, o), o, true);
+    const text = renderPayeeReview(
+      computePayeeReview(payees, transactions, scheduled, o),
+      o,
+      true,
+    );
     expect(text).toContain("Likely duplicates (1–2 of 4)");
-    expect(text).toContain("Starbucks (2 transactions, last 2026-10-20) — id sb");
+    expect(text).toContain(
+      "Starbucks (2 transactions, last 2026-10-20) — id sb",
+    );
     expect(text).toContain('More: show "duplicates", offset 2.');
   });
 });

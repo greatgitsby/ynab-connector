@@ -1,4 +1,4 @@
-import { describe, test, expect } from "vitest";
+import { describe, test, expect } from "bun:test";
 import type { Account, Transaction } from "../ynab";
 import {
   computeNetWorth,
@@ -65,10 +65,25 @@ describe("computeNetWorth", () => {
     // $100 left checking on 2026-05-10, so April ended $100 higher.
     const accounts = [account({ id: "checking", balance: 1_000_000 })];
     const txs = [
-      tx({ id: "t1", account_id: "checking", date: "2026-05-10", amount: -100_000 }),
+      tx({
+        id: "t1",
+        account_id: "checking",
+        date: "2026-05-10",
+        amount: -100_000,
+      }),
       // A transfer between two accounts cancels out.
-      tx({ id: "t2", account_id: "checking", date: "2026-05-12", amount: -50_000 }),
-      tx({ id: "t3", account_id: "savings", date: "2026-05-12", amount: 50_000 }),
+      tx({
+        id: "t2",
+        account_id: "checking",
+        date: "2026-05-12",
+        amount: -50_000,
+      }),
+      tx({
+        id: "t3",
+        account_id: "savings",
+        date: "2026-05-12",
+        amount: 50_000,
+      }),
     ];
     const r = computeNetWorth(
       [...accounts, account({ id: "savings", balance: 50_000 })],

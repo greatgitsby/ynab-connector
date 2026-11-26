@@ -54,7 +54,7 @@ export const renderScheduledTransactionList = (
 const DESCRIPTION =
   "Scheduled transactions: upcoming bills, paychecks, and transfers that " +
   "YNAB will enter automatically on date_next and then repeat at " +
-  "`frequency` (\"never\" means once). They are not yet in account balances " +
+  '`frequency` ("never" means once). They are not yet in account balances ' +
   "or category activity, so count them as money already spoken for. Soonest " +
   "first; pass until_date (YYYY-MM-DD) to stop at a date. Amounts are " +
   "signed: outflows are negative.";

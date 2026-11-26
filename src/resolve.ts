@@ -27,8 +27,7 @@ export interface Named {
 }
 
 export type Resolution<T> =
-  | { ok: true; matches: T[] }
-  | { ok: false; error: string };
+  { ok: true; matches: T[] } | { ok: false; error: string };
 
 const label = (x: Named) => (x.group ? `${x.group}: ${x.name}` : x.name);
 
@@ -48,8 +47,7 @@ const candidates = <T extends Named>(items: T[], ref: string): T[] => {
   return items.filter((x) => normalizeName(x.name).includes(want));
 };
 
-const notFound = (kind: string, ref: string) =>
-  `No ${kind} matches "${ref}".`;
+const notFound = (kind: string, ref: string) => `No ${kind} matches "${ref}".`;
 
 // For filters: every match counts, so "Apple" covers two payees named Apple.
 export const resolveAll = <T extends Named>(
@@ -85,9 +83,7 @@ export const resolveOne = <T extends Named>(
   };
 };
 
-export const categoryRefs = (
-  groups: CategoryGroup[],
-): Named[] =>
+export const categoryRefs = (groups: CategoryGroup[]): Named[] =>
   groups
     .filter((g) => !g.deleted)
     .flatMap((g) =>
@@ -101,14 +97,10 @@ export const categoryRefs = (
         })),
     );
 
-export const payeeRefs = (
-  payees: Payee[],
-): Named[] =>
+export const payeeRefs = (payees: Payee[]): Named[] =>
   payees.filter((p) => !p.deleted).map((p) => ({ id: p.id, name: p.name }));
 
-export const accountRefs = (
-  accounts: Account[],
-): Named[] =>
+export const accountRefs = (accounts: Account[]): Named[] =>
   accounts
     .filter((a) => !a.deleted)
     .map((a) => ({ id: a.id, name: a.name, inactive: a.closed }));

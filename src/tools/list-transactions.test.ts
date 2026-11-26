@@ -1,4 +1,4 @@
-import { describe, test, expect } from "vitest";
+import { describe, test, expect } from "bun:test";
 import type { Transaction } from "../ynab";
 import {
   computeTransactionList,
@@ -35,9 +35,45 @@ const fetched: Transaction[] = [
     amount: -3_000,
     category_name: "Split",
     subtransactions: [
-      { id: "p2-a", transaction_id: "p2", amount: -2_000, memo: "Spotify", payee_id: null, payee_name: null, category_id: "c-a", category_name: "Music", transfer_account_id: null, transfer_transaction_id: null, deleted: false },
-      { id: "p2-b", transaction_id: "p2", amount: -1_000, memo: null, payee_id: null, payee_name: "Netflix", category_id: "c-b", category_name: "TV", transfer_account_id: null, transfer_transaction_id: null, deleted: false },
-      { id: "p2-x", transaction_id: "p2", amount: -9_000, memo: null, payee_id: null, payee_name: null, category_id: "c-a", category_name: "Gone", transfer_account_id: null, transfer_transaction_id: null, deleted: true },
+      {
+        id: "p2-a",
+        transaction_id: "p2",
+        amount: -2_000,
+        memo: "Spotify",
+        payee_id: null,
+        payee_name: null,
+        category_id: "c-a",
+        category_name: "Music",
+        transfer_account_id: null,
+        transfer_transaction_id: null,
+        deleted: false,
+      },
+      {
+        id: "p2-b",
+        transaction_id: "p2",
+        amount: -1_000,
+        memo: null,
+        payee_id: null,
+        payee_name: "Netflix",
+        category_id: "c-b",
+        category_name: "TV",
+        transfer_account_id: null,
+        transfer_transaction_id: null,
+        deleted: false,
+      },
+      {
+        id: "p2-x",
+        transaction_id: "p2",
+        amount: -9_000,
+        memo: null,
+        payee_id: null,
+        payee_name: null,
+        category_id: "c-a",
+        category_name: "Gone",
+        transfer_account_id: null,
+        transfer_transaction_id: null,
+        deleted: true,
+      },
     ],
   }),
   // A hybrid split part from the category endpoint.
@@ -78,7 +114,7 @@ describe("renderTransactionList", () => {
       { includeIds: true },
     );
     expect(out).toContain(
-      "(2-way split) [Checking] — id p2\n  - -$2.00 → Music \"Spotify\" — id p2-a\n  - -$1.00 Netflix → TV — id p2-b",
+      '(2-way split) [Checking] — id p2\n  - -$2.00 → Music "Spotify" — id p2-a\n  - -$1.00 Netflix → TV — id p2-b',
     );
     expect(out).not.toContain("Gone");
   });

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test } from "bun:test";
 import type { Transaction } from "./ynab";
 import { flattenTransactions, pickRow } from "./rows";
 
@@ -21,7 +21,11 @@ const tx = (over: Partial<Transaction>): Transaction => ({
   ...over,
 });
 
-const sub = (id: string, amount: number, over: Record<string, unknown> = {}) => ({
+const sub = (
+  id: string,
+  amount: number,
+  over: Record<string, unknown> = {},
+) => ({
   id,
   transaction_id: "t1",
   amount,
@@ -41,10 +45,23 @@ describe("flattenTransactions", () => {
       tx({
         category_id: null,
         category_name: "Split",
-        subtransactions: [sub("s1", -3000, { memo: "own memo" }), sub("s2", -2000, { payee_id: "p2", payee_name: "Other" }), sub("s3", -9, { deleted: true })],
+        subtransactions: [
+          sub("s1", -3000, { memo: "own memo" }),
+          sub("s2", -2000, { payee_id: "p2", payee_name: "Other" }),
+          sub("s3", -9, { deleted: true }),
+        ],
       }),
     ]);
-    expect(rows.map((r) => [r.id, r.part_id, r.amount, r.payee, r.category_id, r.memo])).toEqual([
+    expect(
+      rows.map((r) => [
+        r.id,
+        r.part_id,
+        r.amount,
+        r.payee,
+        r.category_id,
+        r.memo,
+      ]),
+    ).toEqual([
       ["t1", "s1", -3000, "Store", "c-s1", "own memo"],
       ["t1", "s2", -2000, "Other", "c-s2", "parent memo"],
     ]);
@@ -62,8 +79,17 @@ describe("flattenTransactions", () => {
 describe("pickRow", () => {
   test("returns only chosen fields, adds part_id with id, and drops null memo", () => {
     const [plain] = flattenTransactions([tx({ memo: null })]);
-    expect(pickRow(plain, ["id", "amount", "memo"])).toEqual({ id: "t1", amount: -5000 });
-    const [part] = flattenTransactions([tx({ subtransactions: [sub("s1", -5000)] })]);
-    expect(pickRow(part, ["id", "category"])).toEqual({ id: "t1", part_id: "s1", category: "Cat s1" });
+    expect(pickRow(plain, ["id", "amount", "memo"])).toEqual({
+      id: "t1",
+      amount: -5000,
+    });
+    const [part] = flattenTransactions([
+      tx({ subtransactions: [sub("s1", -5000)] }),
+    ]);
+    expect(pickRow(part, ["id", "category"])).toEqual({
+      id: "t1",
+      part_id: "s1",
+      category: "Cat s1",
+    });
   });
 });

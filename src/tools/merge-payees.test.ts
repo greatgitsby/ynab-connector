@@ -1,4 +1,4 @@
-import { describe, test, expect, vi } from "vitest";
+import { describe, test, expect, vi } from "bun:test";
 import {
   YnabError,
   type Payee,
@@ -24,18 +24,33 @@ const p = (id: string, name: string, over: Partial<Payee> = {}): Payee => ({
   ...over,
 });
 
-const tx = (id: string, payee_id: string | null, subs: Partial<SubTransaction>[] = [], over: Partial<Transaction> = {}) =>
+const tx = (
+  id: string,
+  payee_id: string | null,
+  subs: Partial<SubTransaction>[] = [],
+  over: Partial<Transaction> = {},
+) =>
   ({
     id,
     date: "2026-05-01",
     amount: -1000,
     payee_id,
     deleted: false,
-    subtransactions: subs.map((s, i) => ({ id: `${id}-${i}`, transaction_id: id, amount: -500, deleted: false, ...s })),
+    subtransactions: subs.map((s, i) => ({
+      id: `${id}-${i}`,
+      transaction_id: id,
+      amount: -500,
+      deleted: false,
+      ...s,
+    })),
     ...over,
   }) as Transaction;
 
-const st = (id: string, payee_id: string | null, subs: Partial<SubTransaction>[] = []) =>
+const st = (
+  id: string,
+  payee_id: string | null,
+  subs: Partial<SubTransaction>[] = [],
+) =>
   ({
     id,
     date_first: "2026-01-01",
@@ -73,12 +88,22 @@ const transactions = [
 
 const scheduled = [
   st("s1", "dup1"),
-  st("s2", "dup2", [{ id: "s2-a", payee_id: null, amount: -2000 }, { id: "s2-b", payee_id: "dup1", amount: -2000 }]),
+  st("s2", "dup2", [
+    { id: "s2-a", payee_id: null, amount: -2000 },
+    { id: "s2-b", payee_id: "dup1", amount: -2000 },
+  ]),
   st("s3", "other"),
 ];
 
 const plan = () => {
-  const r = planMerge(payees, transactions, scheduled, "keep", ["dup1", "dup2", "dup1"], "USD");
+  const r = planMerge(
+    payees,
+    transactions,
+    scheduled,
+    "keep",
+    ["dup1", "dup2", "dup1"],
+    "USD",
+  );
   if ("error" in r) throw new Error(r.error);
   return r;
 };
@@ -93,17 +118,31 @@ describe("planMerge", () => {
     expect(dup1.scheduled.map((t) => t.id)).toEqual(["s1"]);
     expect(dup1.left).toEqual([
       { kind: "split_part", id: "t3", date: "2026-05-01", amount: -700 },
-      { kind: "scheduled_split_part", id: "s2", date: "2026-12-01", amount: -2000 },
+      {
+        kind: "scheduled_split_part",
+        id: "s2",
+        date: "2026-12-01",
+        amount: -2000,
+      },
     ]);
     expect(dup2.transactions.map((t) => t.id)).toEqual(["t3"]);
     expect(dup2.scheduled).toEqual([]);
-    expect(dup2.left).toEqual([{ kind: "scheduled_split", id: "s2", date: "2026-12-01", amount: -4000 }]);
+    expect(dup2.left).toEqual([
+      { kind: "scheduled_split", id: "s2", date: "2026-12-01", amount: -4000 },
+    ]);
     expect(() => MergePayeesResultSchema.parse(r)).not.toThrow();
   });
 
   test("refuses bad targets and sources", () => {
     const err = (target: string, sources: string[]) => {
-      const r = planMerge(payees, transactions, scheduled, target, sources, "USD");
+      const r = planMerge(
+        payees,
+        transactions,
+        scheduled,
+        target,
+        sources,
+        "USD",
+      );
       return "error" in r ? r.error : null;
     };
     expect(err("gone", ["dup1"])).toMatch(/No payee/);
@@ -131,14 +170,22 @@ describe("scheduledBody", () => {
 
 describe("applyMerge", () => {
   test("bulk-patches payee_id only, PUTs schedules, and reports what YNAB rejected", async () => {
-    const updateTransactionsBulk = vi.fn(async (_plan: string, body: { transactions: { id: string }[] }) => ({
-      // t2 is missing from YNAB's response.
-      data: { transactions: body.transactions.filter((t) => t.id !== "t2"), transaction_ids: [] },
-    }));
+    const updateTransactionsBulk = vi.fn(
+      async (_plan: string, body: { transactions: { id: string }[] }) => ({
+        // t2 is missing from YNAB's response.
+        data: {
+          transactions: body.transactions.filter((t) => t.id !== "t2"),
+          transaction_ids: [],
+        },
+      }),
+    );
     const updateScheduledTransaction = vi.fn(async () => {
       throw new YnabError(400, "date must be in the future");
     });
-    const client = { updateTransactionsBulk, updateScheduledTransaction } as unknown as YnabClient;
+    const client = {
+      updateTransactionsBulk,
+      updateScheduledTransaction,
+    } as unknown as YnabClient;
 
     const out = await applyMerge(client, "plan", plan(), scheduled);
 
@@ -149,14 +196,26 @@ describe("applyMerge", () => {
         { id: "t3", payee_id: "keep" },
       ],
     });
-    expect(updateScheduledTransaction).toHaveBeenCalledWith("plan", "s1", expect.objectContaining({ payee_id: "keep" }));
+    expect(updateScheduledTransaction).toHaveBeenCalledWith(
+      "plan",
+      "s1",
+      expect.objectContaining({ payee_id: "keep" }),
+    );
     expect(out.applied).toBe(true);
     const [dup1, dup2] = out.sources;
     expect(dup1.transactions.map((t) => t.id)).toEqual(["t1"]);
     expect(dup1.scheduled).toEqual([]);
     expect(dup1.failed).toEqual([
-      { kind: "transaction", id: "t2", error: "Not in YNAB's bulk-update response." },
-      { kind: "scheduled", id: "s1", error: "YNAB 400: date must be in the future" },
+      {
+        kind: "transaction",
+        id: "t2",
+        error: "Not in YNAB's bulk-update response.",
+      },
+      {
+        kind: "scheduled",
+        id: "s1",
+        error: "YNAB 400: date must be in the future",
+      },
     ]);
     expect(dup2.transactions.map((t) => t.id)).toEqual(["t3"]);
   });
@@ -170,15 +229,23 @@ describe("applyMerge", () => {
     } as unknown as YnabClient;
     const out = await applyMerge(client, "plan", plan(), scheduled);
     expect(out.sources.flatMap((s) => s.transactions)).toEqual([]);
-    expect(out.sources.flatMap((s) => s.failed.map((f) => f.id))).toEqual(["t1", "t2", "t3"]);
+    expect(out.sources.flatMap((s) => s.failed.map((f) => f.id))).toEqual([
+      "t1",
+      "t2",
+      "t3",
+    ]);
   });
 });
 
 describe("renderMerge", () => {
   test("a preview says nothing changed and how to apply", () => {
     const text = renderMerge(plan());
-    expect(text).toContain('Preview: merge 2 payees into "Starbucks" (nothing changed yet)');
-    expect(text).toContain("would move 2 transactions, 2026-01-02 to 2026-03-04, total -$5.00; 1 scheduled transaction");
+    expect(text).toContain(
+      'Preview: merge 2 payees into "Starbucks" (nothing changed yet)',
+    );
+    expect(text).toContain(
+      "would move 2 transactions, 2026-01-02 to 2026-03-04, total -$5.00; 1 scheduled transaction",
+    );
     expect(text).toContain("apply: true");
     expect(text).toMatch(/stays: 2026-05-01 -\$0\.70 split part/);
   });

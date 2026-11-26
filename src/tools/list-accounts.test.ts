@@ -1,4 +1,4 @@
-import { describe, test, expect } from "vitest";
+import { describe, test, expect } from "bun:test";
 import type { Account } from "../ynab";
 import {
   computeAccountList,
@@ -23,10 +23,7 @@ const account = (overrides: Partial<Account>): Account => ({
 describe("computeAccountList", () => {
   test("hides closed accounts by default", () => {
     const r = computeAccountList(
-      [
-        account({ id: "open" }),
-        account({ id: "closed", closed: true }),
-      ],
+      [account({ id: "open" }), account({ id: "closed", closed: true })],
       { includeClosed: false },
     );
     expect(r.accounts.map((a) => a.id)).toEqual(["open"]);
@@ -77,7 +74,9 @@ describe("renderAccountList", () => {
       { includeClosed: false },
     );
     const out = renderAccountList(r, { includeIds: true });
-    expect(out).toContain("- Checking [checking] (on-budget): balance $1,000.00");
+    expect(out).toContain(
+      "- Checking [checking] (on-budget): balance $1,000.00",
+    );
     expect(out).toContain("- Brokerage [otherAsset] (off-budget)");
     expect(out).toContain("— id checking");
   });

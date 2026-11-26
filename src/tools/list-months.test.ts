@@ -1,8 +1,15 @@
-import { describe, test, expect } from "vitest";
+import { describe, test, expect } from "bun:test";
 import type { MonthSummary } from "../ynab";
-import { computeMonthList, MonthListSchema, renderMonthList } from "./list-months";
+import {
+  computeMonthList,
+  MonthListSchema,
+  renderMonthList,
+} from "./list-months";
 
-const month = (m: string, overrides: Partial<MonthSummary> = {}): MonthSummary => ({
+const month = (
+  m: string,
+  overrides: Partial<MonthSummary> = {},
+): MonthSummary => ({
   month: m,
   income: 5_000_000,
   budgeted: 4_000_000,
@@ -33,7 +40,11 @@ describe("computeMonthList", () => {
 
   test("renders one row per month and skips a missing age of money", () => {
     const out = renderMonthList(
-      computeMonthList(months, { since: "2026-03-01", until: "2026-05-01", iso: "USD" }),
+      computeMonthList(months, {
+        since: "2026-03-01",
+        until: "2026-05-01",
+        iso: "USD",
+      }),
     );
     const rows = out.split("\n");
     expect(rows).toHaveLength(3);

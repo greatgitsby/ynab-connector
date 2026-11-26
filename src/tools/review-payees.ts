@@ -26,9 +26,18 @@ const EscapedSchema = PayeeUsageSchema.extend({ unescaped_name: z.string() });
 
 // One page of a section. `total` counts every match, `items` holds the page.
 const page = <T extends z.ZodType>(item: T) =>
-  z.object({ total: z.number().int(), offset: z.number().int(), items: z.array(item) });
+  z.object({
+    total: z.number().int(),
+    offset: z.number().int(),
+    items: z.array(item),
+  });
 
-export const SECTIONS = ["duplicates", "little_used", "html_escaped", "all"] as const;
+export const SECTIONS = [
+  "duplicates",
+  "little_used",
+  "html_escaped",
+  "all",
+] as const;
 export type Section = (typeof SECTIONS)[number];
 
 export const PayeeReviewSchema = z.object({
@@ -54,7 +63,14 @@ export interface ReviewOptions {
 
 // ---- Compute (pure)
 
-const ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
+const ENTITIES: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  nbsp: " ",
+};
 
 // Some payees are stored with HTML entities, likely from bank-import data.
 export const unescapeHtml = (s: string): string => {
@@ -63,7 +79,10 @@ export const unescapeHtml = (s: string): string => {
     prev = s;
     s = s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e: string) => {
       if (e[0] === "#") {
-        const code = e[1].toLowerCase() === "x" ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
+        const code =
+          e[1].toLowerCase() === "x"
+            ? parseInt(e.slice(2), 16)
+            : parseInt(e.slice(1), 10);
         return code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : m;
       }
       return ENTITIES[e.toLowerCase()] ?? m;
@@ -117,7 +136,13 @@ export const computePayeeReview = (
   const usage = new Map<string, PayeeUsage>(
     live.map((p) => [
       p.id,
-      { id: p.id, name: p.name, transaction_count: 0, scheduled_count: 0, last_used: null },
+      {
+        id: p.id,
+        name: p.name,
+        transaction_count: 0,
+        scheduled_count: 0,
+        last_used: null,
+      },
     ]),
   );
 
@@ -149,7 +174,9 @@ export const computePayeeReview = (
   const all = [...usage.values()].sort(byUse);
   const q = opts.query.trim().toLowerCase();
   const matches = (u: PayeeUsage) =>
-    !q || u.name.toLowerCase().includes(q) || unescapeHtml(u.name).toLowerCase().includes(q);
+    !q ||
+    u.name.toLowerCase().includes(q) ||
+    unescapeHtml(u.name).toLowerCase().includes(q);
   const want = (s: Section) => (opts.show ? opts.show === s : s !== "all");
   const out: PayeeReview = { payee_count: usage.size };
 
@@ -159,16 +186,25 @@ export const computePayeeReview = (
       const key = payeeKey(u.name);
       if (key) byKey.set(key, [...(byKey.get(key) ?? []), u]);
     }
-    const groupUse = (g: PayeeUsage[]) => g.reduce((n, u) => n + u.transaction_count, 0);
+    const groupUse = (g: PayeeUsage[]) =>
+      g.reduce((n, u) => n + u.transaction_count, 0);
     const groups = [...byKey.values()]
       .filter((g) => g.length > 1 && g.some(matches))
-      .sort((a, b) => groupUse(b) - groupUse(a) || a[0].name.localeCompare(b[0].name))
+      .sort(
+        (a, b) =>
+          groupUse(b) - groupUse(a) || a[0].name.localeCompare(b[0].name),
+      )
       .map((payees) => ({ payees }));
     out.duplicates = paginate(groups, opts.offset, opts.limit);
   }
   if (want("little_used")) {
     const little = all
-      .filter((u) => u.transaction_count <= opts.maxUses && u.scheduled_count === 0 && matches(u))
+      .filter(
+        (u) =>
+          u.transaction_count <= opts.maxUses &&
+          u.scheduled_count === 0 &&
+          matches(u),
+      )
       .sort(
         (a, b) =>
           a.transaction_count - b.transaction_count ||
@@ -228,13 +264,21 @@ export const renderPayeeReview = (
     "",
   ];
   if (review.duplicates) {
-    pushPage(out, "Likely duplicates", "duplicates", review.duplicates, (g) =>
-      `- ${g.payees.map((u) => fmtUsage(u, includeIds)).join("; ")}`,
+    pushPage(
+      out,
+      "Likely duplicates",
+      "duplicates",
+      review.duplicates,
+      (g) => `- ${g.payees.map((u) => fmtUsage(u, includeIds)).join("; ")}`,
     );
   }
   if (review.html_escaped) {
-    pushPage(out, "Names stored with HTML entities", "html_escaped", review.html_escaped, (u) =>
-      `- ${fmtUsage(u, includeIds)} → "${u.unescaped_name}"`,
+    pushPage(
+      out,
+      "Names stored with HTML entities",
+      "html_escaped",
+      review.html_escaped,
+      (u) => `- ${fmtUsage(u, includeIds)} → "${u.unescaped_name}"`,
     );
   }
   if (review.little_used) {
@@ -248,7 +292,13 @@ export const renderPayeeReview = (
     );
   }
   if (review.all) {
-    pushPage(out, "Payees by use", "all", review.all, (u) => `- ${fmtUsage(u, includeIds)}`);
+    pushPage(
+      out,
+      "Payees by use",
+      "all",
+      review.all,
+      (u) => `- ${fmtUsage(u, includeIds)}`,
+    );
   }
   return out.join("\n").trimEnd();
 };
@@ -257,16 +307,16 @@ export const renderPayeeReview = (
 
 const DESCRIPTION =
   "Review payees for cleanup. By default it returns the first page of three " +
-  "sections: likely duplicates, names stored with HTML entities (\"Board " +
-  "&amp; Brew\"), and little-used payees. Set `show` to one section, plus " +
-  "`offset`, to page through it; `show: \"all\"` lists every payee by use. " +
+  'sections: likely duplicates, names stored with HTML entities ("Board ' +
+  '&amp; Brew"), and little-used payees. Set `show` to one section, plus ' +
+  '`offset`, to page through it; `show: "all"` lists every payee by use. ' +
   "`query` narrows every section to names containing it, e.g. `query: " +
-  "\"starbucks\"` to judge all of one merchant's payees. Duplicates are " +
+  '"starbucks"` to judge all of one merchant\'s payees. Duplicates are ' +
   "names that match ignoring case, punctuation, HTML entities, store " +
-  "numbers, card-processor prefixes (\"SQ *\"), and suffixes like Inc or " +
-  ".com. Any other word keeps names apart, so \"Costco Gas\", \"Amazon " +
-  "Payroll\", and \"Venmo Jane\" are not grouped with \"Costco\", \"Amazon\", " +
-  "or \"Venmo\", and nicknames like \"AMZN\" are not matched: use `query` and " +
+  'numbers, card-processor prefixes ("SQ *"), and suffixes like Inc or ' +
+  '.com. Any other word keeps names apart, so "Costco Gas", "Amazon ' +
+  'Payroll", and "Venmo Jane" are not grouped with "Costco", "Amazon", ' +
+  'or "Venmo", and nicknames like "AMZN" are not matched: use `query` and ' +
   "judgment for those, and confirm with the user. Each group lists its " +
   "most-used payee first, usually the one to keep. Consolidate with " +
   "merge_payees, fix names with rename_payees. YNAB's API can't delete " +
@@ -289,17 +339,32 @@ export const registerReviewPayees = (
         show: z
           .enum(SECTIONS)
           .optional()
-          .describe("One section to return. Omit for duplicates, html_escaped, and little_used."),
-        query: z.string().optional().default("").describe("Only payees whose name contains this."),
+          .describe(
+            "One section to return. Omit for duplicates, html_escaped, and little_used.",
+          ),
+        query: z
+          .string()
+          .optional()
+          .default("")
+          .describe("Only payees whose name contains this."),
         offset: z.number().int().min(0).optional().default(0),
-        limit: z.number().int().min(1).max(500).optional().default(50).describe("Items per section."),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(500)
+          .optional()
+          .default(50)
+          .describe("Items per section."),
         max_uses: z
           .number()
           .int()
           .min(0)
           .optional()
           .default(1)
-          .describe("A payee with at most this many transactions counts as little used."),
+          .describe(
+            "A payee with at most this many transactions counts as little used.",
+          ),
         include_ids: includeIdsParam,
       },
       outputSchema: PayeeReviewSchema.shape,

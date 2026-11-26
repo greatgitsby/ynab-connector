@@ -1,4 +1,4 @@
-import { describe, test, expect, vi } from "vitest";
+import { describe, test, expect, vi } from "bun:test";
 import {
   YnabError,
   type Account,
@@ -77,13 +77,17 @@ describe("computeReconciliation", () => {
   test("tracking accounts: missing categories don't block, unapproved still does", () => {
     const tracking = account({ type: "otherAsset", on_budget: false });
     const uncat = tx({ id: "u", category_id: null, category_name: null });
-    expect(computeReconciliation(tracking, [uncat], 950_000).verified).toBe(true);
+    expect(computeReconciliation(tracking, [uncat], 950_000).verified).toBe(
+      true,
+    );
     const r = computeReconciliation(
       tracking,
       [uncat, tx({ id: "p", category_id: null, approved: false })],
       950_000,
     );
-    expect(r.unverified.map((u) => [u.tx.id, u.reason])).toEqual([["p", "unapproved"]]);
+    expect(r.unverified.map((u) => [u.tx.id, u.reason])).toEqual([
+      ["p", "unapproved"],
+    ]);
   });
 
   test("unapproved and uncategorized txns block; transfers and splits don't", () => {
@@ -116,9 +120,7 @@ describe("computeReconciliation", () => {
       950_000,
     );
     expect(reconciliation.verified).toBe(false);
-    expect(
-      reconciliation.unverified.map((u) => [u.tx.id, u.reason]),
-    ).toEqual([
+    expect(reconciliation.unverified.map((u) => [u.tx.id, u.reason])).toEqual([
       ["unappr", "unapproved"],
       ["uncat", "uncategorized"],
     ]);
@@ -190,7 +192,11 @@ describe("applyReconcile", () => {
       950_000,
     );
 
-    const out = await applyReconcile(client as YnabClient, "bud-1", reconciliation);
+    const out = await applyReconcile(
+      client as YnabClient,
+      "bud-1",
+      reconciliation,
+    );
 
     expect(bodies).toHaveLength(1);
     expect(bodies[0]).toEqual({
@@ -210,7 +216,11 @@ describe("applyReconcile", () => {
       900_000, // mismatch
     );
 
-    const out = await applyReconcile(client as YnabClient, "bud-1", reconciliation);
+    const out = await applyReconcile(
+      client as YnabClient,
+      "bud-1",
+      reconciliation,
+    );
 
     expect(bodies).toHaveLength(0);
     expect(out.locked).toHaveLength(0);
@@ -225,7 +235,11 @@ describe("applyReconcile", () => {
     );
     expect(reconciliation.matches).toBe(true);
 
-    const out = await applyReconcile(client as YnabClient, "bud-1", reconciliation);
+    const out = await applyReconcile(
+      client as YnabClient,
+      "bud-1",
+      reconciliation,
+    );
 
     expect(bodies).toHaveLength(0);
     expect(out.locked).toHaveLength(0);
@@ -239,7 +253,11 @@ describe("applyReconcile", () => {
       950_000,
     );
 
-    const out = await applyReconcile(client as YnabClient, "bud-1", reconciliation);
+    const out = await applyReconcile(
+      client as YnabClient,
+      "bud-1",
+      reconciliation,
+    );
 
     expect(bodies).toHaveLength(0);
     expect(out.locked).toHaveLength(0);
@@ -253,7 +271,11 @@ describe("applyReconcile", () => {
       950_000,
     );
 
-    const out = await applyReconcile(client as YnabClient, "bud-1", reconciliation);
+    const out = await applyReconcile(
+      client as YnabClient,
+      "bud-1",
+      reconciliation,
+    );
 
     expect(out.locked.map((r) => r.ok)).toEqual([false, false]);
     if (!out.locked[0].ok) {
@@ -270,12 +292,18 @@ describe("renderReconcile", () => {
   ) => computeReconciliation(account(acc), txns, statement);
 
   test("blocked branch lists offenders with reasons", () => {
-    const reconciliation = reconciliationFor({}, [
-      tx({ id: "unappr", approved: false }),
-      tx({ id: "uncat", category_id: null }),
-    ], 950_000);
+    const reconciliation = reconciliationFor(
+      {},
+      [
+        tx({ id: "unappr", approved: false }),
+        tx({ id: "uncat", category_id: null }),
+      ],
+      950_000,
+    );
     const out = renderReconcile({ reconciliation, locked: [] }, "USD");
-    expect(out).toContain("Cannot reconcile Checking — 2 transactions need review");
+    expect(out).toContain(
+      "Cannot reconcile Checking — 2 transactions need review",
+    );
     expect(out).toContain("[unapproved]");
     expect(out).toContain("[uncategorized]");
   });
@@ -308,12 +336,19 @@ describe("renderReconcile", () => {
       [tx({ id: "c1" })],
       950_000,
     );
-    const out = renderReconcile({
-      reconciliation,
-      locked: [
-        { ok: true, transaction_id: "c1", transaction: tx({ id: "c1", cleared: "reconciled" }) },
-      ],
-    }, "USD");
+    const out = renderReconcile(
+      {
+        reconciliation,
+        locked: [
+          {
+            ok: true,
+            transaction_id: "c1",
+            transaction: tx({ id: "c1", cleared: "reconciled" }),
+          },
+        ],
+      },
+      "USD",
+    );
     expect(out).toContain("Reconciled Checking — locked 1 / 1 transaction");
     expect(out).toContain("[ok]");
   });
@@ -328,6 +363,8 @@ describe("renderReconcile", () => {
       950_000,
     );
     const out = renderReconcile({ reconciliation, locked: [] }, "USD");
-    expect(out).toContain("Account: Checking — linked ✓, last reconciled 2026-04-30");
+    expect(out).toContain(
+      "Account: Checking — linked ✓, last reconciled 2026-04-30",
+    );
   });
 });

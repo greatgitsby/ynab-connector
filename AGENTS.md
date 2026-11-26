@@ -14,22 +14,24 @@ Think of these instructions as good defaults, not hard rules. The developer's pr
 4. **Pruning `wrangler.jsonc` migrations.** Keep both migration entries, including the `v2` `deleted_classes` one. Cloudflare replays the history by tag.
 5. **Writing to a real plan.** Try writes only against a dedicated test plan. See [development](docs/operations/development.md#calling-ynab-directly).
 6. **Widening the write surface quietly.** Manual transaction creation, deletes, scheduled transaction edits (beyond `merge_payees` re-pointing a payee), are excluded on purpose. Category goals are writable only through `set_category_goals`, and category names and groups only through `create_categories` and `update_categories`. See [write tools](docs/internals/write-tools.md).
-7. **Pushing to `master`.** Every push to `master` deploys to production: CI runs type-check and tests, then `wrangler deploy`. Push there only when asked; otherwise work on a branch.
+7. **Pushing to `master`.** Every push to `master` deploys to production: CI runs type-check, lint, format check, and tests, then `wrangler deploy`. Push there only when asked; otherwise work on a branch.
 
 ## Commands
 
 ```bash
-npm run dev          # wrangler dev on localhost:8787
-npm run type-check   # tsc --noEmit
-npm test             # vitest, plain Node
-npm run deploy       # wrangler deploy
+bun run dev          # wrangler dev on localhost:8787
+bun check            # type-check worker code, then tests and evals
+bun run lint         # oxlint
+bun fmt              # format; CI runs bun fmt --check
+bun test             # bun's test runner, outside workerd
+bun run deploy       # wrangler deploy
 ```
 
 Local setup and the YNAB token helper: [development](docs/operations/development.md).
 
 ## Verifying
 
-- Run `npm run type-check` and `npm test` before you push.
+- Run `bun check`, `bun run lint`, `bun fmt --check`, and `bun test` before you push.
 - Test behavior that can break: compute logic, goal interpretation, request bodies, response interpretation, batch errors, and the `canWrite` gate. Leave out tests for what types already guarantee, render copy, and wiring.
 - Extend before you add. Add a fixture row or assertion to the existing case when one fits.
 - Every read tool's compute test parses its fixture result through the tool's zod schema. The SDK throws on a mismatch at call time.

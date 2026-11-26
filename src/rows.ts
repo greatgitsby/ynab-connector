@@ -34,7 +34,10 @@ export const flattenTransactions = (txs: Transaction[]): FlatRow[] =>
     .filter((t) => !t.deleted)
     .flatMap((t): FlatRow[] => {
       const base: FlatRow = {
-        id: t.type === "subtransaction" && t.parent_transaction_id ? t.parent_transaction_id : t.id,
+        id:
+          t.type === "subtransaction" && t.parent_transaction_id
+            ? t.parent_transaction_id
+            : t.id,
         part_id: t.type === "subtransaction" ? t.id : null,
         date: t.date,
         amount: t.amount,
@@ -152,7 +155,9 @@ export const fmtRowLine = (
   const account = r.account ? ` [${r.account}]` : "";
   const approval = r.approved === false ? " (unapproved)" : "";
   const ids =
-    includeIds && r.id ? ` — id ${r.id}${r.part_id ? ` part ${r.part_id}` : ""}` : "";
+    includeIds && r.id
+      ? ` — id ${r.id}${r.part_id ? ` part ${r.part_id}` : ""}`
+      : "";
   return `- ${r.date ?? ""} ${r.amount != null ? fmtMoney(r.amount, iso) : ""} ${r.payee ?? "(no payee)"} → ${r.category ?? "(uncategorized)"}${account}${memo}${approval}${ids}`;
 };
 
@@ -163,7 +168,8 @@ export const median = (xs: number[]): number => {
   return s.length % 2 ? s[mid] : Math.round((s[mid - 1] + s[mid]) / 2);
 };
 
-export const todayIso = (now = new Date()): string => now.toISOString().slice(0, 10);
+export const todayIso = (now = new Date()): string =>
+  now.toISOString().slice(0, 10);
 
 export const addDays = (date: string, days: number): string => {
   const d = new Date(`${date}T00:00:00Z`);

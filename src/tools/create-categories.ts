@@ -12,10 +12,15 @@ import { groupError, nameTakenError } from "./update-categories";
 
 // ---- Input + Result types
 
-export const NewCategorySchema = GoalChangeSchema.omit({ category_id: true, remove_goal: true }).extend({
+export const NewCategorySchema = GoalChangeSchema.omit({
+  category_id: true,
+  remove_goal: true,
+}).extend({
   category_group_id: z
     .string()
-    .describe("The group to create it in. Find group ids with get_month and include_ids."),
+    .describe(
+      "The group to create it in. Find group ids with get_month and include_ids.",
+    ),
   name: z.string().trim().min(1),
 });
 export type NewCategoryInput = z.infer<typeof NewCategorySchema>;
@@ -36,7 +41,9 @@ export type CreateCategoryResult = z.infer<typeof ResultSchema>;
 export const CreateCategoriesResultSchema = z.object({
   results: z.array(ResultSchema),
 });
-export type CreateCategoriesResult = z.infer<typeof CreateCategoriesResultSchema>;
+export type CreateCategoriesResult = z.infer<
+  typeof CreateCategoriesResultSchema
+>;
 
 // ---- Compute (pure): the POST body, or why not to send it
 
@@ -52,9 +59,15 @@ export const newCategoryBody = (
   if (taken) return { error: taken };
   const body: NewCategory = { name, category_group_id };
   if (Object.values(goal).every((v) => v === undefined)) return { body };
-  if (goal.goal_target === undefined) return { error: "A goal needs goal_target." };
+  if (goal.goal_target === undefined)
+    return { error: "A goal needs goal_target." };
   // A new category has no goal, so the goal rules are those for a goalless one.
-  const goalless = { name, deleted: false, internal: false, goal_type: null } as Category;
+  const goalless = {
+    name,
+    deleted: false,
+    internal: false,
+    goal_type: null,
+  } as Category;
   const planned = goalBody({ category_id: "", ...goal }, goalless, refMonth);
   if ("error" in planned) return planned;
   return { body: { ...body, ...planned.body } };
@@ -74,7 +87,10 @@ export const createCategories = async (
   planId: string,
   inputs: NewCategoryInput[],
 ): Promise<CreateCategoriesResult> => {
-  const [iso, { data }] = await Promise.all([client.planIso(planId), client.listCategories(planId)]);
+  const [iso, { data }] = await Promise.all([
+    client.planIso(planId),
+    client.listCategories(planId),
+  ]);
   const refMonth = resolveMonth("current");
   let groups = data.category_groups;
   const results: CreateCategoryResult[] = [];
@@ -85,7 +101,8 @@ export const createCategories = async (
       continue;
     }
     try {
-      const { category } = (await client.createCategory(planId, planned.body)).data;
+      const { category } = (await client.createCategory(planId, planned.body))
+        .data;
       const group = groups.find((g) => g.id === category.category_group_id);
       results.push({
         ok: true,
@@ -96,7 +113,9 @@ export const createCategories = async (
       });
       // Later items in the batch see the new name.
       groups = groups.map((g) =>
-        g === group ? { ...g, categories: [...(g.categories ?? []), category] } : g,
+        g === group
+          ? { ...g, categories: [...(g.categories ?? []), category] }
+          : g,
       );
     } catch (e) {
       results.push({ ok: false, name: input.name, error: errorMessage(e) });
@@ -111,7 +130,9 @@ export const renderCreateCategories = (out: CreateCategoriesResult): string => {
   const n = out.results.length;
   const okCount = out.results.filter((r) => r.ok).length;
   const errCount = n - okCount;
-  const errs = errCount ? ` (${errCount} error${errCount === 1 ? "" : "s"})` : "";
+  const errs = errCount
+    ? ` (${errCount} error${errCount === 1 ? "" : "s"})`
+    : "";
   const header = `## Created ${okCount} / ${n} categor${n === 1 ? "y" : "ies"}${errs}`;
   const lines = out.results.map((r) =>
     r.ok

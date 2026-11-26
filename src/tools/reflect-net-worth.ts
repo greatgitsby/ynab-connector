@@ -112,10 +112,16 @@ export const renderNetWorth = (
     out.push(`Range change: ${fmtMoney(delta, iso)}${pct}`);
   }
   out.push("");
-  pushSection(out, "Open accounts", r.open_accounts, r.open_accounts.length, (a) => {
-    const idSuffix = opts.includeIds ? ` — id ${a.id}` : "";
-    return `- ${a.name} [${a.type}]${a.on_budget ? "" : " (tracking)"}: ${fmtMoney(a.balance, iso)}${idSuffix}`;
-  });
+  pushSection(
+    out,
+    "Open accounts",
+    r.open_accounts,
+    r.open_accounts.length,
+    (a) => {
+      const idSuffix = opts.includeIds ? ` — id ${a.id}` : "";
+      return `- ${a.name} [${a.type}]${a.on_budget ? "" : " (tracking)"}: ${fmtMoney(a.balance, iso)}${idSuffix}`;
+    },
+  );
   return out.join("\n").trimEnd();
 };
 
@@ -160,7 +166,10 @@ export const registerReflectNetWorth = (
           txRes.data.transactions,
           { ...range, iso },
         );
-        return result(renderNetWorth(report, { includeIds: include_ids }), report);
+        return result(
+          renderNetWorth(report, { includeIds: include_ids }),
+          report,
+        );
       } catch (e) {
         return handleError(e);
       }

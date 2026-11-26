@@ -1,12 +1,10 @@
-import { describe, test, expect } from "vitest";
+import { describe, test, expect } from "bun:test";
 import type { Plan } from "../ynab";
-import {
-  computePlanList,
-  renderPlanList,
-  PlanListSchema,
-} from "./list-plans";
+import { computePlanList, renderPlanList, PlanListSchema } from "./list-plans";
 
-const plan = (overrides: Partial<Plan> & { id: string; name: string }): Plan => ({
+const plan = (
+  overrides: Partial<Plan> & { id: string; name: string },
+): Plan => ({
   last_modified_on: "2026-05-01",
   first_month: "2024-01-01",
   last_month: "2026-05-01",
@@ -16,7 +14,11 @@ const plan = (overrides: Partial<Plan> & { id: string; name: string }): Plan => 
 describe("computePlanList", () => {
   test("keeps archived plans, most recently modified first", () => {
     const r = computePlanList([
-      plan({ id: "old", name: "Family 2025 (Archived on 2026-01-02)", last_modified_on: "2026-01-03T00:00:00Z" }),
+      plan({
+        id: "old",
+        name: "Family 2025 (Archived on 2026-01-02)",
+        last_modified_on: "2026-01-03T00:00:00Z",
+      }),
       plan({
         id: "live",
         name: "Family",

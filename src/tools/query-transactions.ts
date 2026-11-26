@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { dateParam, includeIdsParam, monthParam, planIdParam } from "../schemas";
+import {
+  dateParam,
+  includeIdsParam,
+  monthParam,
+  planIdParam,
+} from "../schemas";
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { YnabClient } from "../ynab";
 import { fmtMoney, handleError, result, text } from "../format";
@@ -89,21 +94,29 @@ const searchTerms = (search: string | string[] | undefined): string[][] =>
   [search ?? []]
     .flat()
     .flatMap((t) => t.split(/\s+OR\s+/))
-    .map((t) => t.split(/\s+AND\s+/).map(normalizeName).filter(Boolean))
+    .map((t) =>
+      t
+        .split(/\s+AND\s+/)
+        .map(normalizeName)
+        .filter(Boolean),
+    )
     .filter((t) => t.length);
 
 export const filterRows = (rows: FlatRow[], f: RowFilter): FlatRow[] => {
   const terms = searchTerms(f.search);
   return rows.filter((r) => {
     if (f.accountIds && !f.accountIds.has(r.account_id)) return false;
-    if (f.categoryIds && !(r.category_id && f.categoryIds.has(r.category_id))) return false;
+    if (f.categoryIds && !(r.category_id && f.categoryIds.has(r.category_id)))
+      return false;
     if (f.payeeIds && !(r.payee_id && f.payeeIds.has(r.payee_id))) return false;
-    if (f.excludeTransfers && (r.transfer || isCardPaymentPayee(r.payee))) return false;
+    if (f.excludeTransfers && (r.transfer || isCardPaymentPayee(r.payee)))
+      return false;
     if (f.direction === "outflow" && r.amount >= 0) return false;
     if (f.direction === "inflow" && r.amount <= 0) return false;
     if (terms.length) {
       const hay = normalizeName(`${r.payee ?? ""} ${r.memo ?? ""}`);
-      if (!terms.some((t) => t.every((part) => hay.includes(part)))) return false;
+      if (!terms.some((t) => t.every((part) => hay.includes(part))))
+        return false;
     }
     return true;
   });
@@ -161,10 +174,15 @@ export interface QueryOpts {
 }
 
 export const sortRows = (rows: FlatRow[]): FlatRow[] =>
-  [...rows].sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
+  [...rows].sort(
+    (a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id),
+  );
 
 // `sorted` comes from sortRows, so the page and the render agree.
-export const computeQuery = (sorted: FlatRow[], opts: QueryOpts): QueryResult => {
+export const computeQuery = (
+  sorted: FlatRow[],
+  opts: QueryOpts,
+): QueryResult => {
   let inflow = 0;
   let outflow = 0;
   for (const r of sorted) {
@@ -203,14 +221,22 @@ export const renderQuery = (
     `${q.count} rows, net ${fmtMoney(q.total, iso)} (in ${fmtMoney(q.inflow, iso)}, out ${fmtMoney(q.outflow, iso)})`,
   ];
   for (const [kind, refs] of Object.entries(q.matched)) {
-    if (refs?.length) out.push(`Matched ${kind}: ${refs.map((r) => r.name).join(", ")}`);
+    if (refs?.length)
+      out.push(`Matched ${kind}: ${refs.map((r) => r.name).join(", ")}`);
   }
   if (q.group_by) {
-    const shown = q.groups.length < q.group_count ? ` (top ${q.groups.length} of ${q.group_count})` : ` (${q.group_count})`;
+    const shown =
+      q.groups.length < q.group_count
+        ? ` (top ${q.groups.length} of ${q.group_count})`
+        : ` (${q.group_count})`;
     out.push("", `## By ${q.group_by}${shown}`);
     for (const g of q.groups) {
-      const span = g.first_date === g.last_date ? g.first_date : `${g.first_date} to ${g.last_date}`;
-      const id = opts.includeIds && q.group_by !== "month" ? ` — id ${g.key}` : "";
+      const span =
+        g.first_date === g.last_date
+          ? g.first_date
+          : `${g.first_date} to ${g.last_date}`;
+      const id =
+        opts.includeIds && q.group_by !== "month" ? ` — id ${g.key}` : "";
       out.push(
         `- ${g.name}: ${fmtMoney(g.total, iso)} over ${g.count}, typical ${fmtMoney(g.typical_amount, iso)}, ${span}${id}`,
       );
@@ -238,7 +264,11 @@ const resolveRefs = (
   refs: string[] | undefined,
   items: Named[] | null,
   kind: string,
-): { ids?: Set<string>; matched?: { id: string; name: string }[]; error?: string } => {
+): {
+  ids?: Set<string>;
+  matched?: { id: string; name: string }[];
+  error?: string;
+} => {
   if (!refs?.length) return {};
   const ids = new Set<string>();
   const matched: { id: string; name: string }[] = [];
@@ -265,7 +295,7 @@ const DESCRIPTION =
   "text `search` over payee and memo (a substring; several terms as an array or joined with OR match any, AND needs all), dates, direction, and type. Filters of one kind are OR'd, different kinds AND'd. " +
   "group_by payee, category, month, or account returns per-group count, total, typical (median) amount, min, max, and first and last date. " +
   "Rows come newest first, `limit` per page (default 100, or 0 when grouping), paged with `offset`/`next_offset`; totals and groups always cover every match. " +
-  "exclude_transfers also drops credit card payments recorded as spending (payees like \"Apple Card Payment\" or \"Autopay\"). " +
+  'exclude_transfers also drops credit card payments recorded as spending (payees like "Apple Card Payment" or "Autopay"). ' +
   "Without dates it searches all history. Pick `fields` to shrink rows; choosing `id` shows ids in the text too. Amounts are milliunits, outflows negative. Pending bank transactions are not in YNAB's API.";
 
 export const registerQueryTransactions = (
@@ -280,14 +310,24 @@ export const registerQueryTransactions = (
       annotations: { readOnlyHint: true, openWorldHint: false },
       inputSchema: {
         plan_id: planIdParam,
-        accounts: z.array(z.string()).optional().describe("Account names or ids."),
-        categories: z.array(z.string()).optional().describe('Category names, "Group: Name", or ids.'),
+        accounts: z
+          .array(z.string())
+          .optional()
+          .describe("Account names or ids."),
+        categories: z
+          .array(z.string())
+          .optional()
+          .describe('Category names, "Group: Name", or ids.'),
         payees: z.array(z.string()).optional().describe("Payee names or ids."),
         search: z
           .union([z.string(), z.array(z.string()).min(1)])
           .optional()
-          .describe('Text in the payee name or memo, case-insensitive. Several terms match any: ["Anthropic", "Claude"] or "Anthropic OR Claude". "a AND b" needs both.'),
-        month: monthParam.optional().describe("One month; replaces since_date/until_date."),
+          .describe(
+            'Text in the payee name or memo, case-insensitive. Several terms match any: ["Anthropic", "Claude"] or "Anthropic OR Claude". "a AND b" needs both.',
+          ),
+        month: monthParam
+          .optional()
+          .describe("One month; replaces since_date/until_date."),
         since_date: dateParam.optional(),
         until_date: dateParam.optional(),
         type: z.enum(["uncategorized", "unapproved"]).optional(),
@@ -318,13 +358,28 @@ export const registerQueryTransactions = (
           needs(args.accounts) ? c.listAccounts(args.plan_id) : null,
           c.planIso(args.plan_id),
         ]);
-        const acc = resolveRefs(args.accounts, accounts && accountRefs(accounts.data.accounts), "account");
-        const cat = resolveRefs(args.categories, cats && categoryRefs(cats.data.category_groups), "category");
-        const pay = resolveRefs(args.payees, payees && payeeRefs(payees.data.payees), "payee");
+        const acc = resolveRefs(
+          args.accounts,
+          accounts && accountRefs(accounts.data.accounts),
+          "account",
+        );
+        const cat = resolveRefs(
+          args.categories,
+          cats && categoryRefs(cats.data.category_groups),
+          "category",
+        );
+        const pay = resolveRefs(
+          args.payees,
+          payees && payeeRefs(payees.data.payees),
+          "payee",
+        );
         const err = acc.error ?? cat.error ?? pay.error;
         if (err) return { ...text(err), isError: true as const };
 
-        const month = args.month === "current" ? `${todayIso().slice(0, 7)}-01` : args.month;
+        const month =
+          args.month === "current"
+            ? `${todayIso().slice(0, 7)}-01`
+            : args.month;
         const sinceDate = month ?? args.since_date;
         const untilDate = month ? monthEnd(month) : args.until_date;
         const oneAccount = acc.ids?.size === 1 ? [...acc.ids][0] : undefined;
@@ -334,14 +389,16 @@ export const registerQueryTransactions = (
           untilDate,
           type: args.type,
         });
-        const rows = sortRows(filterRows(flattenTransactions(data.transactions), {
-          accountIds: acc.ids,
-          categoryIds: cat.ids,
-          payeeIds: pay.ids,
-          search: args.search,
-          excludeTransfers: args.exclude_transfers,
-          direction: args.direction,
-        }));
+        const rows = sortRows(
+          filterRows(flattenTransactions(data.transactions), {
+            accountIds: acc.ids,
+            categoryIds: cat.ids,
+            payeeIds: pay.ids,
+            search: args.search,
+            excludeTransfers: args.exclude_transfers,
+            direction: args.direction,
+          }),
+        );
         const limit = args.limit ?? (args.group_by ? 0 : 100);
         const fields = args.fields ?? DEFAULT_ROW_FIELDS;
         const q = computeQuery(rows, {

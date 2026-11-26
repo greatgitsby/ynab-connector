@@ -41,7 +41,7 @@ export interface RefreshEnv {
 
 export const ynabTokenExchange = async (
   opts: TokenExchangeCallbackOptions<RefreshEnv>,
-): Promise<TokenExchangeCallbackResult | void> => {
+): Promise<TokenExchangeCallbackResult | undefined> => {
   const props = opts.props as Props;
   const now = nowSeconds();
 
@@ -72,7 +72,8 @@ export const ynabTokenExchange = async (
       });
     }
     throw new OAuthError("temporarily_unavailable", {
-      description: "Could not refresh the YNAB access token. Try again shortly.",
+      description:
+        "Could not refresh the YNAB access token. Try again shortly.",
       statusCode: 503,
     });
   }
@@ -99,7 +100,8 @@ export const expiredTokenResponse = (resourceMetadataUrl: string) =>
   new Response(
     JSON.stringify({
       error: "invalid_token",
-      error_description: "The upstream YNAB token has expired; refresh required.",
+      error_description:
+        "The upstream YNAB token has expired; refresh required.",
     }),
     {
       status: 401,

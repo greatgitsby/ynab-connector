@@ -17,7 +17,9 @@ export const GoalChangeSchema = z.object({
   remove_goal: z
     .boolean()
     .optional()
-    .describe("true removes the category's goal. Can't be combined with the other fields."),
+    .describe(
+      "true removes the category's goal. Can't be combined with the other fields.",
+    ),
   goal_target: z
     .number()
     .int()
@@ -63,7 +65,11 @@ const ResultSchema = z.discriminatedUnion("ok", [
     // Present once applied.
     after: z.string().nullable().optional(),
   }),
-  z.object({ ok: z.literal(false), category_id: z.string(), error: z.string() }),
+  z.object({
+    ok: z.literal(false),
+    category_id: z.string(),
+    error: z.string(),
+  }),
 ]);
 export type GoalChangeResult = z.infer<typeof ResultSchema>;
 
@@ -72,7 +78,9 @@ export const SetCategoryGoalsResultSchema = z.object({
   applied: z.boolean(),
   results: z.array(ResultSchema),
 });
-export type SetCategoryGoalsResult = z.infer<typeof SetCategoryGoalsResultSchema>;
+export type SetCategoryGoalsResult = z.infer<
+  typeof SetCategoryGoalsResultSchema
+>;
 
 // ---- Compute (pure): the PATCH body for one change, or why not to send it
 
@@ -82,13 +90,17 @@ export const goalBody = (
   refMonth: string,
 ): { body: SaveCategoryGoal } | { error: string } => {
   if (!category || category.deleted) return { error: "No such category." };
-  if (category.internal) return { error: `"${category.name}" is internal to YNAB and can't have a goal.` };
+  if (category.internal)
+    return {
+      error: `"${category.name}" is internal to YNAB and can't have a goal.`,
+    };
   const { category_id: _, remove_goal, ...fields } = change;
   const goal = interpretGoal(category, refMonth);
   const setsSomething = Object.values(fields).some((v) => v !== undefined);
 
   if (remove_goal) {
-    if (setsSomething) return { error: "remove_goal can't be combined with other fields." };
+    if (setsSomething)
+      return { error: "remove_goal can't be combined with other fields." };
     if (!goal) return { error: `"${category.name}" has no goal to remove.` };
     return { body: { goal_target: null } };
   }
@@ -100,13 +112,18 @@ export const goalBody = (
     return { error: "goal_frequency can't be combined with goal_target_date." };
   }
   if (!goal && fields.goal_target === undefined) {
-    return { error: `"${category.name}" has no goal; give goal_target to create one.` };
+    return {
+      error: `"${category.name}" has no goal; give goal_target to create one.`,
+    };
   }
   // A new goal or a goal_frequency makes a NEED goal. YNAB stores the flag
   // on any other type without complaint, where it means nothing.
   const becomesNeed = !goal || !!fields.goal_frequency || goal.type === "NEED";
   if (fields.goal_needs_whole_amount !== undefined && !becomesNeed) {
-    return { error: "goal_needs_whole_amount applies only to 'Plan Your Spending' goals." };
+    return {
+      error:
+        "goal_needs_whole_amount applies only to 'Plan Your Spending' goals.",
+    };
   }
   const body: SaveCategoryGoal = {};
   for (const [k, v] of Object.entries(fields)) {
@@ -130,9 +147,16 @@ export const setCategoryGoals = async (
   changes: GoalChange[],
   apply: boolean,
 ): Promise<SetCategoryGoalsResult> => {
-  const [iso, { data }] = await Promise.all([client.planIso(planId), client.listCategories(planId)]);
+  const [iso, { data }] = await Promise.all([
+    client.planIso(planId),
+    client.listCategories(planId),
+  ]);
   const refMonth = resolveMonth("current");
-  const byId = new Map(data.category_groups.flatMap((g) => g.categories ?? []).map((c) => [c.id, c]));
+  const byId = new Map(
+    data.category_groups
+      .flatMap((g) => g.categories ?? [])
+      .map((c) => [c.id, c]),
+  );
   const label = (c: Category) => interpretGoal(c, refMonth, iso)?.label ?? null;
 
   const results: GoalChangeResult[] = [];
@@ -140,7 +164,11 @@ export const setCategoryGoals = async (
     const category = byId.get(change.category_id);
     const planned = goalBody(change, category, refMonth);
     if ("error" in planned) {
-      results.push({ ok: false, category_id: change.category_id, error: planned.error });
+      results.push({
+        ok: false,
+        category_id: change.category_id,
+        error: planned.error,
+      });
       continue;
     }
     const ok = {
@@ -155,10 +183,18 @@ export const setCategoryGoals = async (
       continue;
     }
     try {
-      const updated = await client.updateCategory(planId, change.category_id, planned.body);
+      const updated = await client.updateCategory(
+        planId,
+        change.category_id,
+        planned.body,
+      );
       results.push({ ...ok, after: label(updated.data.category) });
     } catch (e) {
-      results.push({ ok: false, category_id: change.category_id, error: errorMessage(e) });
+      results.push({
+        ok: false,
+        category_id: change.category_id,
+        error: errorMessage(e),
+      });
     }
   }
   return { iso, applied: apply, results };
@@ -169,12 +205,15 @@ export const setCategoryGoals = async (
 const describeRequest = (r: SaveCategoryGoal, iso: string): string => {
   if (r.goal_target === null) return "remove the goal";
   const parts: string[] = [];
-  if (r.goal_target != null) parts.push(`target ${fmtMoney(r.goal_target, iso)}`);
+  if (r.goal_target != null)
+    parts.push(`target ${fmtMoney(r.goal_target, iso)}`);
   if (r.goal_frequency) parts.push(`repeating ${r.goal_frequency}`);
   if (r.goal_target_date === null) parts.push("no due date");
   else if (r.goal_target_date) parts.push(`due ${r.goal_target_date}`);
-  if (r.goal_needs_whole_amount === true) parts.push("set aside the full amount each period");
-  if (r.goal_needs_whole_amount === false) parts.push("refill up to the amount");
+  if (r.goal_needs_whole_amount === true)
+    parts.push("set aside the full amount each period");
+  if (r.goal_needs_whole_amount === false)
+    parts.push("refill up to the amount");
   return parts.join(", ");
 };
 
@@ -183,7 +222,9 @@ export const renderSetCategoryGoals = (out: SetCategoryGoalsResult): string => {
   const okCount = out.results.filter((r) => r.ok).length;
   const errCount = n - okCount;
   const noun = `categor${n === 1 ? "y" : "ies"}`;
-  const errs = errCount ? ` (${errCount} error${errCount === 1 ? "" : "s"})` : "";
+  const errs = errCount
+    ? ` (${errCount} error${errCount === 1 ? "" : "s"})`
+    : "";
   const header = out.applied
     ? `## Changed goals on ${okCount} / ${n} ${noun}${errs}`
     : `## Preview: change goals on ${n} ${noun}${errs} (nothing changed yet)`;
@@ -197,7 +238,10 @@ export const renderSetCategoryGoals = (out: SetCategoryGoalsResult): string => {
   });
   const footer =
     !out.applied && okCount
-      ? ["", "Call set_category_goals again with the same changes and apply: true to make them."]
+      ? [
+          "",
+          "Call set_category_goals again with the same changes and apply: true to make them.",
+        ]
       : [];
   return [header, ...lines, ...footer].join("\n");
 };
@@ -240,13 +284,20 @@ export const registerSetCategoryGoals = (
           .boolean()
           .optional()
           .default(false)
-          .describe("false (default) previews without changing anything; true makes the changes."),
+          .describe(
+            "false (default) previews without changing anything; true makes the changes.",
+          ),
       },
     },
     async ({ plan_id, changes, apply }) => {
       if (!getProps().canWrite) return scopeDeniedError();
       try {
-        const out = await setCategoryGoals(getClient(), plan_id, changes, apply);
+        const out = await setCategoryGoals(
+          getClient(),
+          plan_id,
+          changes,
+          apply,
+        );
         return result(renderSetCategoryGoals(out), out);
       } catch (e) {
         return handleError(e);

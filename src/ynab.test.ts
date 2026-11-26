@@ -1,5 +1,5 @@
-import { describe, test, expect, beforeEach, afterEach, vi } from "vitest";
-import { ALL_TIME, YnabClient, YnabError } from "./ynab";
+import { describe, test, expect, afterEach, vi } from "bun:test";
+import { ALL_TIME, YnabClient } from "./ynab";
 
 // Captures the args of each fetch call so we can assert on URL / method / body.
 type FetchCall = { url: string; init: RequestInit };
@@ -18,12 +18,14 @@ const stubFetch = (
 ): { calls: FetchCall[]; restore: () => void } => {
   const calls: FetchCall[] = [];
   const original = globalThis.fetch;
-  globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = typeof input === "string" ? input : input.toString();
-    const call: FetchCall = { url, init: init ?? {} };
-    calls.push(call);
-    return responder(call);
-  }) as typeof fetch;
+  globalThis.fetch = vi.fn(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const call: FetchCall = { url, init: init ?? {} };
+      calls.push(call);
+      return responder(call);
+    },
+  ) as unknown as typeof fetch;
   return {
     calls,
     restore: () => {
@@ -42,7 +44,9 @@ describe("YnabClient", () => {
 
   describe("updateCategoryMonth", () => {
     test("PATCHes the category endpoint with a wrapped body", async () => {
-      stub = stubFetch(() => okResponse({ data: { category: { id: "cat-1" } } }));
+      stub = stubFetch(() =>
+        okResponse({ data: { category: { id: "cat-1" } } }),
+      );
       const client = new YnabClient("tok");
       const res = await client.updateCategoryMonth(
         "bud-1",
@@ -59,7 +63,7 @@ describe("YnabClient", () => {
       expect(init.method).toBe("PATCH");
       const headers = init.headers as Record<string, string>;
       expect(headers["Content-Type"]).toBe("application/json");
-      expect(headers["Authorization"]).toBe("Bearer tok");
+      expect(headers.Authorization).toBe("Bearer tok");
       expect(JSON.parse(init.body as string)).toEqual({
         category: { budgeted: 450000 },
       });
@@ -68,7 +72,9 @@ describe("YnabClient", () => {
   });
 
   describe("listTransactions", () => {
-    const urlFor = async (opts: Parameters<YnabClient["listTransactions"]>[1]) => {
+    const urlFor = async (
+      opts: Parameters<YnabClient["listTransactions"]>[1],
+    ) => {
       stub = stubFetch(() => okResponse({ data: { transactions: [] } }));
       await new YnabClient("tok").listTransactions("p1", opts);
       const url = new URL(stub.calls[0].url);
@@ -84,7 +90,10 @@ describe("YnabClient", () => {
         [{ accountId: "a1" }, "/v1/plans/p1/accounts/a1/transactions"],
         [{ categoryId: "c1" }, "/v1/plans/p1/categories/c1/transactions"],
         [{ payeeId: "y1" }, "/v1/plans/p1/payees/y1/transactions"],
-        [{ month: "2026-05-01" }, "/v1/plans/p1/months/2026-05-01/transactions"],
+        [
+          { month: "2026-05-01" },
+          "/v1/plans/p1/months/2026-05-01/transactions",
+        ],
       ];
       for (const [opts, path] of cases) {
         const url = await urlFor(opts);
@@ -170,7 +179,9 @@ describe("YnabClient", () => {
   describe("plans", () => {
     test("listPlans hits /plans and returns the plans key", async () => {
       stub = stubFetch(() =>
-        okResponse({ data: { plans: [{ id: "p1", name: "Home" }], default_plan: null } }),
+        okResponse({
+          data: { plans: [{ id: "p1", name: "Home" }], default_plan: null },
+        }),
       );
       const res = await new YnabClient("tok").listPlans();
       expect(stub.calls[0].url).toBe("https://api.ynab.com/v1/plans");
@@ -210,7 +221,9 @@ describe("YnabClient", () => {
     test("does not retry on 401 — token rotation lives in the OAuth layer", async () => {
       stub = stubFetch(() => errResponse(401, "expired"));
       const client = new YnabClient("old-tok");
-      await expect(client.listPayees("bud-1")).rejects.toMatchObject({ status: 401 });
+      await expect(client.listPayees("bud-1")).rejects.toMatchObject({
+        status: 401,
+      });
       expect(stub.calls).toHaveLength(1);
     });
   });

@@ -135,7 +135,11 @@ export const computeIncomeExpensePivot = (
       if (t.subtransactions?.length) {
         for (const sub of t.subtransactions) {
           if (sub.category_id === inflowRtaId) {
-            addIncome(sub.payee_name ?? t.payee_name ?? null, t.date, sub.amount);
+            addIncome(
+              sub.payee_name ?? t.payee_name ?? null,
+              t.date,
+              sub.amount,
+            );
           }
         }
       } else if (t.category_id === inflowRtaId) {
@@ -202,10 +206,7 @@ export const computeIncomeExpensePivot = (
   const incomeTotal = new Map<string, number>();
   for (const r of incomeByPayee.values()) {
     for (const k of window) {
-      incomeTotal.set(
-        k,
-        (incomeTotal.get(k) ?? 0) + (r.monthly.get(k) ?? 0),
-      );
+      incomeTotal.set(k, (incomeTotal.get(k) ?? 0) + (r.monthly.get(k) ?? 0));
     }
   }
   const incomeRowsSorted = [...incomeByPayee.values()].sort((a, b) => {
@@ -233,7 +234,7 @@ export const computeIncomeExpensePivot = (
   const groups: ExpenseGroupAgg[] = [];
   for (const groupName of groupOrder) {
     const rows = rowsByGroup.get(groupName);
-    if (!rows || !rows.length) continue;
+    if (!rows?.length) continue;
     rows.sort((a, b) => {
       const at = [...a.monthly.values()].reduce((s, v) => s + v, 0);
       const bt = [...b.monthly.values()].reduce((s, v) => s + v, 0);
@@ -252,10 +253,7 @@ export const computeIncomeExpensePivot = (
 
   const netByMonth = new Map<string, number>();
   for (const k of window) {
-    netByMonth.set(
-      k,
-      (incomeTotal.get(k) ?? 0) + (expenseTotal.get(k) ?? 0),
-    );
+    netByMonth.set(k, (incomeTotal.get(k) ?? 0) + (expenseTotal.get(k) ?? 0));
   }
 
   return {
@@ -288,7 +286,10 @@ export const computeIncomeExpensePivot = (
       })),
       monthly: mapToRecord(g.monthly),
     })),
-    totals: { expense: mapToRecord(expenseTotal), net: mapToRecord(netByMonth) },
+    totals: {
+      expense: mapToRecord(expenseTotal),
+      net: mapToRecord(netByMonth),
+    },
   };
 };
 
@@ -302,7 +303,7 @@ const COL_W = 13;
 const LABEL_W = 28;
 
 const truncateLabel = (label: string): string =>
-  label.length > LABEL_W - 1 ? label.slice(0, LABEL_W - 2) + "…" : label;
+  label.length > LABEL_W - 1 ? `${label.slice(0, LABEL_W - 2)}…` : label;
 
 const rowLine = (
   label: string,

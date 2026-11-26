@@ -6,22 +6,29 @@ First-time Cloudflare and YNAB app setup is in the [README](../../README.md#one-
 
 ```bash
 cp .dev.vars.example .dev.vars   # YNAB_CLIENT_ID, YNAB_CLIENT_SECRET, MCP_RESOURCE
-npm run dev                      # localhost:8787
+bun run dev                      # localhost:8787
 ```
 
 `.dev.vars` must set `MCP_RESOURCE=http://localhost:8787/mcp`, because tokens are bound to it.
-`npm run dev` passes `--local-upstream localhost:8787`; without it, wrangler rewrites the host to
+`bun run dev` passes `--local-upstream localhost:8787`; without it, wrangler rewrites the host to
 the custom-domain route and local OAuth discovery breaks.
 
-npm 11 blocks dependency install scripts unless allowed. `allowScripts` in `package.json` approves
-`esbuild` and `workerd`, which wrangler needs.
+Bun runs dependency install scripts only for trusted packages. `trustedDependencies` in
+`package.json` lists `esbuild` and `workerd`, which wrangler needs.
 
-After changing `wrangler.jsonc`, run `npx wrangler types` to regenerate
+Wrangler still runs on Node (22.12 or later), even through `bun run` and `bunx`.
+
+Bun is the package manager, script runner, test runner (`bun test`), type checker (`bun check`), and
+formatter (`bun fmt`); oxlint lints. The Worker itself still runs on workerd, so worker code must
+not use Bun APIs. That is why type-checking is split: `tsconfig.json` covers worker code without
+Bun's types, and `tsconfig.test.json` adds them for tests and evals.
+
+After changing `wrangler.jsonc`, run `bun run cf-typegen` to regenerate
 `worker-configuration.d.ts`.
 
 Driving MCP end to end locally needs MCP-client OAuth 2.1 with PKCE, which is awkward to
-script. `npx @modelcontextprotocol/inspector` against `http://localhost:8787/mcp` works, but
-usually the deployed Worker plus a real client is easier. `npx wrangler tail` streams its logs.
+script. `bunx @modelcontextprotocol/inspector` against `http://localhost:8787/mcp` works, but
+usually the deployed Worker plus a real client is easier. `bunx wrangler tail` streams its logs.
 
 ## Calling YNAB directly
 
@@ -43,15 +50,15 @@ a 401. Extra arguments after the path go to `curl`.
 
 ## Evals
 
-`npm run eval` runs `evals/**/*.eval.ts`: failures from real agent runs, replayed through the MCP client against a fixture plan with the clock frozen. They grade the outcome an agent needs, so a new case can land failing before its fix; that is why they stay out of `npm test`. Add a failure as a fixture row plus one `test`. Build fixtures from a read-only look at a real plan; never write to one.
+`bun run eval` runs `evals/*.eval.ts`: failures from real agent runs, replayed through the MCP client against a fixture plan with the clock frozen. They grade the outcome an agent needs, so a new case can land failing before its fix; that is why they stay out of `bun test`. Add a failure as a fixture row plus one `test`. Build fixtures from a read-only look at a real plan; never write to one.
 
 ## Deploying
 
 ```bash
-npx wrangler secret put YNAB_CLIENT_ID      # once, and on rotation
-npx wrangler secret put YNAB_CLIENT_SECRET
-npm run deploy
-npx wrangler tail                            # watch live requests
+bunx wrangler secret put YNAB_CLIENT_ID      # once, and on rotation
+bunx wrangler secret put YNAB_CLIENT_SECRET
+bun run deploy
+bunx wrangler tail                            # watch live requests
 ```
 
 Remote consumers read the deployed Worker, so changes reach them only after a deploy.

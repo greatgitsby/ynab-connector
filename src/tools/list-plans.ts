@@ -37,7 +37,7 @@ export const renderPlanList = (list: PlanList): string => {
 const DESCRIPTION =
   "List the YNAB plans this connection can see, most recently modified " +
   "first, with id, currency, month range, and last-modified date. YNAB " +
-  "renames archived plans to include \"(Archived on …)\".";
+  'renames archived plans to include "(Archived on …)".';
 
 export const registerListPlans = (
   server: McpServer,

@@ -42,7 +42,8 @@ export const renameRefusal = (
   }
   const name = input.name.trim().toLowerCase();
   const taken = payees.find(
-    (p) => !p.deleted && p.id !== payee.id && p.name.trim().toLowerCase() === name,
+    (p) =>
+      !p.deleted && p.id !== payee.id && p.name.trim().toLowerCase() === name,
   );
   // Two payees with one name can't be told apart in YNAB.
   if (taken) {
@@ -88,7 +89,11 @@ export const applyRenamePayees = async (
       // Later renames in the batch check against the new name.
       payees[i] = updated.data.payee;
     } catch (e) {
-      results.push({ ok: false, payee_id: input.payee_id, error: errorMessage(e) });
+      results.push({
+        ok: false,
+        payee_id: input.payee_id,
+        error: errorMessage(e),
+      });
     }
   }
   return { results };

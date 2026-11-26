@@ -2,7 +2,8 @@ import type { MonthDetail } from "./ynab";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
-const monthKey = (d: Date) => `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-01`;
+const monthKey = (d: Date) =>
+  `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-01`;
 
 // Shift a YYYY-MM-01 key by `delta` months.
 export const addMonths = (key: string, delta: number): string => {

@@ -95,7 +95,9 @@ export const computeMoneyMovements = (
 
   const rows = inRange
     .map((m) => {
-      const from = m.from_category_id ? byId.get(m.from_category_id) : undefined;
+      const from = m.from_category_id
+        ? byId.get(m.from_category_id)
+        : undefined;
       return {
         ...m,
         from_category_name: name(m.from_category_id),
@@ -131,8 +133,13 @@ export const renderMoneyMovements = (
       : `${r.since_month.slice(0, 7)} to ${r.until_month.slice(0, 7)}`;
   const out = [`Money movements, ${range}`, ""];
   const fromSavings = r.money_movements.filter((m) => m.from_savings);
-  pushSection(out, "Moved out of savings goals", fromSavings, opts.maxRows, (m) =>
-    `- ${m.month?.slice(0, 7)} ${fmtMoney(m.amount, iso)} ${m.from_category_name} → ${m.to_category_name}`,
+  pushSection(
+    out,
+    "Moved out of savings goals",
+    fromSavings,
+    opts.maxRows,
+    (m) =>
+      `- ${m.month?.slice(0, 7)} ${fmtMoney(m.amount, iso)} ${m.from_category_name} → ${m.to_category_name}`,
   );
   pushSection(out, "Net by category", r.by_category, opts.maxRows, (f) => {
     const parts = [
@@ -157,7 +164,7 @@ export const renderMoneyMovements = (
 const DESCRIPTION =
   "Money movements: every assignment and every move of money between " +
   "categories in a month range (default the 3 months ending with the " +
-  "current month). \"Ready to Assign\" as the source is an assignment; as " +
+  'current month). "Ready to Assign" as the source is an assignment; as ' +
   "the destination, money returned. Reports each category's net flow and " +
   "flags category-to-category moves out of savings-style goals (target " +
   "balances and non-monthly Plan Your Spending targets), such as draining a " +

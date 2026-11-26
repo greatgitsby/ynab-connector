@@ -254,7 +254,7 @@ export const renderConsentPage = (
 ): string => {
   const name = clientName?.trim() || "An unnamed app";
   const dest = describeUri(oauthReq.redirectUri);
-  const cimdHost = /^https:\/\//.test(oauthReq.clientId)
+  const cimdHost = oauthReq.clientId.startsWith("https://")
     ? describeUri(oauthReq.clientId)
     : null;
   const identity =

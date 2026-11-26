@@ -41,7 +41,8 @@ export const renderPayeeList = (list: PayeeList, query: string): string => {
       ? `## ${what} (showing ${list.payees.length} of ${list.total_matched})`
       : `## ${what} (${list.total_matched})`;
   const lines = list.payees.map(
-    (p) => `- ${p.name}${p.transfer_account_id ? " (transfer)" : ""} — id ${p.id}`,
+    (p) =>
+      `- ${p.name}${p.transfer_account_id ? " (transfer)" : ""} — id ${p.id}`,
   );
   return [header, ...lines].join("\n");
 };

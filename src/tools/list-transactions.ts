@@ -79,7 +79,9 @@ export const renderTransactionList = (
   if (list.by_month.length > 1) {
     out.push("", "## By month");
     for (const m of list.by_month) {
-      out.push(`- ${m.month.slice(0, 7)}: ${fmtMoney(m.total, iso)} (${m.count})`);
+      out.push(
+        `- ${m.month.slice(0, 7)}: ${fmtMoney(m.total, iso)} (${m.count})`,
+      );
     }
   }
   out.push(

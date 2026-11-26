@@ -3,15 +3,16 @@
   "version": "0.7.0",
   "private": true,
   "type": "module",
+  "packageManager": "bun@1.4.5",
   "scripts": {
-    "deploy": "wrangler deploy",
     "dev": "wrangler dev --local-upstream localhost:8787",
     "start": "wrangler dev --local-upstream localhost:8787",
+    "deploy": "wrangler deploy",
     "cf-typegen": "wrangler types",
-    "type-check": "tsc --noEmit",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "eval": "vitest run --config vitest.evals.config.ts"
+    "check": "bun check --no-script && bun check --no-script -p tsconfig.test.json",
+    "lint": "oxlint --deny-warnings",
+    "test": "bun test",
+    "eval": "bun test ./evals/*.eval.ts"
   },
   "dependencies": {
     "@cloudflare/workers-oauth-provider": "^1.3.0",
@@ -21,14 +22,13 @@
   },
   "devDependencies": {
     "@modelcontextprotocol/client": "2.4.0",
-    "@types/node": "^26.6.6",
-    "typescript": "^7.0.2",
-    "vitest": "^5.1.1",
+    "@types/bun": "^1.4.5",
+    "oxlint": "1.95.0",
+    "typescript": "7.0.2",
     "wrangler": "^4.166.0"
   },
-  "allowScripts": {
-    "esbuild": true,
-    "workerd": true,
-    "core-js-pure": false
-  }
+  "trustedDependencies": [
+    "esbuild",
+    "workerd"
+  ]
 }

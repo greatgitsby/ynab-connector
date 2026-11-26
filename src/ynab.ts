@@ -32,7 +32,10 @@ const TOKEN_URL = "https://app.ynab.com/oauth/token";
 const AUTHORIZE_URL = "https://app.ynab.com/oauth/authorize";
 
 export class YnabError extends Error {
-  constructor(public status: number, public body: string) {
+  constructor(
+    public status: number,
+    public body: string,
+  ) {
     super(`YNAB API ${status}: ${body}`);
   }
 }
@@ -60,9 +63,7 @@ export const ynabAuthorizeUrl = (params: {
   return `${AUTHORIZE_URL}?${qs.toString()}`;
 };
 
-const postToken = async (
-  body: URLSearchParams,
-): Promise<YnabTokenResponse> => {
+const postToken = async (body: URLSearchParams): Promise<YnabTokenResponse> => {
   const res = await fetch(TOKEN_URL, {
     method: "POST",
     headers: {

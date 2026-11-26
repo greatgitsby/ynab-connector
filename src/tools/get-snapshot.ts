@@ -79,11 +79,18 @@ export const computeSnapshot = (
   },
   opts: { iso: string; maxRows: number; recentSince: string },
 ): Snapshot => {
-  const tracking = new Set(input.accounts.filter(isTrackingAccount).map((a) => a.id));
-  const inbox = computeTriageInbox(input.uncategorized, input.unapproved, input.month, {
-    iso: opts.iso,
-    trackingAccountIds: tracking,
-  });
+  const tracking = new Set(
+    input.accounts.filter(isTrackingAccount).map((a) => a.id),
+  );
+  const inbox = computeTriageInbox(
+    input.uncategorized,
+    input.unapproved,
+    input.month,
+    {
+      iso: opts.iso,
+      trackingAccountIds: tracking,
+    },
+  );
   const section = (rows: FlatRow[]) => ({
     count: rows.length,
     rows: rows.slice(0, opts.maxRows).map((r) => pickRow(r)),
@@ -91,9 +98,18 @@ export const computeSnapshot = (
   const recent = flattenTransactions(input.recent)
     .filter((r) => r.imported && r.date >= opts.recentSince)
     .sort((a, b) => b.date.localeCompare(a.date));
-  const sum = (xs: { amount: number }[]) => xs.reduce((a, x) => a + x.amount, 0);
-  const overspent = inbox.overspent.map((c) => ({ id: c.id, name: c.name, amount: c.balance }));
-  const underfunded = inbox.underfunded.map((u) => ({ id: u.id, name: u.name, amount: u.underfunded }));
+  const sum = (xs: { amount: number }[]) =>
+    xs.reduce((a, x) => a + x.amount, 0);
+  const overspent = inbox.overspent.map((c) => ({
+    id: c.id,
+    name: c.name,
+    amount: c.balance,
+  }));
+  const underfunded = inbox.underfunded.map((u) => ({
+    id: u.id,
+    name: u.name,
+    amount: u.underfunded,
+  }));
   return {
     iso: opts.iso,
     month: inbox.month,
@@ -101,8 +117,16 @@ export const computeSnapshot = (
     age_of_money: input.month.age_of_money ?? null,
     uncategorized: section(flattenTransactions(inbox.uncategorized)),
     unapproved: section(flattenTransactions(inbox.auto_categorized)),
-    overspent: { count: overspent.length, total: sum(overspent), categories: overspent },
-    underfunded: { count: underfunded.length, total: sum(underfunded), categories: underfunded },
+    overspent: {
+      count: overspent.length,
+      total: sum(overspent),
+      categories: overspent,
+    },
+    underfunded: {
+      count: underfunded.length,
+      total: sum(underfunded),
+      categories: underfunded,
+    },
     accounts: input.accounts
       .filter((a) => !a.deleted && !a.closed)
       .sort((a, b) => Number(b.on_budget) - Number(a.on_budget))
@@ -124,7 +148,10 @@ export const computeSnapshot = (
 
 // ---- Render (pure)
 
-export const renderSnapshot = (s: Snapshot, opts: { includeIds: boolean }): string => {
+export const renderSnapshot = (
+  s: Snapshot,
+  opts: { includeIds: boolean },
+): string => {
   const { iso } = s;
   const out = [
     `Snapshot for ${s.month.slice(0, 7)}`,
@@ -132,8 +159,13 @@ export const renderSnapshot = (s: Snapshot, opts: { includeIds: boolean }): stri
     `Overspent: ${s.overspent.count} (${fmtMoney(s.overspent.total, iso)}) · Underfunded goals: ${s.underfunded.count} (${fmtMoney(s.underfunded.total, iso)})`,
     "",
   ];
-  const section = (title: string, { count, rows }: Snapshot["uncategorized"]) => {
-    out.push(`## ${title} (${rows.length < count ? `${rows.length} of ${count}` : count})`);
+  const section = (
+    title: string,
+    { count, rows }: Snapshot["uncategorized"],
+  ) => {
+    out.push(
+      `## ${title} (${rows.length < count ? `${rows.length} of ${count}` : count})`,
+    );
     if (!count) out.push("(none)");
     for (const r of rows) out.push(fmtRowLine(r, iso, opts.includeIds));
     out.push("");
@@ -142,19 +174,23 @@ export const renderSnapshot = (s: Snapshot, opts: { includeIds: boolean }): stri
   section("Unapproved", s.unapproved);
   if (s.overspent.count) {
     out.push("## Overspent");
-    for (const c of s.overspent.categories) out.push(`- ${c.name}: ${fmtMoney(c.amount, iso)}`);
+    for (const c of s.overspent.categories)
+      out.push(`- ${c.name}: ${fmtMoney(c.amount, iso)}`);
     out.push("");
   }
   if (s.underfunded.count) {
     out.push("## Underfunded");
-    for (const c of s.underfunded.categories) out.push(`- ${c.name}: needs ${fmtMoney(c.amount, iso)}`);
+    for (const c of s.underfunded.categories)
+      out.push(`- ${c.name}: needs ${fmtMoney(c.amount, iso)}`);
     out.push("");
   }
   out.push("## Accounts (cleared / working)");
   for (const a of s.accounts) {
     const link = a.link_error ? " ⚠ link error" : "";
     const off = a.on_budget ? "" : " (tracking)";
-    out.push(`- ${a.name}${off}: ${fmtMoney(a.cleared, iso)} / ${fmtMoney(a.working, iso)}${link}`);
+    out.push(
+      `- ${a.name}${off}: ${fmtMoney(a.cleared, iso)} / ${fmtMoney(a.working, iso)}${link}`,
+    );
   }
   out.push("");
   section("Recent imports", s.recent_imports);
@@ -169,7 +205,10 @@ const DESCRIPTION =
   "and transactions imported in the last `recent_days` days. Same inbox rules as triage_inbox (tracking accounts and approved transfers left out), " +
   "which shows full YNAB objects instead. Rows per section are capped by max_rows; counts cover everything.";
 
-export const registerGetSnapshot = (server: McpServer, getClient: () => YnabClient) => {
+export const registerGetSnapshot = (
+  server: McpServer,
+  getClient: () => YnabClient,
+) => {
   server.registerTool(
     "get_snapshot",
     {
@@ -188,14 +227,15 @@ export const registerGetSnapshot = (server: McpServer, getClient: () => YnabClie
       try {
         const c = getClient();
         const recentSince = addDays(todayIso(), -recent_days);
-        const [uncat, unapproved, recent, month, accounts, iso] = await Promise.all([
-          c.listTransactions(plan_id, { type: "uncategorized" }),
-          c.listTransactions(plan_id, { type: "unapproved" }),
-          c.listTransactions(plan_id, { sinceDate: recentSince }),
-          c.getMonth(plan_id, "current"),
-          c.listAccounts(plan_id),
-          c.planIso(plan_id),
-        ]);
+        const [uncat, unapproved, recent, month, accounts, iso] =
+          await Promise.all([
+            c.listTransactions(plan_id, { type: "uncategorized" }),
+            c.listTransactions(plan_id, { type: "unapproved" }),
+            c.listTransactions(plan_id, { sinceDate: recentSince }),
+            c.getMonth(plan_id, "current"),
+            c.listAccounts(plan_id),
+            c.planIso(plan_id),
+          ]);
         const s = computeSnapshot(
           {
             uncategorized: uncat.data.transactions,

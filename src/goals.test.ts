@@ -1,4 +1,11 @@
-import { describe, test, expect, beforeAll, afterAll, vi } from "vitest";
+import {
+  describe,
+  test,
+  expect,
+  beforeAll,
+  afterAll,
+  setSystemTime,
+} from "bun:test";
 import type { Category } from "./ynab";
 import { interpretGoal, fmtGoalSuffix } from "./goals";
 
@@ -18,11 +25,10 @@ const cat = (overrides: Partial<Category>): Category => ({
 // nextGoalDate rolls recurring goals forward past "today", so pin the clock to
 // a date consistent with the fixtures' refMonth (2026-05).
 beforeAll(() => {
-  vi.useFakeTimers({ toFake: ["Date"] });
-  vi.setSystemTime(new Date("2026-05-15T12:00:00Z"));
+  setSystemTime(new Date("2026-05-15T12:00:00Z"));
 });
 afterAll(() => {
-  vi.useRealTimers();
+  setSystemTime();
 });
 
 describe("interpretGoal", () => {
@@ -32,10 +38,7 @@ describe("interpretGoal", () => {
 
   test("returns null when goal_target is missing", () => {
     expect(
-      interpretGoal(
-        cat({ goal_type: "MF", goal_target: null }),
-        "2026-05-01",
-      ),
+      interpretGoal(cat({ goal_type: "MF", goal_target: null }), "2026-05-01"),
     ).toBeNull();
   });
 

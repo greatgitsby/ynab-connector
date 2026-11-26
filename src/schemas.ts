@@ -12,11 +12,9 @@ export const planIdParam = z
   );
 
 // YNAB's month path parameter: a first-of-month date or "current".
-export const monthParam = z
-  .string()
-  .regex(/^(\d{4}-\d{2}-01|current)$/, {
-    message: "month must be YYYY-MM-01 or 'current'",
-  });
+export const monthParam = z.string().regex(/^(\d{4}-\d{2}-01|current)$/, {
+  message: "month must be YYYY-MM-01 or 'current'",
+});
 
 export const dateParam = z
   .string()

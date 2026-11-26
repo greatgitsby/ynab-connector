@@ -1,4 +1,4 @@
-import { vi } from "vitest";
+import { setSystemTime, vi } from "bun:test";
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { buildServer } from "../src/server";
@@ -22,7 +22,10 @@ export const payeeId = (name: string) => `p-${slug(name)}`;
 const accountId = (name: string) => `a-${slug(name)}`;
 
 const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
 
 const wireTx = (t: FixtureTx) => {
   const account = t.account ?? "Apple Card";
@@ -68,7 +71,9 @@ const wireTx = (t: FixtureTx) => {
 const wireCategory = (c: FixtureCategory, txs: FixtureTx[], month: string) => {
   const activity = txs
     .filter((t) => t.date.startsWith(month.slice(0, 7)))
-    .flatMap((t) => (t.parts ? t.parts : [{ amount: t.amount, category: t.category }]))
+    .flatMap((t) =>
+      t.parts ? t.parts : [{ amount: t.amount, category: t.category }],
+    )
     .filter((p) => p.category === c.name)
     .reduce((a, p) => a + p.amount, 0);
   const budgeted = c.goal_target ?? 0;
@@ -94,69 +99,105 @@ const wireCategory = (c: FixtureCategory, txs: FixtureTx[], month: string) => {
 };
 
 // A fetch that answers YNAB's endpoints from the fixture.
-const fakeYnab = (txs: FixtureTx[], cats: FixtureCategory[]) => async (u: string | URL) => {
-  const url = new URL(String(u));
-  const path = url.pathname.replace(/^\/v1\/plans\/[^/]+/, "");
-  if (path === "/settings")
-    return json({ data: { settings: { currency_format: { iso_code: "USD", decimal_digits: 2 } } } });
-  if (path === "/categories") {
-    const groups = [...new Set(cats.map((c) => c.group))].map((g) => ({
-      id: `g-${slug(g)}`,
-      name: g,
-      hidden: false,
-      internal: false,
-      deleted: false,
-      categories: cats.filter((c) => c.group === g).map((c) => wireCategory(c, txs, TODAY)),
-    }));
-    return json({ data: { category_groups: groups } });
-  }
-  if (path === "/payees") {
-    const names = [...new Set(txs.map((t) => t.payee))];
-    return json({
-      data: { payees: names.map((name) => ({ id: payeeId(name), name, transfer_account_id: null, deleted: false })) },
-    });
-  }
-  if (path === "/accounts") {
-    const names = [...new Set(txs.map((t) => t.account ?? "Apple Card"))];
-    return json({
-      data: {
-        accounts: names.map((name) => ({
-          id: accountId(name), name, type: "checking", on_budget: true, closed: false, note: null,
-          balance: 0, cleared_balance: 0, uncleared_balance: 0, transfer_payee_id: null, deleted: false,
-        })),
-      },
-    });
-  }
-  if (path === "/scheduled_transactions") return json({ data: { scheduled_transactions: [] } });
-  const one = path.match(/^\/transactions\/([^/]+)$/);
-  if (one) {
-    const t = txs.find((x) => x.id === one[1]);
-    return t ? json({ data: { transaction: wireTx(t) } }) : json({ error: { id: "404.2", name: "resource_not_found" } }, 404);
-  }
-  const month = path.match(/^\/months\/([^/]+)$/);
-  if (month) {
-    const m = month[1] === "current" ? `${TODAY.slice(0, 7)}-01` : month[1];
-    return json({
-      data: {
-        month: {
-          month: m, note: null, income: 0, budgeted: 0, activity: 0, to_be_budgeted: 0, age_of_money: 30, deleted: false,
-          categories: cats.map((c) => wireCategory(c, txs, m)),
+const fakeYnab =
+  (txs: FixtureTx[], cats: FixtureCategory[]) => async (u: string | URL) => {
+    const url = new URL(String(u));
+    const path = url.pathname.replace(/^\/v1\/plans\/[^/]+/, "");
+    if (path === "/settings")
+      return json({
+        data: {
+          settings: { currency_format: { iso_code: "USD", decimal_digits: 2 } },
         },
-      },
-    });
-  }
-  if (path.endsWith("/transactions")) {
-    const since = url.searchParams.get("since_date") ?? "0000-00-00";
-    const until = url.searchParams.get("until_date") ?? "9999-99-99";
-    const acct = path.match(/^\/accounts\/([^/]+)\//)?.[1];
-    const rows = txs
-      .filter((t) => t.date >= since && t.date <= until)
-      .map(wireTx)
-      .filter((t) => !acct || t.account_id === acct);
-    return json({ data: { transactions: rows } });
-  }
-  return json({ error: { id: "404", name: `eval fake has no route for ${path}` } }, 404);
-};
+      });
+    if (path === "/categories") {
+      const groups = [...new Set(cats.map((c) => c.group))].map((g) => ({
+        id: `g-${slug(g)}`,
+        name: g,
+        hidden: false,
+        internal: false,
+        deleted: false,
+        categories: cats
+          .filter((c) => c.group === g)
+          .map((c) => wireCategory(c, txs, TODAY)),
+      }));
+      return json({ data: { category_groups: groups } });
+    }
+    if (path === "/payees") {
+      const names = [...new Set(txs.map((t) => t.payee))];
+      return json({
+        data: {
+          payees: names.map((name) => ({
+            id: payeeId(name),
+            name,
+            transfer_account_id: null,
+            deleted: false,
+          })),
+        },
+      });
+    }
+    if (path === "/accounts") {
+      const names = [...new Set(txs.map((t) => t.account ?? "Apple Card"))];
+      return json({
+        data: {
+          accounts: names.map((name) => ({
+            id: accountId(name),
+            name,
+            type: "checking",
+            on_budget: true,
+            closed: false,
+            note: null,
+            balance: 0,
+            cleared_balance: 0,
+            uncleared_balance: 0,
+            transfer_payee_id: null,
+            deleted: false,
+          })),
+        },
+      });
+    }
+    if (path === "/scheduled_transactions")
+      return json({ data: { scheduled_transactions: [] } });
+    const one = path.match(/^\/transactions\/([^/]+)$/);
+    if (one) {
+      const t = txs.find((x) => x.id === one[1]);
+      return t
+        ? json({ data: { transaction: wireTx(t) } })
+        : json({ error: { id: "404.2", name: "resource_not_found" } }, 404);
+    }
+    const month = path.match(/^\/months\/([^/]+)$/);
+    if (month) {
+      const m = month[1] === "current" ? `${TODAY.slice(0, 7)}-01` : month[1];
+      return json({
+        data: {
+          month: {
+            month: m,
+            note: null,
+            income: 0,
+            budgeted: 0,
+            activity: 0,
+            to_be_budgeted: 0,
+            age_of_money: 30,
+            deleted: false,
+            categories: cats.map((c) => wireCategory(c, txs, m)),
+          },
+        },
+      });
+    }
+    if (path.endsWith("/transactions")) {
+      const since = url.searchParams.get("since_date") ?? "0000-00-00";
+      const until = url.searchParams.get("until_date") ?? "9999-99-99";
+      const acct = path.match(/^\/accounts\/([^/]+)\//)?.[1];
+      const rows = txs
+        .filter((t) => t.date >= since && t.date <= until)
+        .map(wireTx)
+        .filter((t) => !acct || t.account_id === acct);
+      return json({ data: { transactions: rows } });
+    }
+    return json(
+      { error: { id: "404", name: `eval fake has no route for ${path}` } },
+      404,
+    );
+  };
 
 export interface CallResult {
   text: string;
@@ -166,13 +207,14 @@ export interface CallResult {
 
 // One connected client per fixture. Call `install` in beforeEach and
 // `uninstall` in afterEach.
+const realFetch = globalThis.fetch;
+
 export const plan = (txs: FixtureTx[], cats: FixtureCategory[]) => {
   let client: Client;
   return {
     async install() {
-      vi.useFakeTimers({ toFake: ["Date"] });
-      vi.setSystemTime(new Date(`${TODAY}T18:00:00Z`));
-      vi.stubGlobal("fetch", vi.fn(fakeYnab(txs, cats)));
+      setSystemTime(new Date(`${TODAY}T18:00:00Z`));
+      globalThis.fetch = vi.fn(fakeYnab(txs, cats)) as unknown as typeof fetch;
       const [c, s] = InMemoryTransport.createLinkedPair();
       await buildServer({
         ynabUserId: "eval",
@@ -187,13 +229,16 @@ export const plan = (txs: FixtureTx[], cats: FixtureCategory[]) => {
       await client.listTools();
     },
     uninstall() {
-      vi.useRealTimers();
-      vi.unstubAllGlobals();
+      setSystemTime();
+      globalThis.fetch = realFetch;
     },
     async tools() {
       return (await client.listTools()).tools;
     },
-    async call(name: string, args: Record<string, unknown>): Promise<CallResult> {
+    async call(
+      name: string,
+      args: Record<string, unknown>,
+    ): Promise<CallResult> {
       let res;
       try {
         res = await client.callTool({ name, arguments: args });
@@ -204,7 +249,11 @@ export const plan = (txs: FixtureTx[], cats: FixtureCategory[]) => {
       const text = (res.content as { type: string; text?: string }[])
         .map((c) => c.text ?? "")
         .join("\n");
-      return { text, structured: (res.structuredContent ?? {}) as Record<string, any>, isError: !!res.isError };
+      return {
+        text,
+        structured: (res.structuredContent ?? {}) as Record<string, any>,
+        isError: !!res.isError,
+      };
     },
   };
 };

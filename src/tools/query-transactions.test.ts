@@ -1,6 +1,11 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test } from "bun:test";
 import type { FlatRow } from "../rows";
-import { computeQuery, filterRows, QueryResultSchema, sortRows } from "./query-transactions";
+import {
+  computeQuery,
+  filterRows,
+  QueryResultSchema,
+  sortRows,
+} from "./query-transactions";
 
 const row = (id: string, over: Partial<FlatRow> = {}): FlatRow => ({
   id,
@@ -25,30 +30,82 @@ const row = (id: string, over: Partial<FlatRow> = {}): FlatRow => ({
 const rows = [
   row("t1", { date: "2026-09-03", amount: -1200 }),
   row("t2", { date: "2026-10-03", amount: -1000, memo: "Birthday cake" }),
-  row("t3", { date: "2026-10-20", amount: -9000, payee: "Cafe", payee_id: "p-cafe", category: "Dining", category_id: "c-dine" }),
-  row("t4", { date: "2026-10-21", amount: 50000, payee: "Employer", payee_id: "p-job", category: "Inflow", category_id: "c-in", account_id: "a2" }),
-  row("t5", { date: "2026-10-22", amount: -20000, payee: "Transfer : Savings", payee_id: "p-xfer", category: null, category_id: null, transfer: true }),
+  row("t3", {
+    date: "2026-10-20",
+    amount: -9000,
+    payee: "Cafe",
+    payee_id: "p-cafe",
+    category: "Dining",
+    category_id: "c-dine",
+  }),
+  row("t4", {
+    date: "2026-10-21",
+    amount: 50000,
+    payee: "Employer",
+    payee_id: "p-job",
+    category: "Inflow",
+    category_id: "c-in",
+    account_id: "a2",
+  }),
+  row("t5", {
+    date: "2026-10-22",
+    amount: -20000,
+    payee: "Transfer : Savings",
+    payee_id: "p-xfer",
+    category: null,
+    category_id: null,
+    transfer: true,
+  }),
   row("t6", { date: "2026-10-05", amount: -800 }),
-  row("t7", { date: "2026-10-26", amount: -61110, payee: "Apple Card Payment", payee_id: "p-acp", category: "Fun Money", category_id: "c-fun-money" }),
+  row("t7", {
+    date: "2026-10-26",
+    amount: -61110,
+    payee: "Apple Card Payment",
+    payee_id: "p-acp",
+    category: "Fun Money",
+    category_id: "c-fun-money",
+  }),
 ];
 
 describe("filterRows", () => {
   test("ORs within a kind and ANDs across kinds", () => {
-    const ids = (f: Parameters<typeof filterRows>[1]) => filterRows(rows, f).map((r) => r.id);
-    expect(ids({ categoryIds: new Set(["c-food", "c-dine"]) })).toEqual(["t1", "t2", "t3", "t6"]);
-    expect(ids({ categoryIds: new Set(["c-food", "c-dine"]), payeeIds: new Set(["p-cafe"]) })).toEqual(["t3"]);
+    const ids = (f: Parameters<typeof filterRows>[1]) =>
+      filterRows(rows, f).map((r) => r.id);
+    expect(ids({ categoryIds: new Set(["c-food", "c-dine"]) })).toEqual([
+      "t1",
+      "t2",
+      "t3",
+      "t6",
+    ]);
+    expect(
+      ids({
+        categoryIds: new Set(["c-food", "c-dine"]),
+        payeeIds: new Set(["p-cafe"]),
+      }),
+    ).toEqual(["t3"]);
     expect(ids({ accountIds: new Set(["a2"]) })).toEqual(["t4"]);
   });
 
   test("search covers payee and memo; direction and transfers narrow", () => {
-    expect(filterRows(rows, { search: "CAKE" }).map((r) => r.id)).toEqual(["t2"]);
-    expect(filterRows(rows, { search: "caf" }).map((r) => r.id)).toEqual(["t3"]);
-    expect(filterRows(rows, { direction: "inflow" }).map((r) => r.id)).toEqual(["t4"]);
-    expect(filterRows(rows, { excludeTransfers: true, direction: "outflow" }).map((r) => r.id)).toEqual(["t1", "t2", "t3", "t6"]);
+    expect(filterRows(rows, { search: "CAKE" }).map((r) => r.id)).toEqual([
+      "t2",
+    ]);
+    expect(filterRows(rows, { search: "caf" }).map((r) => r.id)).toEqual([
+      "t3",
+    ]);
+    expect(filterRows(rows, { direction: "inflow" }).map((r) => r.id)).toEqual([
+      "t4",
+    ]);
+    expect(
+      filterRows(rows, { excludeTransfers: true, direction: "outflow" }).map(
+        (r) => r.id,
+      ),
+    ).toEqual(["t1", "t2", "t3", "t6"]);
   });
 
   test("several search terms match any; AND needs all; OR is not a literal", () => {
-    const ids = (search: string | string[]) => filterRows(rows, { search }).map((r) => r.id);
+    const ids = (search: string | string[]) =>
+      filterRows(rows, { search }).map((r) => r.id);
     expect(ids("Cafe OR Employer")).toEqual(["t3", "t4"]);
     expect(ids(["cake", "cafe"])).toEqual(["t2", "t3"]);
     expect(ids("store AND cake")).toEqual(["t2"]);
@@ -57,10 +114,19 @@ describe("filterRows", () => {
 });
 
 describe("computeQuery", () => {
-  const base = { iso: "USD", groupLimit: 100, offset: 0, fields: ["id", "amount"] as const };
+  const base = {
+    iso: "USD",
+    groupLimit: 100,
+    offset: 0,
+    fields: ["id", "amount"] as const,
+  };
 
   test("groups by payee with count, total, typical, and date span; totals cover every row", () => {
-    const q = computeQuery(sortRows(rows), { ...base, groupBy: "payee", limit: 0 });
+    const q = computeQuery(sortRows(rows), {
+      ...base,
+      groupBy: "payee",
+      limit: 0,
+    });
     expect(() => QueryResultSchema.parse(q)).not.toThrow();
     expect(q.count).toBe(7);
     expect(q.inflow).toBe(50000);
@@ -82,7 +148,12 @@ describe("computeQuery", () => {
   });
 
   test("months group chronologically; the group cap keeps the count", () => {
-    const q = computeQuery(sortRows(rows), { ...base, groupBy: "month", groupLimit: 1, limit: 0 });
+    const q = computeQuery(sortRows(rows), {
+      ...base,
+      groupBy: "month",
+      groupLimit: 1,
+      limit: 0,
+    });
     expect(q.group_count).toBe(2);
     expect(q.groups.map((g) => [g.key, g.count])).toEqual([["2026-09-01", 1]]);
   });

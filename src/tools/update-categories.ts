@@ -1,7 +1,12 @@
 import { z } from "zod";
 import { planIdParam } from "../schemas";
 import type { McpServer } from "@modelcontextprotocol/server";
-import type { Category, CategoryGroup, SaveCategory, YnabClient } from "../ynab";
+import type {
+  Category,
+  CategoryGroup,
+  SaveCategory,
+  YnabClient,
+} from "../ynab";
 import { YnabError } from "../ynab";
 import { handleError, result, scopeDeniedError } from "../format";
 import type { Props } from "../ynab-auth";
@@ -14,7 +19,9 @@ export const CategoryChangeSchema = z.object({
   category_group_id: z
     .string()
     .optional()
-    .describe("Move the category to this group. Find group ids with get_month and include_ids."),
+    .describe(
+      "Move the category to this group. Find group ids with get_month and include_ids.",
+    ),
 });
 export type CategoryChange = z.infer<typeof CategoryChangeSchema>;
 
@@ -27,14 +34,20 @@ const ResultSchema = z.discriminatedUnion("ok", [
     before_group: z.string(),
     after_group: z.string(),
   }),
-  z.object({ ok: z.literal(false), category_id: z.string(), error: z.string() }),
+  z.object({
+    ok: z.literal(false),
+    category_id: z.string(),
+    error: z.string(),
+  }),
 ]);
 export type CategoryChangeResult = z.infer<typeof ResultSchema>;
 
 export const UpdateCategoriesResultSchema = z.object({
   results: z.array(ResultSchema),
 });
-export type UpdateCategoriesResult = z.infer<typeof UpdateCategoriesResultSchema>;
+export type UpdateCategoriesResult = z.infer<
+  typeof UpdateCategoriesResultSchema
+>;
 
 // ---- Compute (pure)
 
@@ -49,7 +62,8 @@ export const nameTakenError = (
   for (const g of groups) {
     if (g.deleted) continue;
     const c = (g.categories ?? []).find(
-      (c) => !c.deleted && c.id !== exceptId && c.name.trim().toLowerCase() === want,
+      (c) =>
+        !c.deleted && c.id !== exceptId && c.name.trim().toLowerCase() === want,
     );
     if (c) {
       const hidden = c.hidden || g.hidden ? ", hidden" : "";
@@ -59,25 +73,36 @@ export const nameTakenError = (
   return null;
 };
 
-export const groupError = (groupId: string, groups: CategoryGroup[]): string | null => {
+export const groupError = (
+  groupId: string,
+  groups: CategoryGroup[],
+): string | null => {
   if (groups.some((g) => g.id === groupId && !g.deleted)) return null;
-  const live = groups.filter((g) => !g.deleted).map((g) => `${g.name} (id ${g.id})`);
+  const live = groups
+    .filter((g) => !g.deleted)
+    .map((g) => `${g.name} (id ${g.id})`);
   return `No such category group. Groups: ${live.join(", ")}.`;
 };
 
 // Credit Card Payments categories are tied to their card; YNAB's `internal`
 // flag can't identify that group, since template groups carry it too.
-const isCardPaymentGroup = (g: CategoryGroup | undefined) => g?.name === "Credit Card Payments";
+const isCardPaymentGroup = (g: CategoryGroup | undefined) =>
+  g?.name === "Credit Card Payments";
 
 export const changeBody = (
   change: CategoryChange,
   groups: CategoryGroup[],
 ): { body: SaveCategory } | { error: string } => {
-  const group = groups.find((g) => (g.categories ?? []).some((c) => c.id === change.category_id));
+  const group = groups.find((g) =>
+    (g.categories ?? []).some((c) => c.id === change.category_id),
+  );
   const category = group?.categories?.find((c) => c.id === change.category_id);
-  if (!group || !category || category.deleted) return { error: "No such category." };
+  if (!group || !category || category.deleted)
+    return { error: "No such category." };
   if (category.internal || isCardPaymentGroup(group)) {
-    return { error: `"${category.name}" is managed by YNAB and can't be renamed or moved.` };
+    return {
+      error: `"${category.name}" is managed by YNAB and can't be renamed or moved.`,
+    };
   }
   const body: SaveCategory = {};
   if (change.name !== undefined && change.name !== category.name) {
@@ -85,7 +110,10 @@ export const changeBody = (
     if (taken) return { error: taken };
     body.name = change.name;
   }
-  if (change.category_group_id !== undefined && change.category_group_id !== group.id) {
+  if (
+    change.category_group_id !== undefined &&
+    change.category_group_id !== group.id
+  ) {
     const bad = groupError(change.category_group_id, groups);
     if (bad) return { error: bad };
     body.category_group_id = change.category_group_id;
@@ -98,7 +126,11 @@ export const changeBody = (
 const place = (groups: CategoryGroup[], updated: Category): CategoryGroup[] =>
   groups.map((g) => {
     const rest = (g.categories ?? []).filter((c) => c.id !== updated.id);
-    return { ...g, categories: g.id === updated.category_group_id ? [...rest, updated] : rest };
+    return {
+      ...g,
+      categories:
+        g.id === updated.category_group_id ? [...rest, updated] : rest,
+    };
   });
 
 // ---- Effectful: one PATCH per change, in input order, never short-circuit
@@ -121,12 +153,22 @@ export const updateCategories = async (
   for (const change of changes) {
     const planned = changeBody(change, groups);
     if ("error" in planned) {
-      results.push({ ok: false, category_id: change.category_id, error: planned.error });
+      results.push({
+        ok: false,
+        category_id: change.category_id,
+        error: planned.error,
+      });
       continue;
     }
-    const before = groups.flatMap((g) => g.categories ?? []).find((c) => c.id === change.category_id)!;
+    const before = groups
+      .flatMap((g) => g.categories ?? [])
+      .find((c) => c.id === change.category_id)!;
     try {
-      const { data } = await client.updateCategory(planId, change.category_id, planned.body);
+      const { data } = await client.updateCategory(
+        planId,
+        change.category_id,
+        planned.body,
+      );
       results.push({
         ok: true,
         category_id: change.category_id,
@@ -137,7 +179,11 @@ export const updateCategories = async (
       });
       groups = place(groups, data.category);
     } catch (e) {
-      results.push({ ok: false, category_id: change.category_id, error: errorMessage(e) });
+      results.push({
+        ok: false,
+        category_id: change.category_id,
+        error: errorMessage(e),
+      });
     }
   }
   return { results };
@@ -149,14 +195,18 @@ export const renderUpdateCategories = (out: UpdateCategoriesResult): string => {
   const n = out.results.length;
   const okCount = out.results.filter((r) => r.ok).length;
   const errCount = n - okCount;
-  const errs = errCount ? ` (${errCount} error${errCount === 1 ? "" : "s"})` : "";
+  const errs = errCount
+    ? ` (${errCount} error${errCount === 1 ? "" : "s"})`
+    : "";
   const header = `## Updated ${okCount} / ${n} categor${n === 1 ? "y" : "ies"}${errs}`;
   const lines = out.results.map((r) => {
     if (!r.ok) return `- [error] ${r.category_id}: ${r.error}`;
     const parts: string[] = [];
-    if (r.before_name !== r.after_name) parts.push(`"${r.before_name}" → "${r.after_name}"`);
+    if (r.before_name !== r.after_name)
+      parts.push(`"${r.before_name}" → "${r.after_name}"`);
     else parts.push(`"${r.after_name}"`);
-    if (r.before_group !== r.after_group) parts.push(`moved ${r.before_group} → ${r.after_group}`);
+    if (r.before_group !== r.after_group)
+      parts.push(`moved ${r.before_group} → ${r.after_group}`);
     return `- [ok] ${parts.join(", ")} — id ${r.category_id}`;
   });
   return [header, ...lines].join("\n");

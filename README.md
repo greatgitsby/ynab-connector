@@ -29,36 +29,36 @@ To host your own copy, see [One-time setup](#one-time-setup).
 
 Read tools:
 
-| Tool | What it does |
-| --- | --- |
-| `list_plans` | All plans visible to the connected YNAB account, archived ones included |
-| `list_accounts` | Accounts with balances, bank-link health, and last reconciliation |
-| `list_months` | Income, assigned, activity, Ready to Assign, and age of money for each month in a range |
-| `get_snapshot` | A compact overview in one call: Ready to Assign, uncategorized and unapproved transactions, overspent and underfunded totals, account balances (cleared and working), and recent imports |
-| `get_month` | One month's categories, grouped by category group; defaults to the current month. Can keep only underfunded, overspent, nonzero, or goal categories, as a compact list |
-| `get_category` | One category in one month, optionally with its month-by-month history and whether its goal was funded each month |
-| `query_transactions` | Compact transaction rows filtered by any number of accounts, categories, and payees (names or ids) and text search, paged, and grouped by payee, category, month, or account with count, total, typical amount, and first and last date |
-| `list_transactions` | Transactions as full YNAB objects for the plan or one account, category, payee, or month over any date range, with totals by month |
-| `list_scheduled_transactions` | Upcoming scheduled bills, paychecks, and transfers that aren't in balances yet |
-| `list_money_movements` | Assignments and moves between categories, with each category's net flow and moves out of savings goals flagged |
-| `list_payees` | Payees, optionally filtered by part of their name |
-| `review_payees` | Likely duplicate payees, names stored with HTML entities, and barely used payees, with usage counts; filter by name and page through every list |
-| `triage_inbox` | Uncategorized and unapproved transactions, overspent categories, and underfunded goals in one call |
-| `reflect_income_expense` | Income by payee against expense by category for each month in a range (default 3 months), with Average and Total columns |
-| `reflect_net_worth` | Current net worth, month-end history rebuilt from transactions, and each account's balance |
+| Tool                          | What it does                                                                                                                                                                                                                            |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_plans`                  | All plans visible to the connected YNAB account, archived ones included                                                                                                                                                                 |
+| `list_accounts`               | Accounts with balances, bank-link health, and last reconciliation                                                                                                                                                                       |
+| `list_months`                 | Income, assigned, activity, Ready to Assign, and age of money for each month in a range                                                                                                                                                 |
+| `get_snapshot`                | A compact overview in one call: Ready to Assign, uncategorized and unapproved transactions, overspent and underfunded totals, account balances (cleared and working), and recent imports                                                |
+| `get_month`                   | One month's categories, grouped by category group; defaults to the current month. Can keep only underfunded, overspent, nonzero, or goal categories, as a compact list                                                                  |
+| `get_category`                | One category in one month, optionally with its month-by-month history and whether its goal was funded each month                                                                                                                        |
+| `query_transactions`          | Compact transaction rows filtered by any number of accounts, categories, and payees (names or ids) and text search, paged, and grouped by payee, category, month, or account with count, total, typical amount, and first and last date |
+| `list_transactions`           | Transactions as full YNAB objects for the plan or one account, category, payee, or month over any date range, with totals by month                                                                                                      |
+| `list_scheduled_transactions` | Upcoming scheduled bills, paychecks, and transfers that aren't in balances yet                                                                                                                                                          |
+| `list_money_movements`        | Assignments and moves between categories, with each category's net flow and moves out of savings goals flagged                                                                                                                          |
+| `list_payees`                 | Payees, optionally filtered by part of their name                                                                                                                                                                                       |
+| `review_payees`               | Likely duplicate payees, names stored with HTML entities, and barely used payees, with usage counts; filter by name and page through every list                                                                                         |
+| `triage_inbox`                | Uncategorized and unapproved transactions, overspent categories, and underfunded goals in one call                                                                                                                                      |
+| `reflect_income_expense`      | Income by payee against expense by category for each month in a range (default 3 months), with Average and Total columns                                                                                                                |
+| `reflect_net_worth`           | Current net worth, month-end history rebuilt from transactions, and each account's balance                                                                                                                                              |
 
 Write tools need write access (see [Permissions](#permissions)):
 
-| Tool | What it does |
-| --- | --- |
+| Tool                   | What it does                                                                                                                                                                                                                   |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `assign_to_categories` | Set, add to, or subtract from a month's `budgeted` amount on categories by name or id, fund a goal's shortfall, or fund every underfunded goal except named ones. Has a dry run, and reports Ready to Assign before and after. |
-| `set_category_goals` | Create, change, or remove category goals (targets). Previews unless called with `apply: true`. |
-| `create_categories` | Create categories in existing groups, each optionally with a goal. Refuses a name another category already has. |
-| `update_categories` | Rename categories or move them to another group. Refuses a name another category already has. |
-| `update_transactions` | Edit existing transactions in bulk: category (by name or id), approval, memo, flag, cleared status, payee, or splits. Reports the resulting category balances and Ready to Assign. |
-| `reconcile_account` | Reconcile an account against a bank statement balance. Locks cleared transactions only when every transaction is approved and categorized and the balances match. |
-| `rename_payees` | Rename one or more payees. Refuses a name another payee already has. |
-| `merge_payees` | Move every transaction and scheduled transaction from duplicate payees to one payee. Previews unless called with `apply: true`; reports anything YNAB's API can't move. |
+| `set_category_goals`   | Create, change, or remove category goals (targets). Previews unless called with `apply: true`.                                                                                                                                 |
+| `create_categories`    | Create categories in existing groups, each optionally with a goal. Refuses a name another category already has.                                                                                                                |
+| `update_categories`    | Rename categories or move them to another group. Refuses a name another category already has.                                                                                                                                  |
+| `update_transactions`  | Edit existing transactions in bulk: category (by name or id), approval, memo, flag, cleared status, payee, or splits. Reports the resulting category balances and Ready to Assign.                                             |
+| `reconcile_account`    | Reconcile an account against a bank statement balance. Locks cleared transactions only when every transaction is approved and categorized and the balances match.                                                              |
+| `rename_payees`        | Rename one or more payees. Refuses a name another payee already has.                                                                                                                                                           |
+| `merge_payees`         | Move every transaction and scheduled transaction from duplicate payees to one payee. Previews unless called with `apply: true`; reports anything YNAB's API can't move.                                                        |
 
 The connector deliberately leaves out creating manual transactions, deleting anything (payees included), creating or editing scheduled transactions other than re-pointing their payee in a merge, and hiding categories (YNAB's API can't hide them). [Write tools](docs/internals/write-tools.md) explains why.
 
@@ -103,7 +103,7 @@ personal use, the cap doesn't matter.
 ### 2. Create the OAuth KV namespace
 
 ```bash
-npx wrangler kv namespace create OAUTH_KV
+bunx wrangler kv namespace create OAUTH_KV
 ```
 
 Copy the `id` it prints into `wrangler.jsonc`, replacing `REPLACE_WITH_KV_NAMESPACE_ID`.
@@ -111,11 +111,11 @@ Copy the `id` it prints into `wrangler.jsonc`, replacing `REPLACE_WITH_KV_NAMESP
 ### 3. Set secrets
 
 ```bash
-npm install
-npx wrangler login                                 # if you haven't before
-npx wrangler secret put YNAB_CLIENT_ID             # from step 1
-npx wrangler secret put YNAB_CLIENT_SECRET         # from step 1
-npx wrangler deploy
+bun install
+bunx wrangler login                                 # if you haven't before
+bunx wrangler secret put YNAB_CLIENT_ID             # from step 1
+bunx wrangler secret put YNAB_CLIENT_SECRET         # from step 1
+bunx wrangler deploy
 ```
 
 Wrangler prints the deployed URL, something like
@@ -142,7 +142,7 @@ when they add the connector.
 
 ```bash
 cp .dev.vars.example .dev.vars   # fill in YNAB_CLIENT_ID + YNAB_CLIENT_SECRET
-npm run dev                       # starts wrangler dev on localhost:8787
+bun run dev                       # starts wrangler dev on localhost:8787
 ```
 
 For the local YNAB OAuth app, set the redirect URI to
@@ -151,7 +151,7 @@ For the local YNAB OAuth app, set the redirect URI to
 Test it with the MCP inspector:
 
 ```bash
-npx @modelcontextprotocol/inspector
+bunx @modelcontextprotocol/inspector
 ```
 
 Connect to `http://localhost:8787/mcp` with the Streamable HTTP transport.

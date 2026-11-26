@@ -105,9 +105,7 @@ export const fmtTxLine = (
 ): string => {
   const showCategory = opts.showCategory ?? true;
   const payee = t.payee_name ?? "(no payee)";
-  const cat = showCategory
-    ? ` → ${t.category_name ?? "(uncategorized)"}`
-    : "";
+  const cat = showCategory ? ` → ${t.category_name ?? "(uncategorized)"}` : "";
   const parts = t.subtransactions?.filter((s) => !s.deleted).length ?? 0;
   const split =
     t.type === "subtransaction"

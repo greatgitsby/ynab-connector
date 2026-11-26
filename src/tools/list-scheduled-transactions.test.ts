@@ -1,4 +1,4 @@
-import { describe, test, expect } from "vitest";
+import { describe, test, expect } from "bun:test";
 import type { ScheduledTransaction } from "../ynab";
 import {
   computeScheduledTransactionList,
@@ -49,7 +49,10 @@ describe("computeScheduledTransactionList", () => {
       untilDate: "2026-12-01",
       iso: "USD",
     });
-    expect(soon.scheduled_transactions.map((s) => s.id)).toEqual(["gym", "rent"]);
+    expect(soon.scheduled_transactions.map((s) => s.id)).toEqual([
+      "gym",
+      "rent",
+    ]);
   });
 
   test("renders one-off transfers as such", () => {
@@ -57,7 +60,9 @@ describe("computeScheduledTransactionList", () => {
       computeScheduledTransactionList(fetched, { iso: "USD" }),
       { includeIds: false },
     );
-    expect(out).toContain("- 2026-11-05 -$40.00 Gym → Rent [Checking], monthly");
+    expect(out).toContain(
+      "- 2026-11-05 -$40.00 Gym → Rent [Checking], monthly",
+    );
     expect(out).toContain("(transfer) [Checking], once");
   });
 });

@@ -47,8 +47,8 @@ object was evicted, the grant held a spent refresh token. That is why the server
 the `YnabMcp` Durable Object was deleted with migration `v2`, and the tools never needed session
 state.
 
-`src/index.ts` and `src/token-refresh.ts` import `cloudflare:workers`, so the plain-Node vitest
-suite cannot load them. Probe the OAuth endpoints under `wrangler dev` when changing them.
+`src/index.ts` and `src/token-refresh.ts` import `cloudflare:workers`, so `bun test`, which runs
+outside workerd, cannot load them. Probe the OAuth endpoints under `wrangler dev` when changing them.
 
 ## Tool shape
 

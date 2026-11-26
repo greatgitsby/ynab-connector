@@ -51,9 +51,7 @@ export interface ReconcileResult {
 // category AND isn't a transfer (transfers legitimately have no category) AND
 // isn't a split parent (a split's categories live on its subtransactions).
 const isUncategorizedTx = (t: Transaction): boolean =>
-  t.category_id == null &&
-  !isTransferTx(t) &&
-  !isSplitTx(t);
+  t.category_id == null && !isTransferTx(t) && !isSplitTx(t);
 
 export const computeReconciliation = (
   account: Account,
@@ -106,7 +104,11 @@ export const applyReconcile = async (
 ): Promise<ReconcileResult> => {
   // No write unless the account is fully verified, the statement balance
   // matches, and there is actually something to lock.
-  if (!reconciliation.verified || !reconciliation.matches || reconciliation.toReconcile.length === 0) {
+  if (
+    !reconciliation.verified ||
+    !reconciliation.matches ||
+    reconciliation.toReconcile.length === 0
+  ) {
     return { reconciliation, locked: [] };
   }
 
@@ -185,15 +187,22 @@ export const renderReconcile = (out: ReconcileResult, iso: string): string => {
     lines.push(
       `## Cannot reconcile ${reconciliation.accountName} — off by ${fmtMoney(reconciliation.delta, iso)}`,
     );
-    lines.push(`Statement balance: ${fmtMoney(reconciliation.statementBalance, iso)}`);
-    lines.push(`YNAB cleared balance: ${fmtMoney(reconciliation.clearedBalance, iso)}`);
+    lines.push(
+      `Statement balance: ${fmtMoney(reconciliation.statementBalance, iso)}`,
+    );
+    lines.push(
+      `YNAB cleared balance: ${fmtMoney(reconciliation.clearedBalance, iso)}`,
+    );
     lines.push(
       "Clear or correct the transactions below until the cleared balance " +
         "matches your statement, or add a reconciliation adjustment in the " +
         "YNAB app. Then run this again.",
     );
     if (reconciliation.uncleared.length) {
-      lines.push("", `Uncleared transactions (${reconciliation.uncleared.length}):`);
+      lines.push(
+        "",
+        `Uncleared transactions (${reconciliation.uncleared.length}):`,
+      );
       for (const t of reconciliation.uncleared) {
         lines.push(fmtTxLine(t, iso, { includeIds: true }));
       }
@@ -225,7 +234,9 @@ export const renderReconcile = (out: ReconcileResult, iso: string): string => {
     if (!r.ok) {
       lines.push(`- [error] tx ${r.transaction_id}: ${r.error}`);
     } else {
-      lines.push(`- [ok] ${fmtTxLine(r.transaction, iso, { includeIds: true })}`);
+      lines.push(
+        `- [ok] ${fmtTxLine(r.transaction, iso, { includeIds: true })}`,
+      );
     }
   }
   return lines.join("\n");

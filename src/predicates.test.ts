@@ -1,4 +1,4 @@
-import { describe, test, expect } from "vitest";
+import { describe, test, expect } from "bun:test";
 import type { Account, Category, Transaction } from "./ynab";
 import {
   isCardPaymentPayee,
@@ -143,24 +143,39 @@ describe("isSavingsCategory", () => {
       [{ goal_type: "TB" }, true],
       [{ goal_type: "TBD" }, true],
       [{ goal_type: "NEED", goal_cadence: 0 }, true],
-      [{ goal_type: "NEED", goal_cadence: 13, goal_cadence_frequency: 1 }, true],
+      [
+        { goal_type: "NEED", goal_cadence: 13, goal_cadence_frequency: 1 },
+        true,
+      ],
       [{ goal_type: "NEED", goal_cadence: 1, goal_cadence_frequency: 3 }, true],
-      [{ goal_type: "NEED", goal_cadence: 1, goal_cadence_frequency: 1 }, false],
+      [
+        { goal_type: "NEED", goal_cadence: 1, goal_cadence_frequency: 1 },
+        false,
+      ],
       [{ goal_type: "NEED", goal_cadence: 2 }, false],
       [{ goal_type: "MF" }, false],
       [{ goal_type: "DEBT" }, false],
       [{}, false],
     ];
     for (const [overrides, expected] of cases) {
-      expect(isSavingsCategory(cat(overrides)), JSON.stringify(overrides)).toBe(expected);
+      expect(isSavingsCategory(cat(overrides)), JSON.stringify(overrides)).toBe(
+        expected,
+      );
     }
   });
 });
 
 describe("isCardPaymentPayee", () => {
   test("card payments recorded as spending, not merchants that mention cards", () => {
-    for (const p of ["Apple Card Payment", "CHASE CREDIT CARD PAYMENT", "Payment, Thank You", "AMEX Autopay", "Citi ePayment"])
+    for (const p of [
+      "Apple Card Payment",
+      "CHASE CREDIT CARD PAYMENT",
+      "Payment, Thank You",
+      "AMEX Autopay",
+      "Citi ePayment",
+    ])
       expect(isCardPaymentPayee(p), p).toBe(true);
-    for (const p of ["Apple", "Card Factory", "PayPal", null]) expect(isCardPaymentPayee(p), String(p)).toBe(false);
+    for (const p of ["Apple", "Card Factory", "PayPal", null])
+      expect(isCardPaymentPayee(p), String(p)).toBe(false);
   });
 });

@@ -1,60 +1,56 @@
 {
-	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "ynab-connector",
-	"main": "src/index.ts",
-	"compatibility_date": "2026-10-01",
-	"compatibility_flags": [
-		"nodejs_compat",
-		// Lets workers-oauth-provider accept Client ID Metadata Document
-		// (CIMD) clients, the MCP auth spec's preferred registration method.
-		"global_fetch_strictly_public"
-	],
-	// v1 created the McpAgent Durable Object. The MCP server is now stateless
-	// (createMcpHandler), so v2 deletes the class and its storage.
-	"migrations": [
-		{
-			"new_sqlite_classes": [
-				"YnabMcp"
-			],
-			"tag": "v1"
-		},
-		{
-			"deleted_classes": [
-				"YnabMcp"
-			],
-			"tag": "v2"
-		}
-	],
-	"vars": {
-		// Canonical MCP resource URL; every OAuth token's audience is bound to it.
-		// Must match what existing grants carry — don't change it casually.
-		"MCP_RESOURCE": "https://ynab.mcp.moen.ai/mcp"
-	},
-	"kv_namespaces": [
-		{
-			"binding": "OAUTH_KV",
-			"id": "e8aa9cdf03b34b1b9e79de520afa4b99"
-		}
-	],
-	// Per-IP limits on the unauthenticated endpoints that write KV (src/index.ts).
-	"ratelimits": [
-		{
-			"name": "AUTH_RATE_LIMITER",
-			"namespace_id": "1001",
-			"simple": { "limit": 30, "period": 60 }
-		}
-	],
-	"routes": [
-		{
-			"pattern": "ynab.mcp.moen.ai",
-			"custom_domain": true
-		}
-	],
-	// Icons for MCP clients; served before the Worker runs.
-	"assets": {
-		"directory": "./public"
-	},
-	"observability": {
-		"enabled": true
-	}
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ynab-connector",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": [
+    "nodejs_compat",
+    // Lets workers-oauth-provider accept Client ID Metadata Document
+    // (CIMD) clients, the MCP auth spec's preferred registration method.
+    "global_fetch_strictly_public",
+  ],
+  // v1 created the McpAgent Durable Object. The MCP server is now stateless
+  // (createMcpHandler), so v2 deletes the class and its storage.
+  "migrations": [
+    {
+      "new_sqlite_classes": ["YnabMcp"],
+      "tag": "v1",
+    },
+    {
+      "deleted_classes": ["YnabMcp"],
+      "tag": "v2",
+    },
+  ],
+  "vars": {
+    // Canonical MCP resource URL; every OAuth token's audience is bound to it.
+    // Must match what existing grants carry — don't change it casually.
+    "MCP_RESOURCE": "https://ynab.mcp.moen.ai/mcp",
+  },
+  "kv_namespaces": [
+    {
+      "binding": "OAUTH_KV",
+      "id": "e8aa9cdf03b34b1b9e79de520afa4b99",
+    },
+  ],
+  // Per-IP limits on the unauthenticated endpoints that write KV (src/index.ts).
+  "ratelimits": [
+    {
+      "name": "AUTH_RATE_LIMITER",
+      "namespace_id": "1001",
+      "simple": { "limit": 30, "period": 60 },
+    },
+  ],
+  "routes": [
+    {
+      "pattern": "ynab.mcp.moen.ai",
+      "custom_domain": true,
+    },
+  ],
+  // Icons for MCP clients; served before the Worker runs.
+  "assets": {
+    "directory": "./public",
+  },
+  "observability": {
+    "enabled": true,
+  },
 }

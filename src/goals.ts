@@ -67,9 +67,7 @@ const nextGoalDate = (c: Category, refMonth: string): string | null => {
   if (step != null && step > 0) {
     const today = new Date();
     const todayIso = `${today.getUTCFullYear()}-${String(today.getUTCMonth() + 1).padStart(2, "0")}-${String(today.getUTCDate()).padStart(2, "0")}`;
-    while (
-      `${y}-${String(mo).padStart(2, "0")}-${anchorDay}` <= todayIso
-    ) {
+    while (`${y}-${String(mo).padStart(2, "0")}-${anchorDay}` <= todayIso) {
       [y, mo] = addMonths(y, mo, step);
     }
   }
@@ -104,7 +102,8 @@ export const interpretGoal = (
   const underfunded =
     c.goal_under_funded && c.goal_under_funded > 0 ? c.goal_under_funded : 0;
   const snoozed =
-    !!c.goal_snoozed_at && c.goal_snoozed_at.slice(0, 7) === refMonth.slice(0, 7);
+    !!c.goal_snoozed_at &&
+    c.goal_snoozed_at.slice(0, 7) === refMonth.slice(0, 7);
   const parts = [`${fmtMoney(c.goal_target, iso)}${cadenceLabel}`];
   if (nextDueDate) parts.push(`by ${nextDueDate}`);
   if (underfunded > 0)

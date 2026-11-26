@@ -17,10 +17,7 @@ import { resolveAll, resolveOne, type Named } from "../resolve";
 
 // ---- Input + Result types
 
-export type AssignOp =
-  | { set: number }
-  | { add: number }
-  | { fundGoal: true };
+export type AssignOp = { set: number } | { add: number } | { fundGoal: true };
 
 export interface AssignMoveInput {
   month: string;
@@ -92,7 +89,11 @@ export const expandFundUnderfunded = (
       const g = interpretGoal(c, detail.month);
       return !!g && g.underfundedThisMonth > 0 && !g.snoozed;
     })
-    .map((c) => ({ month: monthKey, category: c.id, op: { fundGoal: true } as const }));
+    .map((c) => ({
+      month: monthKey,
+      category: c.id,
+      op: { fundGoal: true } as const,
+    }));
   return { moves };
 };
 
@@ -115,7 +116,9 @@ export const planMoves = (
     const r = resolveOne(monthRefs(detail), move.category, "category");
     if (!r.ok) return fail(r.error);
     const key = `${detail.month}|${r.matches[0].id}`;
-    const c = working.get(key) ?? detail.categories.find((x) => x.id === r.matches[0].id)!;
+    const c =
+      working.get(key) ??
+      detail.categories.find((x) => x.id === r.matches[0].id)!;
     let after: number;
     if ("set" in move.op) after = move.op.set;
     else if ("add" in move.op) after = c.budgeted + move.op.add;
@@ -131,7 +134,9 @@ export const planMoves = (
       budgeted: after,
       balance: c.balance + change,
       goal_under_funded:
-        c.goal_under_funded == null ? c.goal_under_funded : Math.max(0, c.goal_under_funded - change),
+        c.goal_under_funded == null
+          ? c.goal_under_funded
+          : Math.max(0, c.goal_under_funded - change),
     };
     working.set(key, next);
     return {
@@ -175,7 +180,9 @@ export const applyAssignToCategories = async (
   ];
   const months = new Map<string, MonthDetail>();
   await Promise.all(
-    keys.map(async (k) => months.set(k, (await client.getMonth(planId, k)).data.month)),
+    keys.map(async (k) =>
+      months.set(k, (await client.getMonth(planId, k)).data.month),
+    ),
   );
 
   let moves = req.moves;
@@ -185,7 +192,12 @@ export const applyAssignToCategories = async (
     const explicit = planMoves(req.moves, months)
       .filter((r): r is AssignMoveOk => r.ok && r.month === detail.month)
       .map((r) => r.category_id);
-    const expanded = expandFundUnderfunded(month, detail, except, new Set(explicit));
+    const expanded = expandFundUnderfunded(
+      month,
+      detail,
+      except,
+      new Set(explicit),
+    );
     if ("error" in expanded) return expanded;
     moves = [...req.moves, ...expanded.moves];
   }
@@ -198,28 +210,52 @@ export const applyAssignToCategories = async (
       continue;
     }
     try {
-      const { data } = await client.updateCategoryMonth(planId, p.month, p.category_id, {
-        budgeted: p.after_budgeted,
+      const { data } = await client.updateCategoryMonth(
+        planId,
+        p.month,
+        p.category_id,
+        {
+          budgeted: p.after_budgeted,
+        },
+      );
+      results.push({
+        ...p,
+        after_budgeted: data.category.budgeted,
+        balance: data.category.balance,
       });
-      results.push({ ...p, after_budgeted: data.category.budgeted, balance: data.category.balance });
     } catch (e) {
-      results.push({ ok: false, month: p.month, category: p.category_id, error: errorMessage(e) });
+      results.push({
+        ok: false,
+        month: p.month,
+        category: p.category_id,
+        error: errorMessage(e),
+      });
     }
   }
 
   // "current" and its YYYY-MM-01 name are one month.
-  const distinct = [...new Map([...months.values()].map((m) => [m.month, m])).values()];
+  const distinct = [
+    ...new Map([...months.values()].map((m) => [m.month, m])).values(),
+  ];
   const ready_to_assign = await Promise.all(
     distinct.map(async (m) => {
       const spent = results
         .filter((r): r is AssignMoveOk => r.ok && r.month === m.month)
         .reduce((a, r) => a + r.change, 0);
       if (req.dryRun) {
-        return { month: m.month, before: m.to_be_budgeted, after: m.to_be_budgeted - spent };
+        return {
+          month: m.month,
+          before: m.to_be_budgeted,
+          after: m.to_be_budgeted - spent,
+        };
       }
       try {
         const fresh = await client.getMonth(planId, m.month);
-        return { month: m.month, before: m.to_be_budgeted, after: fresh.data.month.to_be_budgeted };
+        return {
+          month: m.month,
+          before: m.to_be_budgeted,
+          after: fresh.data.month.to_be_budgeted,
+        };
       } catch {
         return { month: m.month, before: m.to_be_budgeted, after: null };
       }
@@ -242,7 +278,9 @@ export const renderAssignToCategoriesResult = (
   const lines = out.results.map((r) => {
     if (r.ok) {
       const arrow = r.change === 0 ? "=" : "→";
-      const delta = r.change ? ` (${r.change > 0 ? "+" : ""}${fmtMoney(r.change, iso)})` : "";
+      const delta = r.change
+        ? ` (${r.change > 0 ? "+" : ""}${fmtMoney(r.change, iso)})`
+        : "";
       return `- [ok] ${r.month} ${r.category_name}: ${fmtMoney(r.before_budgeted, iso)} ${arrow} ${fmtMoney(r.after_budgeted, iso)}${delta}, available ${fmtMoney(r.balance, iso)} — id ${r.category_id}`;
     }
     return `- [error] ${r.month} ${r.category}: ${r.error}`;
@@ -258,7 +296,7 @@ export const renderAssignToCategoriesResult = (
 
 const DESCRIPTION =
   "Change a month's assigned (`budgeted`) amount on categories, in milliunits. Each move names a category by `category_id` or " +
-  "`category_name` (\"Groceries\" or \"Group: Name\"; an ambiguous name is refused) and does one of: `set_budgeted_milliunits` (the new total), " +
+  '`category_name` ("Groceries" or "Group: Name"; an ambiguous name is refused) and does one of: `set_budgeted_milliunits` (the new total), ' +
   "`add_milliunits` (signed change; negative takes money out), or `fund_goal: true` (add what the goal still needs this month). " +
   "`fund_underfunded` funds every underfunded goal in a month in the same call, minus `except` (names or ids; a name matching nothing refuses the call). " +
   "Moving money between categories is one negative and one positive add. `dry_run: true` returns the same before/after report and projected " +
@@ -275,14 +313,21 @@ const moveSchema = z
     add_milliunits: z.number().int().optional(),
     fund_goal: z.literal(true).optional(),
   })
-  .refine((m) => (m.category_id === undefined) !== (m.category_name === undefined), {
-    message: "Give exactly one of category_id or category_name.",
-  })
+  .refine(
+    (m) => (m.category_id === undefined) !== (m.category_name === undefined),
+    {
+      message: "Give exactly one of category_id or category_name.",
+    },
+  )
   .refine(
     (m) =>
-      [m.set_budgeted_milliunits, m.add_milliunits, m.fund_goal].filter((x) => x !== undefined)
-        .length === 1,
-    { message: "Give exactly one of set_budgeted_milliunits, add_milliunits, or fund_goal." },
+      [m.set_budgeted_milliunits, m.add_milliunits, m.fund_goal].filter(
+        (x) => x !== undefined,
+      ).length === 1,
+    {
+      message:
+        "Give exactly one of set_budgeted_milliunits, add_milliunits, or fund_goal.",
+    },
   );
 
 type MoveArg = z.infer<typeof moveSchema>;
@@ -329,7 +374,10 @@ export const registerAssignToCategories = (
     async ({ plan_id, moves, fund_underfunded, dry_run }) => {
       if (!getProps().canWrite) return scopeDeniedError();
       if (!moves.length && !fund_underfunded) {
-        return { ...text("Give `moves`, `fund_underfunded`, or both."), isError: true as const };
+        return {
+          ...text("Give `moves`, `fund_underfunded`, or both."),
+          isError: true as const,
+        };
       }
       try {
         const c = getClient();
@@ -341,7 +389,8 @@ export const registerAssignToCategories = (
             dryRun: dry_run,
           }),
         ]);
-        if ("error" in out) return { ...text(out.error), isError: true as const };
+        if ("error" in out)
+          return { ...text(out.error), isError: true as const };
         return result(renderAssignToCategoriesResult(out, iso), out);
       } catch (e) {
         return handleError(e);

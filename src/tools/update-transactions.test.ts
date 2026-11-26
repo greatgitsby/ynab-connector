@@ -1,4 +1,4 @@
-import { describe, test, expect, vi } from "vitest";
+import { describe, test, expect, vi } from "bun:test";
 import { YnabError, type Transaction, type YnabClient } from "../ynab";
 import {
   applyUpdateTransactions,
@@ -10,9 +10,7 @@ import {
   type UpdateTransactionsResult,
 } from "./update-transactions";
 
-const tx = (
-  over: Partial<Transaction> & { id: string },
-): Transaction =>
+const tx = (over: Partial<Transaction> & { id: string }): Transaction =>
   ({
     date: "2026-05-15",
     amount: -10000,
@@ -222,7 +220,11 @@ describe("applyUpdateTransactions", () => {
       ],
     );
     const split = [
-      { amount_milliunits: -14190, category_id: "cat-spotify", memo: "Spotify" },
+      {
+        amount_milliunits: -14190,
+        category_id: "cat-spotify",
+        memo: "Spotify",
+      },
       { amount_milliunits: -9820, category_id: "cat-netflix", memo: "Netflix" },
     ];
     const short = [
@@ -405,9 +407,39 @@ describe("resolveCategoryNames", () => {
       internal: false,
       deleted: false,
       categories: [
-        { id: "c-net", name: "🎥 Netflix", category_group_id: "g1", hidden: false, internal: false, deleted: false, budgeted: 0, activity: 0, balance: 0 },
-        { id: "c-tv1", name: "TV", category_group_id: "g1", hidden: false, internal: false, deleted: false, budgeted: 0, activity: 0, balance: 0 },
-        { id: "c-tv2", name: "TV", category_group_id: "g1", hidden: false, internal: false, deleted: false, budgeted: 0, activity: 0, balance: 0 },
+        {
+          id: "c-net",
+          name: "🎥 Netflix",
+          category_group_id: "g1",
+          hidden: false,
+          internal: false,
+          deleted: false,
+          budgeted: 0,
+          activity: 0,
+          balance: 0,
+        },
+        {
+          id: "c-tv1",
+          name: "TV",
+          category_group_id: "g1",
+          hidden: false,
+          internal: false,
+          deleted: false,
+          budgeted: 0,
+          activity: 0,
+          balance: 0,
+        },
+        {
+          id: "c-tv2",
+          name: "TV",
+          category_group_id: "g1",
+          hidden: false,
+          internal: false,
+          deleted: false,
+          budgeted: 0,
+          activity: 0,
+          balance: 0,
+        },
       ],
     },
   ];
@@ -416,12 +448,22 @@ describe("resolveCategoryNames", () => {
     const { inputs, failed } = resolveCategoryNames(
       [
         { transaction_id: "t1", category_name: "netflix", approved: true },
-        { transaction_id: "t2", subtransactions: [{ amount_milliunits: -1, category_name: "Netflix" }, { amount_milliunits: -2, category_id: "c-x" }] },
+        {
+          transaction_id: "t2",
+          subtransactions: [
+            { amount_milliunits: -1, category_name: "Netflix" },
+            { amount_milliunits: -2, category_id: "c-x" },
+          ],
+        },
         { transaction_id: "t3", category_name: "TV" },
       ],
       groups,
     );
-    expect(inputs[0]).toEqual({ transaction_id: "t1", category_id: "c-net", approved: true });
+    expect(inputs[0]).toEqual({
+      transaction_id: "t1",
+      category_id: "c-net",
+      approved: true,
+    });
     expect(buildBulkRow(inputs[1]).subtransactions).toEqual([
       { amount: -1, category_id: "c-net" },
       { amount: -2, category_id: "c-x" },
@@ -434,11 +476,35 @@ describe("resolveCategoryNames", () => {
 describe("touchedBalances", () => {
   test("reports the categories updated transactions and their parts now use", () => {
     const month = {
-      month: "2026-11-01", income: 0, budgeted: 0, activity: 0, to_be_budgeted: 0, age_of_money: null, deleted: false,
-      categories: ["a", "b", "c"].map((id) => ({ id, name: id, category_group_id: "g", hidden: false, internal: false, deleted: false, budgeted: 1, activity: 2, balance: 3 })),
+      month: "2026-11-01",
+      income: 0,
+      budgeted: 0,
+      activity: 0,
+      to_be_budgeted: 0,
+      age_of_money: null,
+      deleted: false,
+      categories: ["a", "b", "c"].map((id) => ({
+        id,
+        name: id,
+        category_group_id: "g",
+        hidden: false,
+        internal: false,
+        deleted: false,
+        budgeted: 1,
+        activity: 2,
+        balance: 3,
+      })),
     };
     const t = (id: string, category_id: string | null, subs: string[] = []) =>
-      ({ id, category_id, subtransactions: subs.map((c) => ({ id: `${id}-${c}`, category_id: c, deleted: false })) }) as unknown as Transaction;
+      ({
+        id,
+        category_id,
+        subtransactions: subs.map((c) => ({
+          id: `${id}-${c}`,
+          category_id: c,
+          deleted: false,
+        })),
+      }) as unknown as Transaction;
     const out = touchedBalances(
       [
         { ok: true, transaction_id: "t1", transaction: t("t1", "a") },
@@ -448,6 +514,12 @@ describe("touchedBalances", () => {
       month,
     );
     expect(out.map((c) => c.id)).toEqual(["a", "c"]);
-    expect(out[0]).toEqual({ id: "a", name: "a", budgeted: 1, activity: 2, balance: 3 });
+    expect(out[0]).toEqual({
+      id: "a",
+      name: "a",
+      budgeted: 1,
+      activity: 2,
+      balance: 3,
+    });
   });
 });

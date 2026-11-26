@@ -1,4 +1,4 @@
-import { describe, test, expect } from "vitest";
+import { describe, test, expect } from "bun:test";
 import { YnabError, type Category, type Transaction } from "./ynab";
 import {
   text,
@@ -165,9 +165,7 @@ describe("fmtCategoryLine", () => {
 describe("fmtTxLine", () => {
   test("renders date, amount, payee, category, and account", () => {
     const line = fmtTxLine(tx({}), "USD");
-    expect(line).toBe(
-      "- 2026-05-01 -$50.00 Costco → Groceries [Checking]",
-    );
+    expect(line).toBe("- 2026-05-01 -$50.00 Costco → Groceries [Checking]");
   });
 
   test("falls back to (no payee) and (uncategorized) when missing", () => {

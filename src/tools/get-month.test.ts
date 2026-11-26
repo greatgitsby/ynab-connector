@@ -1,4 +1,4 @@
-import { describe, test, expect } from "vitest";
+import { describe, test, expect } from "bun:test";
 import type { Category, CategoryGroup, MonthDetail } from "../ynab";
 import {
   computeMonthReport,
@@ -59,7 +59,11 @@ const month = monthDetail([
   cat("h", "Old Stuff"),
 ]);
 const groups = [
-  group("Bills", [cat("rent", "Bills"), cat("power", "Bills"), cat("old", "Bills")]),
+  group("Bills", [
+    cat("rent", "Bills"),
+    cat("power", "Bills"),
+    cat("old", "Bills"),
+  ]),
   group("Fun", [cat("games", "Fun")]),
   group("Old Stuff", [cat("h", "Old Stuff")], { hidden: true }),
 ];
@@ -69,7 +73,10 @@ const ids = (r: ReturnType<typeof computeMonthReport>) =>
 
 describe("computeMonthReport", () => {
   test("orders groups and categories as the Plan does, dropping hidden and internal", () => {
-    const r = computeMonthReport(month, groups, { includeHidden: false, iso: "USD" });
+    const r = computeMonthReport(month, groups, {
+      includeHidden: false,
+      iso: "USD",
+    });
     expect(ids(r)).toEqual([
       ["Bills", ["rent", "power"]],
       ["Fun", ["games"]],
@@ -79,7 +86,10 @@ describe("computeMonthReport", () => {
   });
 
   test("includes hidden groups and categories when asked", () => {
-    const r = computeMonthReport(month, groups, { includeHidden: true, iso: "USD" });
+    const r = computeMonthReport(month, groups, {
+      includeHidden: true,
+      iso: "USD",
+    });
     expect(ids(r)).toEqual([
       ["Bills", ["rent", "power", "old"]],
       ["Fun", ["games"]],
@@ -89,45 +99,89 @@ describe("computeMonthReport", () => {
 
   test("still groups every category when GET /categories comes back empty", () => {
     const empty = [group("Bills", [], { internal: true })];
-    const r = computeMonthReport(month, empty, { includeHidden: false, iso: "USD" });
-    expect(r.groups!.flatMap((g) => g.categories.map((c) => c.id)).sort()).toEqual([
-      "games",
-      "h",
-      "power",
-      "rent",
-    ]);
+    const r = computeMonthReport(month, empty, {
+      includeHidden: false,
+      iso: "USD",
+    });
+    expect(
+      r.groups!.flatMap((g) => g.categories.map((c) => c.id)).sort(),
+    ).toEqual(["games", "h", "power", "rent"]);
   });
 });
 
 describe("only and compact", () => {
   const withGoals = monthDetail([
-    cat("rent", "Bills", { budgeted: 1000, goal_type: "NEED", goal_target: 2000, goal_under_funded: 1000, goal_cadence: 1, goal_cadence_frequency: 1 }),
+    cat("rent", "Bills", {
+      budgeted: 1000,
+      goal_type: "NEED",
+      goal_target: 2000,
+      goal_under_funded: 1000,
+      goal_cadence: 1,
+      goal_cadence_frequency: 1,
+    }),
     cat("power", "Bills", { balance: -50 }),
     cat("old", "Bills"),
     cat("games", "Fun", { activity: -5 }),
   ]);
 
   test("only keeps categories matching any listed condition", () => {
-    const r = computeMonthReport(withGoals, groups, { includeHidden: false, iso: "USD", only: ["underfunded", "overspent"] });
+    const r = computeMonthReport(withGoals, groups, {
+      includeHidden: false,
+      iso: "USD",
+      only: ["underfunded", "overspent"],
+    });
     expect(ids(r)).toEqual([["Bills", ["rent", "power"]]]);
-    const nz = computeMonthReport(withGoals, groups, { includeHidden: false, iso: "USD", only: ["nonzero"] });
-    expect(ids(nz)).toEqual([["Bills", ["rent", "power"]], ["Fun", ["games"]]]);
+    const nz = computeMonthReport(withGoals, groups, {
+      includeHidden: false,
+      iso: "USD",
+      only: ["nonzero"],
+    });
+    expect(ids(nz)).toEqual([
+      ["Bills", ["rent", "power"]],
+      ["Fun", ["games"]],
+    ]);
   });
 
   test("compact returns a flat list with goal fields only where a goal exists", () => {
-    const r = computeMonthReport(withGoals, groups, { includeHidden: false, iso: "USD", only: ["underfunded", "overspent"], compact: true });
+    const r = computeMonthReport(withGoals, groups, {
+      includeHidden: false,
+      iso: "USD",
+      only: ["underfunded", "overspent"],
+      compact: true,
+    });
     expect(() => MonthReportSchema.parse(r)).not.toThrow();
     expect(r.groups).toBeUndefined();
     expect(r.categories).toEqual([
-      { id: "rent", name: "rent", group: "Bills", budgeted: 1000, activity: 0, balance: 0, goal_type: "NEED", goal_target: 2000, underfunded: 1000, next_due_date: null },
-      { id: "power", name: "power", group: "Bills", budgeted: 0, activity: 0, balance: -50 },
+      {
+        id: "rent",
+        name: "rent",
+        group: "Bills",
+        budgeted: 1000,
+        activity: 0,
+        balance: 0,
+        goal_type: "NEED",
+        goal_target: 2000,
+        underfunded: 1000,
+        next_due_date: null,
+      },
+      {
+        id: "power",
+        name: "power",
+        group: "Bills",
+        budgeted: 0,
+        activity: 0,
+        balance: -50,
+      },
     ]);
   });
 });
 
 describe("renderMonthReport", () => {
   test("renders month totals and one ## section per group", () => {
-    const report = computeMonthReport(month, groups, { includeHidden: false, iso: "USD" });
+    const report = computeMonthReport(month, groups, {
+      includeHidden: false,
+      iso: "USD",
+    });
     const out = renderMonthReport(report, { includeIds: false });
     expect(out).toContain("Month: 2026-05-01");
     expect(out).toContain("Income:          $5,000.00");
@@ -138,7 +192,12 @@ describe("renderMonthReport", () => {
 
   test("omits Age of money when null", () => {
     const m: MonthDetail = { ...monthDetail([]), age_of_money: null };
-    const report = computeMonthReport(m, [], { includeHidden: false, iso: "USD" });
-    expect(renderMonthReport(report, { includeIds: false })).not.toContain("Age of money");
+    const report = computeMonthReport(m, [], {
+      includeHidden: false,
+      iso: "USD",
+    });
+    expect(renderMonthReport(report, { includeIds: false })).not.toContain(
+      "Age of money",
+    );
   });
 });

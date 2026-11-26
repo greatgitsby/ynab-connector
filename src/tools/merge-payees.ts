@@ -9,7 +9,13 @@ import type {
   YnabClient,
 } from "../ynab";
 import { YnabError } from "../ynab";
-import { fmtMoney, handleError, result, scopeDeniedError, text } from "../format";
+import {
+  fmtMoney,
+  handleError,
+  result,
+  scopeDeniedError,
+  text,
+} from "../format";
 import type { Props } from "../ynab-auth";
 
 // ---- Result type
@@ -66,31 +72,53 @@ export const planMerge = (
   const target = live.get(targetId);
   if (!target) return { error: `No payee with id ${targetId} to merge into.` };
   if (target.transfer_account_id) {
-    return { error: `"${target.name}" is a transfer payee; transfers can't be merged.` };
+    return {
+      error: `"${target.name}" is a transfer payee; transfers can't be merged.`,
+    };
   }
   const ids = [...new Set(sourceIds)];
   if (ids.includes(targetId)) {
-    return { error: `"${target.name}" is the target; leave it out of source_payee_ids.` };
+    return {
+      error: `"${target.name}" is the target; leave it out of source_payee_ids.`,
+    };
   }
   const sources: MergeSource[] = [];
   for (const id of ids) {
     const p = live.get(id);
     if (!p) return { error: `No payee with id ${id}.` };
     if (p.transfer_account_id) {
-      return { error: `"${p.name}" is a transfer payee; transfers can't be merged.` };
+      return {
+        error: `"${p.name}" is a transfer payee; transfers can't be merged.`,
+      };
     }
-    sources.push({ payee_id: id, name: p.name, transactions: [], scheduled: [], left: [], failed: [] });
+    sources.push({
+      payee_id: id,
+      name: p.name,
+      transactions: [],
+      scheduled: [],
+      left: [],
+      failed: [],
+    });
   }
   const byId = new Map(sources.map((s) => [s.payee_id, s]));
   const at = (id: string | null | undefined) => (id ? byId.get(id) : undefined);
 
   for (const t of transactions) {
     if (t.deleted) continue;
-    at(t.payee_id)?.transactions.push({ id: t.id, date: t.date, amount: t.amount });
+    at(t.payee_id)?.transactions.push({
+      id: t.id,
+      date: t.date,
+      amount: t.amount,
+    });
     // YNAB rejects edits to the parts of an existing split.
     for (const s of t.subtransactions ?? []) {
       if (s.deleted) continue;
-      at(s.payee_id)?.left.push({ kind: "split_part", id: t.id, date: t.date, amount: s.amount });
+      at(s.payee_id)?.left.push({
+        kind: "split_part",
+        id: t.id,
+        date: t.date,
+        amount: s.amount,
+      });
     }
   }
   for (const st of scheduled) {
@@ -98,13 +126,23 @@ export const planMerge = (
     const parts = st.subtransactions.filter((s) => !s.deleted);
     const item = { id: st.id, date: st.date_next, amount: st.amount };
     // Writing a scheduled transaction can't carry its split, so splits stay put.
-    if (parts.length) at(st.payee_id)?.left.push({ kind: "scheduled_split", ...item });
+    if (parts.length)
+      at(st.payee_id)?.left.push({ kind: "scheduled_split", ...item });
     else at(st.payee_id)?.scheduled.push(item);
     for (const s of parts) {
-      at(s.payee_id)?.left.push({ kind: "scheduled_split_part", ...item, amount: s.amount });
+      at(s.payee_id)?.left.push({
+        kind: "scheduled_split_part",
+        ...item,
+        amount: s.amount,
+      });
     }
   }
-  return { iso, applied: false, target: { id: target.id, name: target.name }, sources };
+  return {
+    iso,
+    applied: false,
+    target: { id: target.id, name: target.name },
+    sources,
+  };
 };
 
 // PUT replaces the whole scheduled transaction, so every field is carried over.
@@ -151,7 +189,8 @@ export const applyMerge = async (
       });
       const updated = new Set(resp.data.transactions.map((t) => t.id));
       for (const id of chunk) {
-        if (!updated.has(id)) failed.set(id, "Not in YNAB's bulk-update response.");
+        if (!updated.has(id))
+          failed.set(id, "Not in YNAB's bulk-update response.");
       }
     } catch (e) {
       for (const id of chunk) failed.set(id, errorMessage(e));
@@ -183,10 +222,18 @@ export const applyMerge = async (
       failed: [
         ...s.transactions
           .filter((t) => failed.has(t.id))
-          .map((t) => ({ kind: "transaction" as const, id: t.id, error: failed.get(t.id)! })),
+          .map((t) => ({
+            kind: "transaction" as const,
+            id: t.id,
+            error: failed.get(t.id)!,
+          })),
         ...s.scheduled
           .filter((t) => failed.has(t.id))
-          .map((t) => ({ kind: "scheduled" as const, id: t.id, error: failed.get(t.id)! })),
+          .map((t) => ({
+            kind: "scheduled" as const,
+            id: t.id,
+            error: failed.get(t.id)!,
+          })),
       ],
     })),
   };
@@ -198,8 +245,10 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 const LEFT_REASON: Record<z.infer<typeof LeftSchema>["kind"], string> = {
   split_part: "split part (YNAB's API can't edit an existing split's parts)",
-  scheduled_split: "split scheduled transaction (YNAB's API can't write scheduled splits)",
-  scheduled_split_part: "part of a split scheduled transaction (YNAB's API can't write scheduled splits)",
+  scheduled_split:
+    "split scheduled transaction (YNAB's API can't write scheduled splits)",
+  scheduled_split_part:
+    "part of a split scheduled transaction (YNAB's API can't write scheduled splits)",
 };
 
 export const renderMerge = (r: MergePayeesResult): string => {
@@ -211,18 +260,28 @@ export const renderMerge = (r: MergePayeesResult): string => {
   ];
   for (const s of r.sources) {
     const dates = s.transactions.map((t) => t.date).sort();
-    const span = dates.length ? `, ${dates[0]} to ${dates[dates.length - 1]}` : "";
+    const span = dates.length
+      ? `, ${dates[0]} to ${dates[dates.length - 1]}`
+      : "";
     const total = s.transactions.reduce((n, t) => n + t.amount, 0);
-    const money = s.transactions.length ? `, total ${fmtMoney(total, r.iso)}` : "";
+    const money = s.transactions.length
+      ? `, total ${fmtMoney(total, r.iso)}`
+      : "";
     out.push(
       `- "${s.name}" — id ${s.payee_id}: ${verb.toLowerCase()} ${plural(s.transactions.length, "transaction")}${span}${money}; ${plural(s.scheduled.length, "scheduled transaction")}`,
     );
-    for (const f of s.failed) out.push(`  - [error] ${f.kind} ${f.id}: ${f.error}`);
+    for (const f of s.failed)
+      out.push(`  - [error] ${f.kind} ${f.id}: ${f.error}`);
     for (const l of s.left) {
-      out.push(`  - stays: ${l.date} ${fmtMoney(l.amount, r.iso)} ${LEFT_REASON[l.kind]} — id ${l.id}`);
+      out.push(
+        `  - stays: ${l.date} ${fmtMoney(l.amount, r.iso)} ${LEFT_REASON[l.kind]} — id ${l.id}`,
+      );
     }
   }
-  const left = r.sources.reduce((n, s) => n + s.left.length + s.failed.length, 0);
+  const left = r.sources.reduce(
+    (n, s) => n + s.left.length + s.failed.length,
+    0,
+  );
   out.push("");
   if (!r.applied) {
     out.push("Call merge_payees again with apply: true to make these changes.");
@@ -283,7 +342,9 @@ export const registerMergePayees = (
           .boolean()
           .optional()
           .default(false)
-          .describe("false (default) previews without changing anything; true makes the changes."),
+          .describe(
+            "false (default) previews without changing anything; true makes the changes.",
+          ),
       },
     },
     async ({ plan_id, target_payee_id, source_payee_ids, apply }) => {
@@ -305,7 +366,8 @@ export const registerMergePayees = (
           source_payee_ids,
           iso,
         );
-        if ("error" in plan) return { ...text(plan.error), isError: true as const };
+        if ("error" in plan)
+          return { ...text(plan.error), isError: true as const };
         const out = apply ? await applyMerge(c, plan_id, plan, sts) : plan;
         return result(renderMerge(out), out);
       } catch (e) {

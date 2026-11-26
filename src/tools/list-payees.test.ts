@@ -1,4 +1,4 @@
-import { describe, test, expect } from "vitest";
+import { describe, test, expect } from "bun:test";
 import type { Payee } from "../ynab";
 import {
   computePayeeList,
@@ -98,6 +98,6 @@ describe("renderPayeeList", () => {
     );
     const result = computePayeeList(many, "match", 5);
     const rendered = renderPayeeList(result, "match");
-    expect(rendered).toContain('showing 5 of 30');
+    expect(rendered).toContain("showing 5 of 30");
   });
 });

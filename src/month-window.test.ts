@@ -1,4 +1,11 @@
-import { describe, test, expect, beforeEach, afterEach, vi } from "vitest";
+import {
+  describe,
+  test,
+  expect,
+  beforeEach,
+  afterEach,
+  setSystemTime,
+} from "bun:test";
 import type { MonthDetail } from "./ynab";
 import {
   addMonths,
@@ -21,10 +28,9 @@ const month = (m: string): MonthDetail => ({
 });
 
 beforeEach(() => {
-  vi.useFakeTimers();
-  vi.setSystemTime(new Date("2026-05-15T10:00:00Z"));
+  setSystemTime(new Date("2026-05-15T10:00:00Z"));
 });
-afterEach(() => vi.useRealTimers());
+afterEach(() => setSystemTime());
 
 describe("month specs", () => {
   test("resolves 'current' and passes YYYY-MM-01 through", () => {

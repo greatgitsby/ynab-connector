@@ -58,4 +58,6 @@ export const isSavingsCategory = (c: Category): boolean => {
 // checking ("Apple Card Payment", "Payment Thank You", "Autopay") rather than
 // as a YNAB transfer. Paying a card isn't spending; the card's charges are.
 export const isCardPaymentPayee = (payee: string | null): boolean =>
-  /\bcard payment\b|\bpayment,? thank you\b|\bautopay\b|\bepayment\b/i.test(payee ?? "");
+  /\bcard payment\b|\bpayment,? thank you\b|\bautopay\b|\bepayment\b/i.test(
+    payee ?? "",
+  );

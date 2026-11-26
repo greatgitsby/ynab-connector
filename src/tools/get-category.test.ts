@@ -1,4 +1,4 @@
-import { describe, test, expect } from "vitest";
+import { describe, test, expect } from "bun:test";
 import type { Category, MonthDetail } from "../ynab";
 import {
   CategoryReportSchema,
@@ -36,7 +36,9 @@ const month = (m: string, categories: Category[]): MonthDetail => ({
 
 // Plan export rows: no goal_target_date and no group name, as YNAB sends them.
 const planMonths = [
-  month("2026-02-01", [cat({ budgeted: 200_000, category_group_name: undefined })]),
+  month("2026-02-01", [
+    cat({ budgeted: 200_000, category_group_name: undefined }),
+  ]),
   month("2026-03-01", [cat({ budgeted: 0, goal_under_funded: 200_000 })]),
   month("2026-04-01", [cat({ budgeted: 400_000 })]),
   month("2026-05-01", [cat({ goal_type: null, goal_target: null })]),

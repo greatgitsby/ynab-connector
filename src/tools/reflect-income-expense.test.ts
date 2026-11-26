@@ -1,4 +1,11 @@
-import { describe, test, expect, beforeEach, afterEach, vi } from "vitest";
+import {
+  describe,
+  test,
+  expect,
+  beforeEach,
+  afterEach,
+  setSystemTime,
+} from "bun:test";
 import type {
   PlanDetail,
   Category,
@@ -77,15 +84,15 @@ const fixturePlan = (): PlanDetail => ({
   first_month: "2025-01-01",
   last_month: "2026-05-01",
   currency_format: {
-          iso_code: "USD",
-          example_format: "123,456.78",
-          decimal_digits: 2,
-          decimal_separator: ".",
-          symbol_first: true,
-          group_separator: ",",
-          currency_symbol: "$",
-          display_symbol: true,
-        },
+    iso_code: "USD",
+    example_format: "123,456.78",
+    decimal_digits: 2,
+    decimal_separator: ".",
+    symbol_first: true,
+    group_separator: ",",
+    currency_symbol: "$",
+    display_symbol: true,
+  },
   category_groups: [
     group({ id: "grp-bills", name: "Monthly Bills" }),
     group({ id: "grp-fun", name: "Fun" }),
@@ -237,10 +244,9 @@ const fixtureTxs = (): Transaction[] => [
 ];
 
 beforeEach(() => {
-  vi.useFakeTimers();
-  vi.setSystemTime(new Date("2026-05-20T10:00:00Z"));
+  setSystemTime(new Date("2026-05-20T10:00:00Z"));
 });
-afterEach(() => vi.useRealTimers());
+afterEach(() => setSystemTime());
 
 describe("computeIncomeExpensePivot", () => {
   test("aggregates income by payee, sorted by total desc", () => {

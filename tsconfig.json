@@ -13,5 +13,9 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src/**/*.ts", "evals/**/*.ts", "worker-configuration.d.ts"]
+  // Worker code only. Tests and evals run under Bun and get Bun's types in
+  // tsconfig.test.json; keeping them out of here means worker code can't
+  // type-check against a Bun API that workerd doesn't have.
+  "include": ["src/**/*.ts", "worker-configuration.d.ts"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.fixture.ts"]
 }

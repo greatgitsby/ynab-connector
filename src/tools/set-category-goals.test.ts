@@ -1,4 +1,4 @@
-import { describe, test, expect, vi } from "vitest";
+import { describe, test, expect, vi } from "bun:test";
 import { YnabError, type Category, type YnabClient } from "../ynab";
 import {
   SetCategoryGoalsResultSchema,
@@ -9,7 +9,9 @@ import {
 
 const M = "2026-11-01";
 
-const cat = (over: Partial<Category> & { id: string; name: string }): Category =>
+const cat = (
+  over: Partial<Category> & { id: string; name: string },
+): Category =>
   ({
     category_group_id: "g1",
     hidden: false,
@@ -32,12 +34,19 @@ const need = cat({
   goal_cadence_frequency: 1,
   goal_needs_whole_amount: true,
 });
-const tb = cat({ id: "tb", name: "Vacation", goal_type: "TB", goal_target: 2000000 });
+const tb = cat({
+  id: "tb",
+  name: "Vacation",
+  goal_type: "TB",
+  goal_target: 2000000,
+});
 const bare = cat({ id: "bare", name: "Gifts" });
 
 describe("goalBody", () => {
   test("remove_goal sends goal_target: null", () => {
-    expect(goalBody({ category_id: "need", remove_goal: true }, need, M)).toEqual({
+    expect(
+      goalBody({ category_id: "need", remove_goal: true }, need, M),
+    ).toEqual({
       body: { goal_target: null },
     });
   });
@@ -45,59 +54,144 @@ describe("goalBody", () => {
   test("sends only the fields given, including a null date to clear it", () => {
     expect(
       goalBody(
-        { category_id: "need", goal_target: 400000, goal_target_date: null, goal_needs_whole_amount: false },
+        {
+          category_id: "need",
+          goal_target: 400000,
+          goal_target_date: null,
+          goal_needs_whole_amount: false,
+        },
         need,
         M,
       ),
-    ).toEqual({ body: { goal_target: 400000, goal_target_date: null, goal_needs_whole_amount: false } });
+    ).toEqual({
+      body: {
+        goal_target: 400000,
+        goal_target_date: null,
+        goal_needs_whole_amount: false,
+      },
+    });
     expect(
-      goalBody({ category_id: "tb", goal_target: 50000, goal_frequency: "weekly" }, tb, M),
+      goalBody(
+        { category_id: "tb", goal_target: 50000, goal_frequency: "weekly" },
+        tb,
+        M,
+      ),
     ).toEqual({ body: { goal_target: 50000, goal_frequency: "weekly" } });
   });
 
   test("refuses what YNAB would reject or silently mis-store", () => {
-    const refuse = (c: Parameters<typeof goalBody>[0], on: Category | undefined) =>
-      (goalBody(c, on, M) as { error: string }).error;
-    expect(refuse({ category_id: "x", remove_goal: true }, undefined)).toMatch(/No such/);
-    expect(refuse({ category_id: "d", remove_goal: true }, { ...need, deleted: true })).toMatch(/No such/);
-    expect(refuse({ category_id: "i", goal_target: 1 }, { ...bare, internal: true })).toMatch(/internal/);
-    expect(refuse({ category_id: "need", remove_goal: true, goal_target: 1 }, need)).toMatch(/combined/);
-    expect(refuse({ category_id: "bare", remove_goal: true }, bare)).toMatch(/no goal to remove/);
-    expect(refuse({ category_id: "need" }, need)).toMatch(/Nothing/);
-    expect(refuse({ category_id: "need", goal_frequency: "weekly" }, need)).toMatch(/needs goal_target/);
+    const refuse = (
+      c: Parameters<typeof goalBody>[0],
+      on: Category | undefined,
+    ) => (goalBody(c, on, M) as { error: string }).error;
+    expect(refuse({ category_id: "x", remove_goal: true }, undefined)).toMatch(
+      /No such/,
+    );
     expect(
-      refuse({ category_id: "need", goal_target: 1, goal_frequency: "monthly", goal_target_date: "2027-01-01" }, need),
+      refuse(
+        { category_id: "d", remove_goal: true },
+        { ...need, deleted: true },
+      ),
+    ).toMatch(/No such/);
+    expect(
+      refuse({ category_id: "i", goal_target: 1 }, { ...bare, internal: true }),
+    ).toMatch(/internal/);
+    expect(
+      refuse({ category_id: "need", remove_goal: true, goal_target: 1 }, need),
+    ).toMatch(/combined/);
+    expect(refuse({ category_id: "bare", remove_goal: true }, bare)).toMatch(
+      /no goal to remove/,
+    );
+    expect(refuse({ category_id: "need" }, need)).toMatch(/Nothing/);
+    expect(
+      refuse({ category_id: "need", goal_frequency: "weekly" }, need),
+    ).toMatch(/needs goal_target/);
+    expect(
+      refuse(
+        {
+          category_id: "need",
+          goal_target: 1,
+          goal_frequency: "monthly",
+          goal_target_date: "2027-01-01",
+        },
+        need,
+      ),
     ).toMatch(/can't be combined/);
-    expect(refuse({ category_id: "bare", goal_target_date: "2027-01-01" }, bare)).toMatch(/give goal_target/);
+    expect(
+      refuse({ category_id: "bare", goal_target_date: "2027-01-01" }, bare),
+    ).toMatch(/give goal_target/);
     // YNAB accepts the flag on a TB goal and stores it meaninglessly.
-    expect(refuse({ category_id: "tb", goal_needs_whole_amount: false }, tb)).toMatch(/Plan Your Spending/);
+    expect(
+      refuse({ category_id: "tb", goal_needs_whole_amount: false }, tb),
+    ).toMatch(/Plan Your Spending/);
   });
 
   test("goal_needs_whole_amount is allowed when the change makes a NEED goal", () => {
-    expect(goalBody({ category_id: "bare", goal_target: 1000, goal_needs_whole_amount: false }, bare, M)).toHaveProperty("body");
     expect(
-      goalBody({ category_id: "tb", goal_target: 1000, goal_frequency: "monthly", goal_needs_whole_amount: true }, tb, M),
+      goalBody(
+        {
+          category_id: "bare",
+          goal_target: 1000,
+          goal_needs_whole_amount: false,
+        },
+        bare,
+        M,
+      ),
+    ).toHaveProperty("body");
+    expect(
+      goalBody(
+        {
+          category_id: "tb",
+          goal_target: 1000,
+          goal_frequency: "monthly",
+          goal_needs_whole_amount: true,
+        },
+        tb,
+        M,
+      ),
     ).toHaveProperty("body");
   });
 });
 
 describe("setCategoryGoals", () => {
   const client = () => {
-    const updateCategory = vi.fn(async (_plan: string, id: string, body: { goal_target?: number | null }) => {
-      if (id === "tb") throw new YnabError(400, "bad");
-      return {
-        data: {
-          category:
-            body.goal_target === null
-              ? { ...need, goal_type: null, goal_target: 0 }
-              : { ...bare, goal_type: "NEED", goal_target: body.goal_target, goal_cadence: 1, goal_cadence_frequency: 1 },
-        },
-      };
-    });
+    const updateCategory = vi.fn(
+      async (
+        _plan: string,
+        id: string,
+        body: { goal_target?: number | null },
+      ) => {
+        if (id === "tb") throw new YnabError(400, "bad");
+        return {
+          data: {
+            category:
+              body.goal_target === null
+                ? { ...need, goal_type: null, goal_target: 0 }
+                : {
+                    ...bare,
+                    goal_type: "NEED",
+                    goal_target: body.goal_target,
+                    goal_cadence: 1,
+                    goal_cadence_frequency: 1,
+                  },
+          },
+        };
+      },
+    );
     const c = {
       planIso: async () => "USD",
       listCategories: async () => ({
-        data: { category_groups: [{ id: "g1", name: "G", hidden: false, deleted: false, categories: [need, tb, bare] }] },
+        data: {
+          category_groups: [
+            {
+              id: "g1",
+              name: "G",
+              hidden: false,
+              deleted: false,
+              categories: [need, tb, bare],
+            },
+          ],
+        },
       }),
       updateCategory,
     } as unknown as YnabClient;
@@ -137,6 +231,8 @@ describe("setCategoryGoals", () => {
       { ok: true, before: null, after: "$25.00/month" },
       { ok: false, error: expect.stringMatching(/give goal_target/) },
     ]);
-    expect(renderSetCategoryGoals(out)).toContain("[ok] Piano Lessons: $350.00/month → no goal");
+    expect(renderSetCategoryGoals(out)).toContain(
+      "[ok] Piano Lessons: $350.00/month → no goal",
+    );
   });
 });

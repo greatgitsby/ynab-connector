@@ -47,7 +47,8 @@ export const resolveMonthWindow = (
 ): MonthWindow => {
   const byKey = new Map(planMonths.map((m) => [m.month, m]));
   const requested = monthsBetween(since, until);
-  const present = requested.filter((k) => byKey.has(k));
+  const months = requested.flatMap((k) => byKey.get(k) ?? []);
+  const present = months.map((m) => m.month);
   const truncation_note =
     present.length < requested.length
       ? `(The Plan has data for ${present.length} of ${requested.length} requested months.)`
@@ -55,7 +56,7 @@ export const resolveMonthWindow = (
   return {
     requested,
     present,
-    months: present.map((k) => byKey.get(k)!),
+    months,
     truncation_note,
   };
 };

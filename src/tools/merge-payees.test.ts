@@ -80,7 +80,6 @@ const payees = [
 const transactions = [
   tx("t1", "dup1", [], { date: "2026-01-02", amount: -2000 }),
   tx("t2", "dup1", [], { date: "2026-03-04", amount: -3000 }),
-  // Split parent on dup2 moves; its part on dup1 can't.
   tx("t3", "dup2", [{ payee_id: "dup1", amount: -700 }, { payee_id: null }]),
   tx("t4", "other"),
   tx("t5", "dup1", [], { deleted: true }),
@@ -96,14 +95,14 @@ const scheduled = [
 ];
 
 const plan = () => {
-  const r = planMerge(
+  const r = planMerge({
     payees,
     transactions,
     scheduled,
-    "keep",
-    ["dup1", "dup2", "dup1"],
-    "USD",
-  );
+    targetId: "keep",
+    sourceIds: ["dup1", "dup2", "dup1"],
+    iso: "USD",
+  });
   if ("error" in r) throw new Error(r.error);
   return r;
 };
@@ -135,14 +134,14 @@ describe("planMerge", () => {
 
   test("refuses bad targets and sources", () => {
     const err = (target: string, sources: string[]) => {
-      const r = planMerge(
+      const r = planMerge({
         payees,
         transactions,
         scheduled,
-        target,
-        sources,
-        "USD",
-      );
+        targetId: target,
+        sourceIds: sources,
+        iso: "USD",
+      });
       return "error" in r ? r.error : null;
     };
     expect(err("gone", ["dup1"])).toMatch(/No payee/);
@@ -172,7 +171,6 @@ describe("applyMerge", () => {
   test("bulk-patches payee_id only, PUTs schedules, and reports what YNAB rejected", async () => {
     const updateTransactionsBulk = vi.fn(
       async (_plan: string, body: { transactions: { id: string }[] }) => ({
-        // t2 is missing from YNAB's response.
         data: {
           transactions: body.transactions.filter((t) => t.id !== "t2"),
           transaction_ids: [],

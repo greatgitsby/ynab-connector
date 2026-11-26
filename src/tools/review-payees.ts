@@ -9,22 +9,17 @@ import type {
 } from "../ynab";
 import { handleError, result } from "../format";
 
-// ---- Result type (zod is the source of truth; see docs/internals/structured-output.md)
-
 const PayeeUsageSchema = z.object({
   id: z.string(),
   name: z.string(),
-  // Transactions and split parts that carry this payee.
   transaction_count: z.number().int(),
   scheduled_count: z.number().int(),
-  // YYYY-MM-DD of the newest transaction, or null if never used.
   last_used: z.string().nullable(),
 });
 export type PayeeUsage = z.infer<typeof PayeeUsageSchema>;
 
 const EscapedSchema = PayeeUsageSchema.extend({ unescaped_name: z.string() });
 
-// One page of a section. `total` counts every match, `items` holds the page.
 const page = <T extends z.ZodType>(item: T) =>
   z.object({
     total: z.number().int(),
@@ -42,13 +37,9 @@ export type Section = (typeof SECTIONS)[number];
 
 export const PayeeReviewSchema = z.object({
   payee_count: z.number().int(),
-  // Each group: payees whose names match once formatting is ignored, most-used first.
   duplicates: page(z.object({ payees: z.array(PayeeUsageSchema) })).optional(),
-  // At most `max_uses` transactions and nothing scheduled, least and oldest use first.
   little_used: page(PayeeUsageSchema).optional(),
-  // Names stored with HTML entities ("Bread &amp; Butter").
   html_escaped: page(EscapedSchema).optional(),
-  // Every payee, most-used first.
   all: page(PayeeUsageSchema).optional(),
 });
 export type PayeeReview = z.infer<typeof PayeeReviewSchema>;
@@ -61,8 +52,6 @@ export interface ReviewOptions {
   limit: number;
 }
 
-// ---- Compute (pure)
-
 const ENTITIES: Record<string, string> = {
   amp: "&",
   lt: "<",
@@ -72,7 +61,6 @@ const ENTITIES: Record<string, string> = {
   nbsp: " ",
 };
 
-// Some payees are stored with HTML entities, likely from bank-import data.
 export const unescapeHtml = (s: string): string => {
   let prev: string;
   do {
@@ -91,16 +79,9 @@ export const unescapeHtml = (s: string): string => {
   return s;
 };
 
-// Card processors prefix the merchant ("SQ *Blue Bottle", "TST* Joe's").
 const PROCESSOR_PREFIX = /^(sq|tst|pp|sp|py|paypal)\s*\*\s*/;
-// Corporate suffixes and domains that don't distinguish merchants.
 const NOISE_WORDS = new Set(["the", "inc", "llc", "ltd", "co", "corp", "com"]);
 
-// Comparison key for the same merchant under different spellings: entities,
-// case, accents, punctuation, spacing, store numbers (3+ digits), a processor
-// prefix, and corporate suffixes don't count. Every other word does, so
-// "Costco Gas", "Amazon Payroll", and "Venmo Jane" stay apart from the bare
-// merchant name.
 export const payeeKey = (name: string): string =>
   unescapeHtml(name)
     .normalize("NFKD")
@@ -131,7 +112,6 @@ export const computePayeeReview = (
   scheduled: ScheduledTransaction[],
   opts: ReviewOptions,
 ): PayeeReview => {
-  // Transfer payees are named after accounts; they are never duplicates.
   const live = payees.filter((p) => !p.deleted && !p.transfer_account_id);
   const usage = new Map<string, PayeeUsage>(
     live.map((p) => [
@@ -225,8 +205,6 @@ export const computePayeeReview = (
   return out;
 };
 
-// ---- Render (pure)
-
 const fmtUsage = (u: PayeeUsage, includeIds: boolean): string => {
   const n = `${u.transaction_count} transaction${u.transaction_count === 1 ? "" : "s"}`;
   const last = u.last_used ? `, last ${u.last_used}` : "";
@@ -302,8 +280,6 @@ export const renderPayeeReview = (
   }
   return out.join("\n").trimEnd();
 };
-
-// ---- MCP tool registration
 
 const DESCRIPTION =
   "Review payees for cleanup. By default it returns the first page of three " +

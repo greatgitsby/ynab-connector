@@ -10,21 +10,16 @@ import {
 } from "./token-refresh";
 
 export interface Env extends AuthEnv {
-  // The URL MCP clients connect to. workers-oauth-provider 1.x binds every
-  // token's audience to it, so it must equal the resource existing grants
-  // carry: the deployed value is set in wrangler.jsonc; `.dev.vars` overrides
-  // it with http://localhost:8787/mcp for `wrangler dev`.
   MCP_RESOURCE: string;
   AUTH_RATE_LIMITER: RateLimit;
 }
 
 const MCP_ROUTE = "/mcp";
 
-// Browser Origins allowed to call /mcp. Non-browser clients (hosted
-// connector backends like Claude.ai's, CLI agents) send no Origin and are
-// unaffected. An
-// explicit list replaces the handler's defaults, so re-include localhost for
-// MCP Inspector.
+// Browser Origins allowed to call /mcp. Non-browser clients, such as hosted
+// connector backends and CLI agents, send no Origin and are unaffected. An
+// explicit list replaces the handler's defaults, so localhost is listed again
+// for MCP Inspector.
 const ALLOWED_ORIGIN_HOSTNAMES = [
   ...localhostAllowedOrigins(),
   "claude.ai",
@@ -36,18 +31,12 @@ const resourceMetadataUrl = (resource: string) => {
   return `${u.origin}/.well-known/oauth-protected-resource${u.pathname}`;
 };
 
-// OAuthProvider validates the bearer token before this runs and exposes the
-// decrypted grant props on ctx.props. A fresh McpServer is built per request
-// (createMcpHandler is stateless — no Durable Object, no session state).
 const apiHandler = {
   async fetch(
     request: Request,
     env: Env,
     ctx: ExecutionContext & { props?: unknown },
   ): Promise<Response> {
-    // Props that don't parse get the expired-token answer: the client's
-    // refresh then fails ynabTokenExchange's parse, and the provider revokes
-    // the grant so the user authorizes again.
     const parsed = PropsSchema.safeParse(ctx.props);
     if (!parsed.success || ynabTokenExpired(parsed.data)) {
       return expiredTokenResponse(resourceMetadataUrl(env.MCP_RESOURCE));
@@ -61,12 +50,7 @@ const apiHandler = {
   },
 };
 
-// The MCP client discovers the authorization endpoints via RFC 9728
-// protected-resource metadata (served by OAuthProvider), registers itself
-// dynamically, and walks the user through /authorize → YNAB → /callback.
-// completeAuthorization() then issues an MCP bearer with the per-user YNAB
-// tokens encrypted into `props`; ynabTokenExchange keeps them fresh.
-export const createProvider = (env: Env) =>
+const createProvider = (env: Env) =>
   new OAuthProvider<Env>({
     apiRoute: MCP_ROUTE,
     apiHandler,
@@ -95,8 +79,6 @@ const rateLimited = async (request: Request, env: Env): Promise<boolean> => {
   return !success;
 };
 
-// The provider's configuration depends on env (the canonical resource), so
-// build it once per isolate on first request.
 let provider: OAuthProvider<Env> | undefined;
 
 export default {

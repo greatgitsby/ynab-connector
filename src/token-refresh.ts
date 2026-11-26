@@ -7,26 +7,9 @@ import {
 import { refreshYnabToken, YnabError } from "./ynab";
 import { PropsSchema, type Props } from "./ynab-auth";
 
-// YNAB access tokens last 2 hours and their refresh tokens rotate. The MCP
-// server is stateless (a fresh McpServer per request), so the only durable
-// home for the current YNAB tokens is the OAuth grant's `props`. The pattern:
-//
-//   1. The client's access token is issued with a TTL that ends a few minutes
-//      before the YNAB access token inside it expires.
-//   2. When it expires, the client refreshes it at /token. The provider calls
-//      `ynabTokenExchange`, which refreshes the YNAB token and stores the new
-//      pair as the grant's props.
-//
-// Every YNAB token refresh therefore happens in exactly one place, serialized
-// by the client's own refresh. Concurrent tool calls never race to rotate the
-// refresh token.
-
-// Expire the client's token this long before the YNAB token it carries.
 export const EXPIRY_MARGIN_SECONDS = 300;
 // The provider rejects TTLs under 60s (KV's minimum expiration).
 const MIN_TTL_SECONDS = 60;
-// On a refresh, skip the YNAB round-trip if the current YNAB token still has
-// at least this long to live.
 const REUSE_THRESHOLD_SECONDS = 600;
 
 const nowSeconds = () => Math.floor(Date.now() / 1000);
@@ -95,13 +78,8 @@ export const ynabTokenExchange = async (
   return { newProps, accessTokenTTL: accessTokenTtlFor(ynabExpiresAt, now) };
 };
 
-// Grants issued before this module existed carry YNAB tokens that were never
-// rotated, and access tokens with the provider's default 1-hour TTL. If the
-// YNAB token inside a still-valid client token has already expired, answer
-// 401 invalid_token so the client refreshes now (running ynabTokenExchange)
-// rather than serving YNAB 401s until its own token runs out.
 export const ynabTokenExpired = (props: Props, now = nowSeconds()) =>
-  typeof props.ynabExpiresAt === "number" && props.ynabExpiresAt <= now;
+  props.ynabExpiresAt <= now;
 
 export const expiredTokenResponse = (resourceMetadataUrl: string) =>
   new Response(

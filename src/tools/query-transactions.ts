@@ -8,6 +8,7 @@ import {
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { YnabClient } from "../ynab";
 import { fmtMoney, handleError, result, text } from "../format";
+import { monthEndDate, resolveMonth } from "../month-window";
 import {
   DEFAULT_ROW_FIELDS,
   RowSchema,
@@ -16,7 +17,6 @@ import {
   median,
   pickRow,
   rowFieldsParam,
-  todayIso,
   type FlatRow,
   type RowField,
 } from "../rows";
@@ -31,21 +31,16 @@ import {
 } from "../resolve";
 import { isCardPaymentPayee } from "../predicates";
 
-// ---- Result type (zod is the source of truth; see docs/internals/structured-output.md)
-
 const GROUP_BY = ["payee", "category", "month", "account"] as const;
 type GroupBy = (typeof GROUP_BY)[number];
 
 const RefSchema = z.object({ id: z.string(), name: z.string() });
 
 const GroupSchema = z.object({
-  // The payee, category, or account id, or "YYYY-MM-01". "none" for rows
-  // with no payee or category.
   key: z.string(),
   name: z.string(),
   count: z.number().int(),
   total: z.number().int(),
-  // Median amount, the usual size of one charge.
   typical_amount: z.number().int(),
   min_amount: z.number().int(),
   max_amount: z.number().int(),
@@ -56,12 +51,10 @@ export type Group = z.infer<typeof GroupSchema>;
 
 export const QueryResultSchema = z.object({
   iso: z.string(),
-  // Over every matching row, not just this page.
   count: z.number().int(),
   total: z.number().int(),
   inflow: z.number().int(),
   outflow: z.number().int(),
-  // What each name filter matched, so a loose name can be checked.
   matched: z.object({
     accounts: z.array(RefSchema).optional(),
     categories: z.array(RefSchema).optional(),
@@ -70,14 +63,11 @@ export const QueryResultSchema = z.object({
   group_by: z.enum(GROUP_BY).nullable(),
   group_count: z.number().int(),
   groups: z.array(GroupSchema),
-  // Most recent first, from `offset`.
   offset: z.number().int(),
   next_offset: z.number().int().nullable(),
   rows: z.array(RowSchema),
 });
 export type QueryResult = z.infer<typeof QueryResultSchema>;
-
-// ---- Compute (pure)
 
 export interface RowFilter {
   accountIds?: ReadonlySet<string>;
@@ -88,8 +78,6 @@ export interface RowFilter {
   direction?: "outflow" | "inflow";
 }
 
-// Any term matches. Each term is split on " OR " too, and a term with " AND "
-// needs every part. Otherwise a term is a literal substring.
 const searchTerms = (search: string | string[] | undefined): string[][] =>
   [search ?? []]
     .flat()
@@ -135,7 +123,7 @@ const groupKey = (r: FlatRow, by: GroupBy): [string, string] => {
   }
 };
 
-export const groupRows = (rows: FlatRow[], by: GroupBy): Group[] => {
+const groupRows = (rows: FlatRow[], by: GroupBy): Group[] => {
   const acc = new Map<string, { name: string; rows: FlatRow[] }>();
   for (const r of rows) {
     const [key, name] = groupKey(r, by);
@@ -173,16 +161,16 @@ export interface QueryOpts {
   matched?: QueryResult["matched"];
 }
 
-export const sortRows = (rows: FlatRow[]): FlatRow[] =>
+const sortRows = (rows: FlatRow[]): FlatRow[] =>
   [...rows].sort(
     (a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id),
   );
 
-// `sorted` comes from sortRows, so the page and the render agree.
 export const computeQuery = (
-  sorted: FlatRow[],
+  rows: FlatRow[],
   opts: QueryOpts,
-): QueryResult => {
+): { query: QueryResult; page: FlatRow[] } => {
+  const sorted = sortRows(rows);
   let inflow = 0;
   let outflow = 0;
   for (const r of sorted) {
@@ -192,7 +180,7 @@ export const computeQuery = (
   const groups = opts.groupBy ? groupRows(sorted, opts.groupBy) : [];
   const page = sorted.slice(opts.offset, opts.offset + opts.limit);
   const end = opts.offset + page.length;
-  return {
+  const query: QueryResult = {
     iso: opts.iso,
     count: sorted.length,
     total: inflow + outflow,
@@ -206,11 +194,10 @@ export const computeQuery = (
     next_offset: opts.limit > 0 && end < sorted.length ? end : null,
     rows: page.map((r) => pickRow(r, opts.fields)),
   };
+  return { query, page };
 };
 
-// ---- Render (pure)
-
-export const renderQuery = (
+const renderQuery = (
   q: QueryResult,
   pageRows: FlatRow[],
   opts: { includeIds: boolean },
@@ -252,24 +239,16 @@ export const renderQuery = (
   return out.join("\n");
 };
 
-// ---- MCP tool registration
+type RefFilter =
+  | { ok: true; ids?: Set<string>; matched: { id: string; name: string }[] }
+  | { ok: false; error: string };
 
-const monthEnd = (month: string): string => {
-  const [y, m] = month.split("-").map(Number);
-  return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
-};
-
-// Names become ids here. Uuids pass through without a lookup.
 const resolveRefs = (
   refs: string[] | undefined,
   items: Named[] | null,
   kind: string,
-): {
-  ids?: Set<string>;
-  matched?: { id: string; name: string }[];
-  error?: string;
-} => {
-  if (!refs?.length) return {};
+): RefFilter => {
+  if (!refs?.length) return { ok: true, matched: [] };
   const ids = new Set<string>();
   const matched: { id: string; name: string }[] = [];
   for (const ref of refs) {
@@ -282,10 +261,13 @@ const resolveRefs = (
     } else if (isUuid(ref)) {
       ids.add(ref.trim());
     } else {
-      return { error: r ? r.error : `No ${kind} matches "${ref}".` };
+      return {
+        ok: false,
+        error: r ? r.error : `No ${kind} matches "${ref}".`,
+      };
     }
   }
-  return { ids, matched };
+  return { ok: true, ids, matched };
 };
 
 const DESCRIPTION =
@@ -373,15 +355,17 @@ export const registerQueryTransactions = (
           payees && payeeRefs(payees.data.payees),
           "payee",
         );
-        const err = acc.error ?? cat.error ?? pay.error;
-        if (err) return { ...text(err), isError: true as const };
+        const refused = (error: string) => ({
+          ...text(error),
+          isError: true as const,
+        });
+        if (!acc.ok) return refused(acc.error);
+        if (!cat.ok) return refused(cat.error);
+        if (!pay.ok) return refused(pay.error);
 
-        const month =
-          args.month === "current"
-            ? `${todayIso().slice(0, 7)}-01`
-            : args.month;
+        const month = args.month && resolveMonth(args.month);
         const sinceDate = month ?? args.since_date;
-        const untilDate = month ? monthEnd(month) : args.until_date;
+        const untilDate = month ? monthEndDate(month) : args.until_date;
         const oneAccount = acc.ids?.size === 1 ? [...acc.ids][0] : undefined;
         const { data } = await c.listTransactions(args.plan_id, {
           accountId: oneAccount,
@@ -389,19 +373,17 @@ export const registerQueryTransactions = (
           untilDate,
           type: args.type,
         });
-        const rows = sortRows(
-          filterRows(flattenTransactions(data.transactions), {
-            accountIds: acc.ids,
-            categoryIds: cat.ids,
-            payeeIds: pay.ids,
-            search: args.search,
-            excludeTransfers: args.exclude_transfers,
-            direction: args.direction,
-          }),
-        );
+        const rows = filterRows(flattenTransactions(data.transactions), {
+          accountIds: acc.ids,
+          categoryIds: cat.ids,
+          payeeIds: pay.ids,
+          search: args.search,
+          excludeTransfers: args.exclude_transfers,
+          direction: args.direction,
+        });
         const limit = args.limit ?? (args.group_by ? 0 : 100);
         const fields = args.fields ?? DEFAULT_ROW_FIELDS;
-        const q = computeQuery(rows, {
+        const { query, page } = computeQuery(rows, {
           iso,
           groupBy: args.group_by,
           groupLimit: args.group_limit,
@@ -409,14 +391,13 @@ export const registerQueryTransactions = (
           offset: args.offset,
           fields,
           matched: {
-            ...(acc.matched?.length ? { accounts: acc.matched } : {}),
-            ...(cat.matched?.length ? { categories: cat.matched } : {}),
-            ...(pay.matched?.length ? { payees: pay.matched } : {}),
+            ...(acc.matched.length ? { accounts: acc.matched } : {}),
+            ...(cat.matched.length ? { categories: cat.matched } : {}),
+            ...(pay.matched.length ? { payees: pay.matched } : {}),
           },
         });
-        const pageRows = rows.slice(args.offset, args.offset + limit);
         const includeIds = args.include_ids || !!args.fields?.includes("id");
-        return result(renderQuery(q, pageRows, { includeIds }), q);
+        return result(renderQuery(query, page, { includeIds }), query);
       } catch (e) {
         return handleError(e);
       }

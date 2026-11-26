@@ -4,23 +4,16 @@ import type { Plan, YnabClient } from "../ynab";
 import { PlanSchema } from "../wire";
 import { result, handleError } from "../format";
 
-// ---- Result type (zod is the source of truth; see docs/internals/structured-output.md)
-
 export const PlanListSchema = z.object({
-  // Most recently modified first.
   plans: z.array(PlanSchema),
 });
 export type PlanList = z.infer<typeof PlanListSchema>;
-
-// ---- Compute (pure)
 
 export const computePlanList = (fetched: Plan[]): PlanList => ({
   plans: [...fetched].sort((a, b) =>
     (b.last_modified_on ?? "").localeCompare(a.last_modified_on ?? ""),
   ),
 });
-
-// ---- Render (pure)
 
 export const renderPlanList = (list: PlanList): string => {
   if (!list.plans.length) return "No plans found.";
@@ -31,8 +24,6 @@ export const renderPlanList = (list: PlanList): string => {
     )
     .join("\n");
 };
-
-// ---- MCP tool registration
 
 const DESCRIPTION =
   "List the YNAB plans this connection can see, most recently modified " +

@@ -8,16 +8,10 @@ import {
 } from "./create-categories";
 import { groups } from "./categories.fixture";
 
-const M = "2026-11-01";
-
 describe("newCategoryBody", () => {
   test("sends name and group, plus any goal fields", () => {
     expect(
-      newCategoryBody(
-        { category_group_id: "subs", name: "Claude" },
-        groups(),
-        M,
-      ),
+      newCategoryBody({ category_group_id: "subs", name: "Claude" }, groups()),
     ).toEqual({
       body: { name: "Claude", category_group_id: "subs" },
     });
@@ -30,7 +24,6 @@ describe("newCategoryBody", () => {
           goal_frequency: "yearly",
         },
         groups(),
-        M,
       ),
     ).toEqual({
       body: {
@@ -44,11 +37,14 @@ describe("newCategoryBody", () => {
 
   test("refuses an unknown group, a taken name, and a goal without a target", () => {
     const refuse = (i: Parameters<typeof newCategoryBody>[0]) =>
-      (newCategoryBody(i, groups(), M) as { error: string }).error;
+      (newCategoryBody(i, groups()) as { error: string }).error;
     expect(refuse({ category_group_id: "dead", name: "X" })).toMatch(
       /No such category group/,
     );
     expect(refuse({ category_group_id: "fun", name: "NETFLIX" })).toMatch(
+      /already has that name/,
+    );
+    expect(refuse({ category_group_id: "fun", name: "🎥 Netflix!" })).toMatch(
       /already has that name/,
     );
     expect(

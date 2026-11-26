@@ -5,18 +5,13 @@ import type { ScheduledTransaction, YnabClient } from "../ynab";
 import { ScheduledTransactionSchema } from "../wire";
 import { result, handleError, fmtMoney } from "../format";
 
-// ---- Result type (zod is the source of truth; see docs/internals/structured-output.md)
-
 export const ScheduledTransactionListSchema = z.object({
   iso: z.string(),
-  // Soonest date_next first.
   scheduled_transactions: z.array(ScheduledTransactionSchema),
 });
 export type ScheduledTransactionList = z.infer<
   typeof ScheduledTransactionListSchema
 >;
-
-// ---- Compute (pure)
 
 export const computeScheduledTransactionList = (
   fetched: ScheduledTransaction[],
@@ -29,8 +24,6 @@ export const computeScheduledTransactionList = (
     )
     .sort((a, b) => a.date_next.localeCompare(b.date_next)),
 });
-
-// ---- Render (pure)
 
 export const renderScheduledTransactionList = (
   list: ScheduledTransactionList,
@@ -48,8 +41,6 @@ export const renderScheduledTransactionList = (
     })
     .join("\n");
 };
-
-// ---- MCP tool registration
 
 const DESCRIPTION =
   "Scheduled transactions: upcoming bills, paychecks, and transfers that " +

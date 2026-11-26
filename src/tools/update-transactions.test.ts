@@ -69,7 +69,6 @@ describe("buildBulkRow", () => {
       { amount: -3000, category_id: "cat-a" },
       { amount: -2000, category_id: "cat-b", memo: "tax" },
     ]);
-    // No `amount_milliunits` key on the wire.
     expect(row.subtransactions?.[0]).not.toHaveProperty("amount_milliunits");
   });
 });
@@ -342,6 +341,7 @@ describe("renderUpdateTransactionsResult", () => {
         error: "Not present in YNAB's bulk-update response.",
       },
     ],
+    after: null,
   };
 
   test("header shows ok/total and error count", () => {
@@ -391,6 +391,7 @@ describe("renderUpdateTransactionsResult", () => {
           } as Transaction,
         },
       ],
+      after: null,
     };
     const rendered = renderUpdateTransactionsResult(splitSample, "USD");
     expect(rendered).toContain("(2-way split)");

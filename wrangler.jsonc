@@ -9,8 +9,6 @@
     // (CIMD) clients, the MCP auth spec's preferred registration method.
     "global_fetch_strictly_public",
   ],
-  // v1 created the McpAgent Durable Object. The MCP server is now stateless
-  // (createMcpHandler), so v2 deletes the class and its storage.
   "migrations": [
     {
       "new_sqlite_classes": ["YnabMcp"],
@@ -32,7 +30,6 @@
       "id": "e8aa9cdf03b34b1b9e79de520afa4b99",
     },
   ],
-  // Per-IP limits on the unauthenticated endpoints that write KV (src/index.ts).
   "ratelimits": [
     {
       "name": "AUTH_RATE_LIMITER",
@@ -46,7 +43,6 @@
       "custom_domain": true,
     },
   ],
-  // Icons for MCP clients; served before the Worker runs.
   "assets": {
     "directory": "./public",
   },

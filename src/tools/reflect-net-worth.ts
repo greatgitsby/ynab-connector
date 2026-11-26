@@ -17,8 +17,6 @@ import {
   resolveMonthRange,
 } from "../month-window";
 
-// ---- Result type (zod is the source of truth; see docs/internals/structured-output.md)
-
 const SnapshotSchema = z.object({
   net: z.number().int(),
   assets: z.number().int(),
@@ -29,19 +27,15 @@ type Snapshot = z.infer<typeof SnapshotSchema>;
 export const NetWorthReportSchema = z.object({
   iso: z.string(),
   current: SnapshotSchema,
-  // End-of-month snapshots, chronological. `change` is null on the first row.
   history: z.array(
     SnapshotSchema.extend({
       month: z.string(),
       change: z.number().int().nullable(),
     }),
   ),
-  // Open accounts, largest balance first.
   open_accounts: z.array(AccountSchema),
 });
 export type NetWorthReport = z.infer<typeof NetWorthReportSchema>;
-
-// ---- Compute (pure)
 
 const snapshot = (balances: number[]): Snapshot => {
   let assets = 0;
@@ -85,8 +79,6 @@ export const computeNetWorth = (
   };
 };
 
-// ---- Render (pure)
-
 const COL = 14;
 
 export const renderNetWorth = (
@@ -124,8 +116,6 @@ export const renderNetWorth = (
   );
   return out.join("\n").trimEnd();
 };
-
-// ---- MCP tool registration
 
 const DESCRIPTION =
   "Reflect: current net worth, end-of-month net worth for each month in a " +

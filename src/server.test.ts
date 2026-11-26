@@ -2,11 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "bun:test";
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { buildServer } from "./server";
-import type { Props } from "./ynab-auth";
-
-// Drives the real MCP server through an SDK v2 client, the way a remote MCP client does:
-// tool discovery, schema validation, and tool calls end-to-end, with only the
-// YNAB HTTP API stubbed.
+import { PropsSchema, type Props } from "./ynab-auth";
 
 const props = (overrides: Partial<Props> = {}): Props => ({
   ynabUserId: "user-1",
@@ -102,12 +98,10 @@ describe("tool discovery", () => {
   test("no tool surface still says 'budget' outside YNAB wire-field names", async () => {
     const client = await connect();
     const { tools } = await client.listTools();
-    const surface = JSON.stringify(tools)
-      // YNAB field names, the brand, and the on/off-budget account concept.
-      .replace(
-        /goal_months_to_budget|budgeted|on_budget|(on|off)Budget|You Need A Budget|(on|off)[- ]budget/gi,
-        "",
-      );
+    const surface = JSON.stringify(tools).replace(
+      /goal_months_to_budget|budgeted|on_budget|(on|off)Budget|You Need A Budget|(on|off)[- ]budget/gi,
+      "",
+    );
     expect(surface).not.toMatch(/budget/i);
   });
 
@@ -225,7 +219,6 @@ describe("tool calls", () => {
   });
 
   test("triage_inbox accepts undeclared YNAB fields and skips tracking accounts", async () => {
-    // Shapes as YNAB v1.88 actually sends them, `*_formatted` siblings included.
     const wireTx = (id: string, account_id: string) => ({
       id,
       date: "2026-11-01",
@@ -310,7 +303,6 @@ describe("tool calls", () => {
         data: {
           accounts: [
             wireAccount("checking", true, false),
-            // Closed accounts still own transactions, so they still count.
             wireAccount("fidelity-401k", false, true),
           ],
         },
@@ -345,7 +337,8 @@ describe("tool calls", () => {
   });
 
   test("write tools refuse legacy read-only grants before calling YNAB", async () => {
-    const client = await connect(props({ canWrite: undefined }));
+    const { canWrite: _, ...legacy } = props();
+    const client = await connect(PropsSchema.parse(legacy));
     const res = await client.callTool({
       name: "assign_to_categories",
       arguments: {
@@ -362,7 +355,6 @@ describe("tool calls", () => {
     expect((res.content as Array<{ text: string }>)[0].text).toContain(
       "read-only",
     );
-    // A goal preview reads YNAB, so it is gated too.
     const goals = await client.callTool({
       name: "set_category_goals",
       arguments: { changes: [{ category_id: "c1", remove_goal: true }] },
@@ -371,7 +363,6 @@ describe("tool calls", () => {
     expect((goals.content as Array<{ text: string }>)[0].text).toContain(
       "read-only",
     );
-    // A split GETs the transaction first, so it is gated before that read.
     const split = await client.callTool({
       name: "update_transactions",
       arguments: {
@@ -867,8 +858,10 @@ describe("tool calls", () => {
         approved: true,
       });
       expect(res.structuredContent).toMatchObject({
-        ready_to_assign: 7000,
-        category_balances: [{ id: "c-spo", name: "Spotify" }],
+        after: {
+          ready_to_assign: 7000,
+          category_balances: [{ id: "c-spo", name: "Spotify" }],
+        },
       });
     });
 

@@ -62,7 +62,6 @@ describe("computeNetWorth", () => {
   });
 
   test("walks balances back through later transactions", () => {
-    // $100 left checking on 2026-05-10, so April ended $100 higher.
     const accounts = [account({ id: "checking", balance: 1_000_000 })];
     const txs = [
       tx({
@@ -71,7 +70,6 @@ describe("computeNetWorth", () => {
         date: "2026-05-10",
         amount: -100_000,
       }),
-      // A transfer between two accounts cancels out.
       tx({
         id: "t2",
         account_id: "checking",

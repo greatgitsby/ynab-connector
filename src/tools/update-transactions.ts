@@ -1,87 +1,113 @@
 import { z } from "zod";
 import { planIdParam } from "../schemas";
 import type { McpServer } from "@modelcontextprotocol/server";
-import type {
-  CategoryGroup,
-  MonthDetail,
-  SaveSubTransaction,
-  SaveTransactionWithId,
-  Transaction,
-  YnabClient,
+import {
+  FLAG_COLORS,
+  type CategoryGroup,
+  type MonthDetail,
+  type SaveSubTransaction,
+  type SaveTransactionWithId,
+  type Transaction,
+  type YnabClient,
 } from "../ynab";
-import { YnabError } from "../ynab";
+import { TransactionSchema } from "../wire";
 import {
   fmtMoney,
   fmtSplitLines,
   handleError,
   result,
   scopeDeniedError,
+  errorMessage,
 } from "../format";
 import type { Props } from "../ynab-auth";
 import { isSplitTx } from "../predicates";
 import { categoryRefs, resolveOne } from "../resolve";
 
-// ---- Input + Result types
+const subSchema = z.object({
+  amount_milliunits: z.number().int(),
+  category_id: z.string().nullable().optional(),
+  category_name: z.string().optional(),
+  memo: z.string().nullable().optional(),
+  payee_name: z.string().optional(),
+  payee_id: z.string().optional(),
+});
 
-export interface UpdateSubInput {
-  amount_milliunits: number;
-  category_id?: string | null;
-  // Resolved to category_id before sending.
-  category_name?: string;
-  memo?: string | null;
-  payee_name?: string;
-  payee_id?: string;
-}
+type UpdateSubInput = z.infer<typeof subSchema>;
 
-export interface UpdateTransactionInput {
-  transaction_id: string;
-  category_id?: string | null;
-  // Resolved to category_id before sending.
-  category_name?: string;
-  payee_name?: string;
-  payee_id?: string;
-  memo?: string | null;
-  approved?: boolean;
-  cleared?: "cleared" | "uncleared" | "reconciled";
-  flag_color?: "red" | "orange" | "yellow" | "green" | "blue" | "purple" | null;
-  subtransactions?: UpdateSubInput[];
-}
+const updateSchema = z
+  .object({
+    transaction_id: z.string(),
+    category_id: z.string().nullable().optional(),
+    category_name: z.string().optional(),
+    payee_name: z.string().optional(),
+    payee_id: z.string().optional(),
+    memo: z.string().nullable().optional(),
+    approved: z.boolean().optional(),
+    cleared: z.enum(["cleared", "uncleared", "reconciled"]).optional(),
+    flag_color: z.enum(FLAG_COLORS).nullable().optional(),
+    subtransactions: z.array(subSchema).optional(),
+  })
+  .refine(
+    (v) => !(v.category_id !== undefined && v.category_name !== undefined),
+    {
+      message: "Give category_id or category_name, not both.",
+      path: ["category_name"],
+    },
+  )
+  .refine(
+    (v) =>
+      !(
+        v.subtransactions &&
+        (v.category_id != null || v.category_name !== undefined)
+      ),
+    {
+      message:
+        "When `subtransactions` is set, the parent's `category_id` must be null or omitted.",
+      path: ["category_id"],
+    },
+  );
 
-export interface UpdateTransactionOk {
-  ok: true;
-  transaction_id: string;
-  transaction: Transaction;
-}
+export type UpdateTransactionInput = z.infer<typeof updateSchema>;
 
-export interface UpdateTransactionError {
-  ok: false;
-  transaction_id: string;
-  error: string;
-}
+const UpdateTransactionResultSchema = z.discriminatedUnion("ok", [
+  z.object({
+    ok: z.literal(true),
+    transaction_id: z.string(),
+    transaction: TransactionSchema,
+  }),
+  z.object({
+    ok: z.literal(false),
+    transaction_id: z.string(),
+    error: z.string(),
+  }),
+]);
+export type UpdateTransactionResult = z.infer<
+  typeof UpdateTransactionResultSchema
+>;
 
-export type UpdateTransactionResult =
-  UpdateTransactionOk | UpdateTransactionError;
+const CategoryBalanceSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  budgeted: z.number(),
+  activity: z.number(),
+  balance: z.number(),
+});
+type CategoryBalance = z.infer<typeof CategoryBalanceSchema>;
 
-export interface CategoryBalance {
-  id: string;
-  name: string;
-  budgeted: number;
-  activity: number;
-  balance: number;
-}
+const UpdateTransactionsResultSchema = z.object({
+  results: z.array(UpdateTransactionResultSchema),
+  after: z
+    .object({
+      month: z.string(),
+      ready_to_assign: z.number(),
+      category_balances: z.array(CategoryBalanceSchema),
+    })
+    .nullable(),
+});
+export type UpdateTransactionsResult = z.infer<
+  typeof UpdateTransactionsResultSchema
+>;
 
-export interface UpdateTransactionsResult {
-  results: UpdateTransactionResult[];
-  // The current month's state after the write, for the categories the
-  // updated transactions now sit in. Absent when nothing was written or the
-  // re-read failed.
-  month?: string;
-  ready_to_assign?: number;
-  category_balances?: CategoryBalance[];
-}
-
-// Replaces each category_name with the id it names. An input whose name
-// matches no category, or several, fails on its own before anything is sent.
 export const resolveCategoryNames = (
   inputs: UpdateTransactionInput[],
   groups: CategoryGroup[],
@@ -121,7 +147,6 @@ export const resolveCategoryNames = (
   return { inputs: resolved, failed };
 };
 
-// The month's categories that updated transactions (or their parts) now use.
 export const touchedBalances = (
   results: UpdateTransactionResult[],
   month: MonthDetail,
@@ -145,11 +170,6 @@ export const touchedBalances = (
     }));
 };
 
-// ---- Compute: input → wire body (pure)
-
-// Builds the bulk PATCH row from a tool-shaped input. Strips undefined keys
-// so the request only carries fields the caller actually wanted to change
-// (YNAB treats omitted fields as unchanged).
 export const buildBulkRow = (
   input: UpdateTransactionInput,
 ): SaveTransactionWithId => {
@@ -176,10 +196,8 @@ const toWireSub = (s: UpdateSubInput): SaveSubTransaction => {
   return out;
 };
 
-// ---- Compute: response → per-input result (pure)
-
 // YNAB's bulk PATCH response includes the updated transactions in arbitrary
-// order. Failed rows are NOT in the response, so an input missing from it gets
+// order. Failed rows are left out of the response, so an input missing from it gets
 // a generic error. `failed` carries inputs that already have an error (refused
 // before sending, or a whole-batch failure).
 export const interpretBulkResponse = (
@@ -221,21 +239,11 @@ export const interpretBulkResponse = (
           "Not present in YNAB's bulk-update response — id may not exist or may be out of scope.",
       };
     }),
+    after: null,
   };
 };
 
-// ---- Effectful: split precheck, then one bulk PATCH
-
-const errorMessage = (e: unknown): string =>
-  e instanceof YnabError
-    ? `YNAB ${e.status}: ${e.body}`
-    : e instanceof Error
-      ? e.message
-      : String(e);
-
-// Why a split input can't be sent, or null if it can. The parts must sum to the
-// parent exactly; a split that has already been split can't be split again.
-export const splitRefusal = (
+const splitRefusal = (
   existing: Transaction,
   subs: UpdateSubInput[],
 ): string | null => {
@@ -259,23 +267,20 @@ const precheckSplits = async (
 ): Promise<Map<UpdateTransactionInput, string>> => {
   const failed = new Map<UpdateTransactionInput, string>();
   await Promise.all(
-    inputs
-      .filter((i) => i.subtransactions !== undefined)
-      .map(async (input) => {
-        try {
-          const { data } = await client.getTransaction(
-            planId,
-            input.transaction_id,
-          );
-          const refusal = splitRefusal(
-            data.transaction,
-            input.subtransactions!,
-          );
-          if (refusal) failed.set(input, refusal);
-        } catch (e) {
-          failed.set(input, errorMessage(e));
-        }
-      }),
+    inputs.map(async (input) => {
+      const subs = input.subtransactions;
+      if (subs === undefined) return;
+      try {
+        const { data } = await client.getTransaction(
+          planId,
+          input.transaction_id,
+        );
+        const refusal = splitRefusal(data.transaction, subs);
+        if (refusal) failed.set(input, refusal);
+      } catch (e) {
+        failed.set(input, errorMessage(e));
+      }
+    }),
   );
   return failed;
 };
@@ -311,7 +316,6 @@ export const applyUpdateTransactions = async (
       });
       updated = resp.data.transactions;
     } catch (e) {
-      // Whole-batch failure (e.g., 401, 5xx): every sent input gets the error.
       const message = errorMessage(e);
       for (const i of toSend) failed.set(i, message);
     }
@@ -322,16 +326,16 @@ export const applyUpdateTransactions = async (
     const { data } = await client.getMonth(planId, "current");
     return {
       ...out,
-      month: data.month.month,
-      ready_to_assign: data.month.to_be_budgeted,
-      category_balances: touchedBalances(out.results, data.month),
+      after: {
+        month: data.month.month,
+        ready_to_assign: data.month.to_be_budgeted,
+        category_balances: touchedBalances(out.results, data.month),
+      },
     };
   } catch {
     return out;
   }
 };
-
-// ---- Render (pure)
 
 export const renderUpdateTransactionsResult = (
   out: UpdateTransactionsResult,
@@ -347,17 +351,16 @@ export const renderUpdateTransactionsResult = (
       ...fmtSplitLines(r.transaction, iso),
     ];
   });
-  const after =
-    out.ready_to_assign != null
-      ? [
-          "",
-          `After the update (${out.month?.slice(0, 7)}): Ready to Assign ${fmtMoney(out.ready_to_assign ?? 0, iso)}`,
-          ...(out.category_balances ?? []).map(
-            (c) =>
-              `- ${c.name}: available ${fmtMoney(c.balance, iso)} (assigned ${fmtMoney(c.budgeted, iso)}, activity ${fmtMoney(c.activity, iso)})`,
-          ),
-        ]
-      : [];
+  const after = out.after
+    ? [
+        "",
+        `After the update (${out.after.month.slice(0, 7)}): Ready to Assign ${fmtMoney(out.after.ready_to_assign, iso)}`,
+        ...out.after.category_balances.map(
+          (c) =>
+            `- ${c.name}: available ${fmtMoney(c.balance, iso)} (assigned ${fmtMoney(c.budgeted, iso)}, activity ${fmtMoney(c.activity, iso)})`,
+        ),
+      ]
+    : [];
   return [header, ...lines, ...after].join("\n");
 };
 
@@ -372,8 +375,6 @@ const renderTxSummary = (t: Transaction, iso: string): string => {
       : "";
   return `${t.date} ${fmtMoney(t.amount, iso)} ${payee} → ${cat}${splitNote}, ${approval}, ${t.cleared}${flag}`;
 };
-
-// ---- MCP tool registration
 
 const DESCRIPTION =
   "Edit one or more existing transactions in one bulk call: categorize, " +
@@ -405,57 +406,6 @@ export const registerUpdateTransactions = (
   getClient: () => YnabClient,
   getProps: () => Props,
 ) => {
-  const flagColors = [
-    "red",
-    "orange",
-    "yellow",
-    "green",
-    "blue",
-    "purple",
-  ] as const;
-
-  const subSchema = z.object({
-    amount_milliunits: z.number().int(),
-    category_id: z.string().nullable().optional(),
-    category_name: z.string().optional(),
-    memo: z.string().nullable().optional(),
-    payee_name: z.string().optional(),
-    payee_id: z.string().optional(),
-  });
-
-  const updateSchema = z
-    .object({
-      transaction_id: z.string(),
-      category_id: z.string().nullable().optional(),
-      category_name: z.string().optional(),
-      payee_name: z.string().optional(),
-      payee_id: z.string().optional(),
-      memo: z.string().nullable().optional(),
-      approved: z.boolean().optional(),
-      cleared: z.enum(["cleared", "uncleared", "reconciled"]).optional(),
-      flag_color: z.enum(flagColors).nullable().optional(),
-      subtransactions: z.array(subSchema).optional(),
-    })
-    .refine(
-      (v) => !(v.category_id !== undefined && v.category_name !== undefined),
-      {
-        message: "Give category_id or category_name, not both.",
-        path: ["category_name"],
-      },
-    )
-    .refine(
-      (v) =>
-        !(
-          v.subtransactions &&
-          (v.category_id != null || v.category_name !== undefined)
-        ),
-      {
-        message:
-          "When `subtransactions` is set, the parent's `category_id` must be null or omitted.",
-        path: ["category_id"],
-      },
-    );
-
   server.registerTool(
     "update_transactions",
     {

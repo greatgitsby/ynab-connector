@@ -7,28 +7,21 @@ import { result, handleError, fmtMoney, pushSection } from "../format";
 import { resolveMonthRange } from "../month-window";
 import { isSavingsCategory } from "../predicates";
 
-// ---- Result type (zod is the source of truth; see docs/internals/structured-output.md)
-
 const RTA = "Ready to Assign";
 
 const MovementRowSchema = MoneyMovementSchema.extend({
   from_category_name: z.string(),
   to_category_name: z.string(),
-  // Category to category, out of a savings-style goal (see isSavingsCategory).
   from_savings: z.boolean(),
 });
 
 const CategoryFlowSchema = z.object({
   category_id: z.string(),
   category_name: z.string(),
-  // From Ready to Assign.
   assigned: z.number().int(),
-  // Returned to Ready to Assign.
   unassigned: z.number().int(),
-  // From and to other categories.
   moved_in: z.number().int(),
   moved_out: z.number().int(),
-  // assigned - unassigned + moved_in - moved_out.
   net: z.number().int(),
 });
 
@@ -36,14 +29,10 @@ export const MoneyMovementReportSchema = z.object({
   iso: z.string(),
   since_month: z.string(),
   until_month: z.string(),
-  // Most recent first.
   money_movements: z.array(MovementRowSchema),
-  // Largest absolute net first.
   by_category: z.array(CategoryFlowSchema),
 });
 export type MoneyMovementReport = z.infer<typeof MoneyMovementReportSchema>;
-
-// ---- Compute (pure)
 
 // A null category id is Ready to Assign: null `from` is an assignment, null
 // `to` returns money to Ready to Assign.
@@ -120,8 +109,6 @@ export const computeMoneyMovements = (
   };
 };
 
-// ---- Render (pure)
-
 export const renderMoneyMovements = (
   r: MoneyMovementReport,
   opts: { includeIds: boolean; maxRows: number },
@@ -158,8 +145,6 @@ export const renderMoneyMovements = (
   });
   return out.join("\n").trimEnd();
 };
-
-// ---- MCP tool registration
 
 const DESCRIPTION =
   "Money movements: every assignment and every move of money between " +

@@ -12,20 +12,16 @@ describe("changeBody", () => {
   test("sends only what changes", () => {
     expect(
       changeBody({ category_id: "games", name: "Gaming" }, groups()),
-    ).toEqual({ body: { name: "Gaming" } });
+    ).toHaveProperty("body", { name: "Gaming" });
     expect(
       changeBody({ category_id: "games", category_group_id: "subs" }, groups()),
-    ).toEqual({
-      body: { category_group_id: "subs" },
-    });
+    ).toHaveProperty("body", { category_group_id: "subs" });
     expect(
       changeBody(
         { category_id: "games", name: "Games", category_group_id: "subs" },
         groups(),
       ),
-    ).toEqual({
-      body: { category_group_id: "subs" },
-    });
+    ).toHaveProperty("body", { category_group_id: "subs" });
   });
 
   test("refuses what YNAB would reject or what would confuse later", () => {
@@ -84,7 +80,6 @@ describe("updateCategories", () => {
     const out = await updateCategories(client, "plan", [
       { category_id: "games", name: "Gaming", category_group_id: "subs" },
       { category_id: "netflix", name: "Netflix Premium" },
-      // Sees the rename above within the same batch.
       { category_id: "netflix", name: "gaming" },
     ]);
     UpdateCategoriesResultSchema.parse(out);

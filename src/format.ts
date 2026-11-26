@@ -5,42 +5,26 @@ export const text = (s: string) => ({
   content: [{ type: "text" as const, text: s }],
 });
 
-// Attaches a `structuredContent` field alongside the text content. Per MCP
-// 2025-11-25, tools return both human-readable text (for the model to quote
-// to the user) and machine-readable JSON (for the model — or a live artifact
-// — to keep working without re-parsing the prose). Read tools also declare an
-// `outputSchema` so the payload is discoverable and validated; see
-// docs/internals/structured-output.md.
-//
-// Conventions for the structured payload:
-//  - Money is in raw milliunits (matching the YNAB wire + write tools), never
-//    pre-divided dollars. A money-bearing payload also carries an `iso`
-//    currency code so a consumer can format without assuming USD. Summed/raw
-//    amounts are integers; averages are not, so they stay z.number().
-//  - `structuredContent` always carries item ids regardless of any
-//    `include_ids` flag — that flag is a text-verbosity knob only. Structured
-//    data should always be fully addressable for drill-downs.
-//  - Only the success path returns `structuredContent`; pre-compute guard
-//    branches (not-found, invalid range) stay text-only. So a present
-//    `structuredContent` means a real computed result.
 export const result = <S>(s: string, structured: S) => ({
   content: [{ type: "text" as const, text: s }],
   structuredContent: structured,
 });
 
-// Tool execution error (isError: true), so the client and model can tell a
-// failed call from a successful one that happens to contain prose.
+export const errorMessage = (e: unknown): string =>
+  e instanceof YnabError
+    ? `YNAB ${e.status}: ${e.body}`
+    : e instanceof Error
+      ? e.message
+      : String(e);
+
 export const handleError = (e: unknown) => {
   const message =
     e instanceof YnabError
       ? `YNAB error ${e.status}: ${e.body}`
-      : `Error: ${e instanceof Error ? e.message : String(e)}`;
+      : `Error: ${errorMessage(e)}`;
   return { ...text(message), isError: true as const };
 };
 
-// Returned by write tools when the active token wasn't issued with write
-// scope. Spec-compliant tool execution error (isError: true) — the model can
-// paraphrase the message to ask the user to reconnect.
 export const scopeDeniedError = () => ({
   content: [
     {
@@ -96,8 +80,6 @@ export const fmtCategoryLine = (
   return `- ${c.name}: budgeted ${fmtMoney(c.budgeted, iso)}, activity ${fmtMoney(c.activity, iso)}, balance ${fmtMoney(c.balance, iso)}${fmtGoalSuffix(c, refMonth, iso)}${idSuffix}`;
 };
 
-// One transaction line. Hybrid split rows (category and payee listings) are
-// marked so the reader knows the amount is one part of a larger transaction.
 export const fmtTxLine = (
   t: Transaction,
   iso: string,
@@ -118,8 +100,6 @@ export const fmtTxLine = (
   return `- ${t.date} ${fmtMoney(t.amount, iso)} ${payee}${cat}${split} [${t.account_name}]${approval}${idSuffix}`;
 };
 
-// A split parent's live parts, one indented line each, so a read shows what
-// the split is made of.
 export const fmtSplitLines = (
   t: Transaction,
   iso: string,

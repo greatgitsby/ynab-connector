@@ -4,10 +4,6 @@ import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { buildServer } from "../src/server";
 import type { FixtureCategory, FixtureTx } from "./fixtures/subscription-scan";
 
-// Evals drive the real MCP server through an SDK client, as an agent would.
-// Only YNAB's HTTP API is faked, from a fixture plan, and the clock is frozen
-// so cadence and status are deterministic. Nothing here talks to YNAB.
-
 export const TODAY = "2026-11-22";
 
 const slug = (s: string) =>
@@ -98,7 +94,6 @@ const wireCategory = (c: FixtureCategory, txs: FixtureTx[], month: string) => {
   };
 };
 
-// A fetch that answers YNAB's endpoints from the fixture.
 const fakeYnab =
   (txs: FixtureTx[], cats: FixtureCategory[]) => async (u: string | URL) => {
     const url = new URL(String(u));
@@ -205,8 +200,6 @@ export interface CallResult {
   isError: boolean;
 }
 
-// One connected client per fixture. Call `install` in beforeEach and
-// `uninstall` in afterEach.
 const realFetch = globalThis.fetch;
 
 export const plan = (txs: FixtureTx[], cats: FixtureCategory[]) => {

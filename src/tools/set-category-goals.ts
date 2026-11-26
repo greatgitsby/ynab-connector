@@ -1,16 +1,23 @@
 import { z } from "zod";
-import { dateParam, planIdParam } from "../schemas";
+import { planIdParam } from "../schemas";
 import type { McpServer } from "@modelcontextprotocol/server";
-import type { Category, SaveCategoryGoal, YnabClient } from "../ynab";
-import { YnabError } from "../ynab";
-import { fmtMoney, handleError, result, scopeDeniedError } from "../format";
+import { GoalFieldsSchema, goalFields } from "../category-writes";
+import {
+  SaveCategoryGoalSchema,
+  type Category,
+  type SaveCategoryGoal,
+  type YnabClient,
+} from "../ynab";
+import {
+  fmtMoney,
+  handleError,
+  result,
+  scopeDeniedError,
+  errorMessage,
+} from "../format";
 import { interpretGoal } from "../goals";
 import { resolveMonth } from "../month-window";
 import type { Props } from "../ynab-auth";
-
-// ---- Input + Result types
-
-const GOAL_FREQUENCIES = ["monthly", "weekly", "yearly"] as const;
 
 export const GoalChangeSchema = z.object({
   category_id: z.string(),
@@ -20,31 +27,7 @@ export const GoalChangeSchema = z.object({
     .describe(
       "true removes the category's goal. Can't be combined with the other fields.",
     ),
-  goal_target: z
-    .number()
-    .int()
-    .positive()
-    .optional()
-    .describe("The goal amount in milliunits."),
-  goal_frequency: z
-    .enum(GOAL_FREQUENCIES)
-    .optional()
-    .describe(
-      "Replace the goal with a 'Plan Your Spending' goal of goal_target that repeats at this " +
-        "frequency. Needs goal_target; can't be combined with goal_target_date. Leave out to " +
-        "keep the current goal's type and cadence.",
-    ),
-  goal_target_date: dateParam
-    .nullable()
-    .optional()
-    .describe("Due date, YYYY-MM-DD. null clears it."),
-  goal_needs_whole_amount: z
-    .boolean()
-    .optional()
-    .describe(
-      "'Plan Your Spending' goals only. true sets aside the full amount each period; false " +
-        "refills up to it, counting money already there.",
-    ),
+  ...GoalFieldsSchema.shape,
 });
 export type GoalChange = z.infer<typeof GoalChangeSchema>;
 
@@ -53,16 +36,8 @@ const ResultSchema = z.discriminatedUnion("ok", [
     ok: z.literal(true),
     category_id: z.string(),
     category_name: z.string(),
-    // The PATCH body sent, or to be sent in a preview.
-    request: z.object({
-      goal_target: z.number().int().nullable().optional(),
-      goal_target_date: z.string().nullable().optional(),
-      goal_needs_whole_amount: z.boolean().optional(),
-      goal_frequency: z.enum(GOAL_FREQUENCIES).optional(),
-    }),
-    // GoalView labels; null means no goal.
+    request: SaveCategoryGoalSchema,
     before: z.string().nullable(),
-    // Present once applied.
     after: z.string().nullable().optional(),
   }),
   z.object({
@@ -82,13 +57,11 @@ export type SetCategoryGoalsResult = z.infer<
   typeof SetCategoryGoalsResultSchema
 >;
 
-// ---- Compute (pure): the PATCH body for one change, or why not to send it
-
 export const goalBody = (
   change: GoalChange,
   category: Category | undefined,
   refMonth: string,
-): { body: SaveCategoryGoal } | { error: string } => {
+): { body: SaveCategoryGoal; category: Category } | { error: string } => {
   if (!category || category.deleted) return { error: "No such category." };
   if (category.internal)
     return {
@@ -102,44 +75,18 @@ export const goalBody = (
     if (setsSomething)
       return { error: "remove_goal can't be combined with other fields." };
     if (!goal) return { error: `"${category.name}" has no goal to remove.` };
-    return { body: { goal_target: null } };
+    return { body: { goal_target: null }, category };
   }
   if (!setsSomething) return { error: "Nothing to change." };
-  if (fields.goal_frequency && fields.goal_target === undefined) {
-    return { error: "goal_frequency needs goal_target." };
-  }
-  if (fields.goal_frequency && fields.goal_target_date !== undefined) {
-    return { error: "goal_frequency can't be combined with goal_target_date." };
-  }
+  const planned = goalFields(fields, goal);
+  if ("error" in planned) return planned;
   if (!goal && fields.goal_target === undefined) {
     return {
       error: `"${category.name}" has no goal; give goal_target to create one.`,
     };
   }
-  // A new goal or a goal_frequency makes a NEED goal. YNAB stores the flag
-  // on any other type without complaint, where it means nothing.
-  const becomesNeed = !goal || !!fields.goal_frequency || goal.type === "NEED";
-  if (fields.goal_needs_whole_amount !== undefined && !becomesNeed) {
-    return {
-      error:
-        "goal_needs_whole_amount applies only to 'Plan Your Spending' goals.",
-    };
-  }
-  const body: SaveCategoryGoal = {};
-  for (const [k, v] of Object.entries(fields)) {
-    if (v !== undefined) Object.assign(body, { [k]: v });
-  }
-  return { body };
+  return { body: planned.body, category };
 };
-
-// ---- Effectful: one PATCH per change, in input order, never short-circuit
-
-const errorMessage = (e: unknown) =>
-  e instanceof YnabError
-    ? `YNAB ${e.status}: ${e.body}`
-    : e instanceof Error
-      ? e.message
-      : String(e);
 
 export const setCategoryGoals = async (
   client: YnabClient,
@@ -161,8 +108,7 @@ export const setCategoryGoals = async (
 
   const results: GoalChangeResult[] = [];
   for (const change of changes) {
-    const category = byId.get(change.category_id);
-    const planned = goalBody(change, category, refMonth);
+    const planned = goalBody(change, byId.get(change.category_id), refMonth);
     if ("error" in planned) {
       results.push({
         ok: false,
@@ -174,9 +120,9 @@ export const setCategoryGoals = async (
     const ok = {
       ok: true as const,
       category_id: change.category_id,
-      category_name: category!.name,
+      category_name: planned.category.name,
       request: planned.body,
-      before: label(category!),
+      before: label(planned.category),
     };
     if (!apply) {
       results.push(ok);
@@ -199,8 +145,6 @@ export const setCategoryGoals = async (
   }
   return { iso, applied: apply, results };
 };
-
-// ---- Render (pure)
 
 const describeRequest = (r: SaveCategoryGoal, iso: string): string => {
   if (r.goal_target === null) return "remove the goal";
@@ -245,8 +189,6 @@ export const renderSetCategoryGoals = (out: SetCategoryGoalsResult): string => {
       : [];
   return [header, ...lines, ...footer].join("\n");
 };
-
-// ---- MCP tool registration
 
 const DESCRIPTION =
   "Create, change, or remove goals (YNAB calls them targets) on one or more categories. " +

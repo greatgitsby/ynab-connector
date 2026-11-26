@@ -2,59 +2,70 @@ import { z } from "zod";
 import { monthParam, planIdParam } from "../schemas";
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { Category, MonthDetail, YnabClient } from "../ynab";
-import { YnabError } from "../ynab";
 import {
   fmtMoney,
   handleError,
   result,
   scopeDeniedError,
   text,
+  errorMessage,
 } from "../format";
 import type { Props } from "../ynab-auth";
-import { interpretGoal } from "../goals";
+import { interpretGoal, isUnderfunded } from "../goals";
 import { isSpendingCategory } from "../predicates";
 import { resolveAll, resolveOne, type Named } from "../resolve";
 
-// ---- Input + Result types
-
-export type AssignOp = { set: number } | { add: number } | { fundGoal: true };
+export type AssignOp =
+  | { kind: "set"; amount: number }
+  | { kind: "add"; amount: number }
+  | { kind: "fund_goal" };
 
 export interface AssignMoveInput {
   month: string;
-  // An id or a name ("Groceries", "Group: Name").
   category: string;
   op: AssignOp;
 }
 
-export interface AssignMoveOk {
-  ok: true;
-  month: string;
-  category_id: string;
-  category_name: string;
-  before_budgeted: number;
-  after_budgeted: number;
-  change: number;
-  // Available after the change. Projected on a dry run.
-  balance: number;
-}
+const AssignMoveOkSchema = z.object({
+  ok: z.literal(true),
+  month: z.string(),
+  category_id: z.string(),
+  category_name: z.string(),
+  before_budgeted: z.number().int(),
+  after_budgeted: z.number().int(),
+  change: z.number().int(),
+  balance: z.number().int(),
+});
+export type AssignMoveOk = z.infer<typeof AssignMoveOkSchema>;
 
-export interface AssignMoveError {
-  ok: false;
-  month: string;
-  category: string;
-  error: string;
-}
+const AssignMoveErrorSchema = z.object({
+  ok: z.literal(false),
+  month: z.string(),
+  category: z.string(),
+  error: z.string(),
+});
+type AssignMoveError = z.infer<typeof AssignMoveErrorSchema>;
 
-export type AssignMoveResult = AssignMoveOk | AssignMoveError;
+const AssignMoveResultSchema = z.discriminatedUnion("ok", [
+  AssignMoveOkSchema,
+  AssignMoveErrorSchema,
+]);
+export type AssignMoveResult = z.infer<typeof AssignMoveResultSchema>;
 
-export interface AssignToCategoriesResult {
-  dry_run: boolean;
-  results: AssignMoveResult[];
-  // Per month touched. `after` is re-read from YNAB, or projected on a dry run.
-  ready_to_assign: { month: string; before: number; after: number | null }[];
-}
-
-// ---- Compute (pure)
+export const AssignToCategoriesResultSchema = z.object({
+  dry_run: z.boolean(),
+  results: z.array(AssignMoveResultSchema),
+  ready_to_assign: z.array(
+    z.object({
+      month: z.string(),
+      before: z.number().int(),
+      after: z.number().int().nullable(),
+    }),
+  ),
+});
+export type AssignToCategoriesResult = z.infer<
+  typeof AssignToCategoriesResultSchema
+>;
 
 const monthRefs = (m: MonthDetail): Named[] =>
   m.categories
@@ -66,9 +77,6 @@ const monthRefs = (m: MonthDetail): Named[] =>
       inactive: c.hidden,
     }));
 
-// Every underfunded goal in the month except the `except` names, as fund-goal
-// moves. A name in `except` that matches nothing is an error: the caller
-// meant to protect something, and guessing wrong would spend it.
 export const expandFundUnderfunded = (
   monthKey: string,
   detail: MonthDetail,
@@ -85,20 +93,15 @@ export const expandFundUnderfunded = (
   const moves = detail.categories
     .filter(isSpendingCategory)
     .filter((c) => !skip.has(c.id) && !alreadyMoved.has(c.id))
-    .filter((c) => {
-      const g = interpretGoal(c, detail.month);
-      return !!g && g.underfundedThisMonth > 0 && !g.snoozed;
-    })
+    .filter((c) => isUnderfunded(interpretGoal(c, detail.month)))
     .map((c) => ({
       month: monthKey,
       category: c.id,
-      op: { fundGoal: true } as const,
+      op: { kind: "fund_goal" } as const,
     }));
   return { moves };
 };
 
-// Turns moves into before/after amounts against the months' current state.
-// Moves apply in order, so a second move on one category sees the first.
 export const planMoves = (
   moves: AssignMoveInput[],
   months: ReadonlyMap<string, MonthDetail>,
@@ -120,15 +123,21 @@ export const planMoves = (
       working.get(key) ??
       detail.categories.find((x) => x.id === r.matches[0].id)!;
     let after: number;
-    if ("set" in move.op) after = move.op.set;
-    else if ("add" in move.op) after = c.budgeted + move.op.add;
-    else {
-      const g = interpretGoal(c, detail.month);
-      if (!g) return fail(`${c.name} has no goal to fund.`);
-      after = c.budgeted + (g.snoozed ? 0 : g.underfundedThisMonth);
+    switch (move.op.kind) {
+      case "set":
+        after = move.op.amount;
+        break;
+      case "add":
+        after = c.budgeted + move.op.amount;
+        break;
+      case "fund_goal": {
+        const g = interpretGoal(c, detail.month);
+        if (!g) return fail(`${c.name} has no goal to fund.`);
+        after = c.budgeted + (g.snoozed ? 0 : g.underfundedThisMonth);
+        break;
+      }
     }
     const change = after - c.budgeted;
-    // A category's goal shortfall shrinks one for one as it gets money.
     const next: Category = {
       ...c,
       budgeted: after,
@@ -151,15 +160,6 @@ export const planMoves = (
     };
   });
 };
-
-// ---- Effectful: read each month, plan, PATCH each change, re-read
-
-const errorMessage = (e: unknown): string =>
-  e instanceof YnabError
-    ? `YNAB ${e.status}: ${e.body}`
-    : e instanceof Error
-      ? e.message
-      : String(e);
 
 export interface AssignRequest {
   moves: AssignMoveInput[];
@@ -264,8 +264,6 @@ export const applyAssignToCategories = async (
   return { dry_run: req.dryRun, results, ready_to_assign };
 };
 
-// ---- Render (pure)
-
 export const renderAssignToCategoriesResult = (
   out: AssignToCategoriesResult,
   iso: string,
@@ -291,8 +289,6 @@ export const renderAssignToCategoriesResult = (
   );
   return [header, ...lines, "", ...rta].join("\n").trimEnd();
 };
-
-// ---- MCP tool registration
 
 const DESCRIPTION =
   "Change a month's assigned (`budgeted`) amount on categories, in milliunits. Each move names a category by `category_id` or " +
@@ -337,10 +333,10 @@ export const toAssignMove = (m: MoveArg): AssignMoveInput => ({
   category: (m.category_id ?? m.category_name)!,
   op:
     m.set_budgeted_milliunits !== undefined
-      ? { set: m.set_budgeted_milliunits }
+      ? { kind: "set", amount: m.set_budgeted_milliunits }
       : m.add_milliunits !== undefined
-        ? { add: m.add_milliunits }
-        : { fundGoal: true },
+        ? { kind: "add", amount: m.add_milliunits }
+        : { kind: "fund_goal" },
 });
 
 export const registerAssignToCategories = (

@@ -96,7 +96,6 @@ describe("/authorize consent", () => {
     );
     expect(loc.searchParams.get("state")).toBe(state);
     expect(loc.searchParams.get("redirect_uri")).toBe(`${ORIGIN}/callback`);
-    // /callback consumes it.
     expect(store.size).toBe(1);
   });
 

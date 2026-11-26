@@ -2,7 +2,7 @@ import { z } from "zod";
 import { planIdParam } from "../schemas";
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { Account, Transaction, YnabClient } from "../ynab";
-import { YnabError } from "../ynab";
+import { TransactionSchema } from "../wire";
 import { isSplitTx, isTrackingAccount, isTransferTx } from "../predicates";
 import {
   fmtMoney,
@@ -10,46 +10,78 @@ import {
   handleError,
   result,
   scopeDeniedError,
+  errorMessage,
 } from "../format";
 import { interpretBulkResponse } from "./update-transactions";
-import type { UpdateTransactionResult } from "./update-transactions";
 import type { Props } from "../ynab-auth";
 
-// ---- Result types (the test surface)
+const AccountHealthSchema = z.object({
+  account_id: z.string(),
+  account_name: z.string(),
+  direct_import_linked: z.boolean(),
+  direct_import_in_error: z.boolean(),
+  last_reconciled_at: z.string().nullable(),
+  cleared_balance: z.number().int(),
+  statement_balance: z.number().int(),
+});
 
-export interface Unverified {
-  tx: Transaction;
-  reason: "unapproved" | "uncategorized";
-}
+const UnverifiedSchema = z.object({
+  transaction: TransactionSchema,
+  reason: z.enum(["unapproved", "uncategorized"]),
+});
+type Unverified = z.infer<typeof UnverifiedSchema>;
 
-export interface Reconciliation {
-  accountId: string;
-  accountName: string;
-  // Link-health fields surfaced from the account. YNAB's
-  // API does not expose the bank's own balance, only these flags.
-  directImportLinked: boolean;
-  directImportInError: boolean;
-  lastReconciledAt: string | null;
-  clearedBalance: number;
-  statementBalance: number;
-  delta: number; // statementBalance - clearedBalance
-  verified: boolean; // false when any unverified tx exists
-  unverified: Unverified[]; // blockers (empty when verified)
-  matches: boolean; // only meaningful when verified
-  toReconcile: Transaction[]; // cleared & not reconciled (only when verified && matches)
-  uncleared: Transaction[]; // for the mismatch report
-}
+const LockResultSchema = z.discriminatedUnion("ok", [
+  z.object({
+    ok: z.literal(true),
+    transaction_id: z.string(),
+    transaction: TransactionSchema,
+  }),
+  z.object({
+    ok: z.literal(false),
+    transaction_id: z.string(),
+    error: z.string(),
+  }),
+]);
 
-export interface ReconcileResult {
-  reconciliation: Reconciliation;
-  locked: UpdateTransactionResult[]; // empty unless verified && matches
-}
+const BlockedSchema = AccountHealthSchema.extend({
+  status: z.literal("blocked"),
+  unverified: z.array(UnverifiedSchema),
+});
+const MismatchSchema = AccountHealthSchema.extend({
+  status: z.literal("mismatch"),
+  delta: z.number().int(),
+  uncleared: z.array(TransactionSchema),
+});
+const NothingToLockSchema = AccountHealthSchema.extend({
+  status: z.literal("nothing_to_lock"),
+});
+const ReadySchema = AccountHealthSchema.extend({
+  status: z.literal("ready"),
+  to_reconcile: z.array(TransactionSchema),
+});
+const LockedSchema = AccountHealthSchema.extend({
+  status: z.literal("locked"),
+  locked: z.array(LockResultSchema),
+});
 
-// ---- Compute (pure)
+export const ReconciliationSchema = z.discriminatedUnion("status", [
+  BlockedSchema,
+  MismatchSchema,
+  NothingToLockSchema,
+  ReadySchema,
+]);
+export type Reconciliation = z.infer<typeof ReconciliationSchema>;
 
-// A transaction is uncategorized (in the blocking sense) when it carries no
-// category AND isn't a transfer (transfers legitimately have no category) AND
-// isn't a split parent (a split's categories live on its subtransactions).
+export const ReconcileResultSchema = z.discriminatedUnion("status", [
+  BlockedSchema,
+  MismatchSchema,
+  NothingToLockSchema,
+  LockedSchema,
+]);
+export type ReconcileResult = z.infer<typeof ReconcileResultSchema>;
+type AccountHealth = z.infer<typeof AccountHealthSchema>;
+
 const isUncategorizedTx = (t: Transaction): boolean =>
   t.category_id == null && !isTransferTx(t) && !isSplitTx(t);
 
@@ -58,191 +90,157 @@ export const computeReconciliation = (
   transactions: Transaction[],
   statementBalanceMilli: number,
 ): Reconciliation => {
-  // Only consider active rows that aren't already locked. Reconciled rows are
-  // immutable and were verified when previously locked.
   const active = transactions.filter(
     (t) => !t.deleted && t.cleared !== "reconciled",
   );
 
-  // Tracking (off-budget) accounts never take categories, so only approval
-  // gates them.
   const needsCategory = !isTrackingAccount(account);
   const unverified: Unverified[] = [];
   for (const t of active) {
     if (!t.approved) {
-      unverified.push({ tx: t, reason: "unapproved" });
+      unverified.push({ transaction: t, reason: "unapproved" });
     } else if (needsCategory && isUncategorizedTx(t)) {
-      unverified.push({ tx: t, reason: "uncategorized" });
+      unverified.push({ transaction: t, reason: "uncategorized" });
     }
   }
 
-  const delta = statementBalanceMilli - account.cleared_balance;
-
-  return {
-    accountId: account.id,
-    accountName: account.name,
-    directImportLinked: account.direct_import_linked ?? false,
-    directImportInError: account.direct_import_in_error ?? false,
-    lastReconciledAt: account.last_reconciled_at ?? null,
-    clearedBalance: account.cleared_balance,
-    statementBalance: statementBalanceMilli,
-    delta,
-    verified: unverified.length === 0,
-    unverified,
-    matches: delta === 0,
-    toReconcile: active.filter((t) => t.cleared === "cleared"),
-    uncleared: active.filter((t) => t.cleared === "uncleared"),
+  const health: AccountHealth = {
+    account_id: account.id,
+    account_name: account.name,
+    direct_import_linked: account.direct_import_linked ?? false,
+    direct_import_in_error: account.direct_import_in_error ?? false,
+    last_reconciled_at: account.last_reconciled_at ?? null,
+    cleared_balance: account.cleared_balance,
+    statement_balance: statementBalanceMilli,
   };
-};
 
-// ---- Effectful: lock cleared transactions only when verified && matches
+  if (unverified.length) return { ...health, status: "blocked", unverified };
+
+  const delta = statementBalanceMilli - account.cleared_balance;
+  if (delta !== 0) {
+    return {
+      ...health,
+      status: "mismatch",
+      delta,
+      uncleared: active.filter((t) => t.cleared === "uncleared"),
+    };
+  }
+
+  const toReconcile = active.filter((t) => t.cleared === "cleared");
+  if (!toReconcile.length) return { ...health, status: "nothing_to_lock" };
+  return { ...health, status: "ready", to_reconcile: toReconcile };
+};
 
 export const applyReconcile = async (
   client: YnabClient,
   planId: string,
   reconciliation: Reconciliation,
 ): Promise<ReconcileResult> => {
-  // No write unless the account is fully verified, the statement balance
-  // matches, and there is actually something to lock.
-  if (
-    !reconciliation.verified ||
-    !reconciliation.matches ||
-    reconciliation.toReconcile.length === 0
-  ) {
-    return { reconciliation, locked: [] };
-  }
-
-  const inputs = reconciliation.toReconcile.map((t) => ({
-    transaction_id: t.id,
-    cleared: "reconciled" as const,
-  }));
-  const body = {
-    transactions: inputs.map((i) => ({
-      id: i.transaction_id,
-      cleared: i.cleared,
-    })),
-  };
-
-  try {
-    const resp = await client.updateTransactionsBulk(planId, body);
-    const out = interpretBulkResponse(inputs, resp.data.transactions);
-    return { reconciliation, locked: out.results };
-  } catch (e) {
-    // Whole-batch failure (401, 5xx, ...) — surface as per-item errors so the
-    // response shape is stable.
-    const message =
-      e instanceof YnabError
-        ? `YNAB ${e.status}: ${e.body}`
-        : e instanceof Error
-          ? e.message
-          : String(e);
-    return {
-      reconciliation,
-      locked: reconciliation.toReconcile.map((t) => ({
-        ok: false,
+  switch (reconciliation.status) {
+    case "blocked":
+    case "mismatch":
+    case "nothing_to_lock":
+      return reconciliation;
+    case "ready": {
+      const { status: _, to_reconcile, ...health } = reconciliation;
+      const inputs = to_reconcile.map((t) => ({
         transaction_id: t.id,
-        error: message,
-      })),
-    };
-  }
-};
-
-// ---- Render (pure)
-
-const fmtHealthHeader = (reconciliation: Reconciliation): string => {
-  const link = reconciliation.directImportInError
-    ? "linked ⚠ (connection error)"
-    : reconciliation.directImportLinked
-      ? "linked ✓"
-      : "not linked";
-  const lastRecon = reconciliation.lastReconciledAt
-    ? `, last reconciled ${reconciliation.lastReconciledAt.slice(0, 10)}`
-    : "";
-  return `Account: ${reconciliation.accountName} — ${link}${lastRecon}`;
-};
-
-export const renderReconcile = (out: ReconcileResult, iso: string): string => {
-  const { reconciliation } = out;
-  const lines: string[] = [fmtHealthHeader(reconciliation), ""];
-
-  // Blocked: unverified transactions take priority over the balance branches.
-  if (!reconciliation.verified) {
-    const n = reconciliation.unverified.length;
-    lines.push(
-      `## Cannot reconcile ${reconciliation.accountName} — ${n} transaction${n === 1 ? "" : "s"} need review`,
-    );
-    lines.push(
-      "Reconciliation requires every transaction to be approved and " +
-        "categorized. Fix these (for example with triage_inbox and " +
-        "update_transactions), then run this again:",
-    );
-    for (const u of reconciliation.unverified) {
-      lines.push(`${fmtTxLine(u.tx, iso, { includeIds: true })} [${u.reason}]`);
-    }
-    return lines.join("\n");
-  }
-
-  // Mismatch: balances disagree — report and list uncleared txns, no write.
-  if (!reconciliation.matches) {
-    lines.push(
-      `## Cannot reconcile ${reconciliation.accountName} — off by ${fmtMoney(reconciliation.delta, iso)}`,
-    );
-    lines.push(
-      `Statement balance: ${fmtMoney(reconciliation.statementBalance, iso)}`,
-    );
-    lines.push(
-      `YNAB cleared balance: ${fmtMoney(reconciliation.clearedBalance, iso)}`,
-    );
-    lines.push(
-      "Clear or correct the transactions below until the cleared balance " +
-        "matches your statement, or add a reconciliation adjustment in the " +
-        "YNAB app. Then run this again.",
-    );
-    if (reconciliation.uncleared.length) {
-      lines.push(
-        "",
-        `Uncleared transactions (${reconciliation.uncleared.length}):`,
-      );
-      for (const t of reconciliation.uncleared) {
-        lines.push(fmtTxLine(t, iso, { includeIds: true }));
+        cleared: "reconciled" as const,
+      }));
+      const body = {
+        transactions: inputs.map((i) => ({
+          id: i.transaction_id,
+          cleared: i.cleared,
+        })),
+      };
+      try {
+        const resp = await client.updateTransactionsBulk(planId, body);
+        const out = interpretBulkResponse(inputs, resp.data.transactions);
+        return { ...health, status: "locked", locked: out.results };
+      } catch (e) {
+        const message = errorMessage(e);
+        return {
+          ...health,
+          status: "locked",
+          locked: to_reconcile.map((t) => ({
+            ok: false,
+            transaction_id: t.id,
+            error: message,
+          })),
+        };
       }
     }
-    return lines.join("\n");
   }
-
-  // Verified + matches, but nothing left to lock.
-  if (reconciliation.toReconcile.length === 0) {
-    lines.push(
-      `## ${reconciliation.accountName} already reconciled — nothing to lock`,
-    );
-    lines.push(
-      `Cleared balance ${fmtMoney(reconciliation.clearedBalance, iso)} matches your statement.`,
-    );
-    return lines.join("\n");
-  }
-
-  // Locked.
-  const okCount = out.locked.filter((r) => r.ok).length;
-  const errCount = out.locked.length - okCount;
-  lines.push(
-    `## Reconciled ${reconciliation.accountName} — locked ${okCount} / ${out.locked.length} transaction${out.locked.length === 1 ? "" : "s"}${errCount ? ` (${errCount} error${errCount === 1 ? "" : "s"})` : ""}`,
-  );
-  lines.push(
-    `Cleared balance ${fmtMoney(reconciliation.clearedBalance, iso)} matches your statement.`,
-  );
-  for (const r of out.locked) {
-    if (!r.ok) {
-      lines.push(`- [error] tx ${r.transaction_id}: ${r.error}`);
-    } else {
-      lines.push(
-        `- [ok] ${fmtTxLine(r.transaction, iso, { includeIds: true })}`,
-      );
-    }
-  }
-  return lines.join("\n");
 };
 
-// ---- MCP tool registration
+const fmtHealthHeader = (r: AccountHealth): string => {
+  const link = r.direct_import_in_error
+    ? "linked ⚠ (connection error)"
+    : r.direct_import_linked
+      ? "linked ✓"
+      : "not linked";
+  const lastRecon = r.last_reconciled_at
+    ? `, last reconciled ${r.last_reconciled_at.slice(0, 10)}`
+    : "";
+  return `Account: ${r.account_name} — ${link}${lastRecon}`;
+};
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+const renderBody = (out: ReconcileResult, iso: string): string[] => {
+  switch (out.status) {
+    case "blocked":
+      return [
+        `## Cannot reconcile ${out.account_name} — ${plural(out.unverified.length, "transaction")} need review`,
+        "Reconciliation requires every transaction to be approved and " +
+          "categorized. Fix these (for example with triage_inbox and " +
+          "update_transactions), then run this again:",
+        ...out.unverified.map(
+          (u) =>
+            `${fmtTxLine(u.transaction, iso, { includeIds: true })} [${u.reason}]`,
+        ),
+      ];
+    case "mismatch":
+      return [
+        `## Cannot reconcile ${out.account_name} — off by ${fmtMoney(out.delta, iso)}`,
+        `Statement balance: ${fmtMoney(out.statement_balance, iso)}`,
+        `YNAB cleared balance: ${fmtMoney(out.cleared_balance, iso)}`,
+        "Clear or correct the transactions below until the cleared balance " +
+          "matches your statement, or add a reconciliation adjustment in the " +
+          "YNAB app. Then run this again.",
+        ...(out.uncleared.length
+          ? [
+              "",
+              `Uncleared transactions (${out.uncleared.length}):`,
+              ...out.uncleared.map((t) =>
+                fmtTxLine(t, iso, { includeIds: true }),
+              ),
+            ]
+          : []),
+      ];
+    case "nothing_to_lock":
+      return [
+        `## ${out.account_name} already reconciled — nothing to lock`,
+        `Cleared balance ${fmtMoney(out.cleared_balance, iso)} matches your statement.`,
+      ];
+    case "locked": {
+      const okCount = out.locked.filter((r) => r.ok).length;
+      const errCount = out.locked.length - okCount;
+      return [
+        `## Reconciled ${out.account_name} — locked ${okCount} / ${plural(out.locked.length, "transaction")}${errCount ? ` (${plural(errCount, "error")})` : ""}`,
+        `Cleared balance ${fmtMoney(out.cleared_balance, iso)} matches your statement.`,
+        ...out.locked.map((r) =>
+          r.ok
+            ? `- [ok] ${fmtTxLine(r.transaction, iso, { includeIds: true })}`
+            : `- [error] tx ${r.transaction_id}: ${r.error}`,
+        ),
+      ];
+    }
+  }
+};
+
+export const renderReconcile = (out: ReconcileResult, iso: string): string =>
+  [fmtHealthHeader(out), "", ...renderBody(out, iso)].join("\n");
 
 const DESCRIPTION =
   "Reconcile a YNAB account against a bank statement. Pass the cleared " +

@@ -8,21 +8,18 @@ import type {
   Transaction,
   YnabClient,
 } from "../ynab";
-import { YnabError } from "../ynab";
 import {
   fmtMoney,
   handleError,
   result,
   scopeDeniedError,
   text,
+  errorMessage,
 } from "../format";
 import type { Props } from "../ynab-auth";
 
-// ---- Result type
-
 const ItemSchema = z.object({
   id: z.string(),
-  // YYYY-MM-DD: the transaction date, or a scheduled transaction's next date.
   date: z.string(),
   amount: z.number().int(),
 });
@@ -40,12 +37,9 @@ const FailedSchema = z.object({
 const SourceSchema = z.object({
   payee_id: z.string(),
   name: z.string(),
-  // To move in a preview; moved once applied.
   transactions: z.array(ItemSchema),
   scheduled: z.array(ItemSchema),
-  // Uses of the payee YNAB's API can't re-point. They stay on it.
   left: z.array(LeftSchema),
-  // Writes YNAB rejected. Always empty in a preview.
   failed: z.array(FailedSchema),
 });
 export type MergeSource = z.infer<typeof SourceSchema>;
@@ -58,16 +52,21 @@ export const MergePayeesResultSchema = z.object({
 });
 export type MergePayeesResult = z.infer<typeof MergePayeesResultSchema>;
 
-// ---- Compute (pure): what a merge would move
-
-export const planMerge = (
-  payees: Payee[],
-  transactions: Transaction[],
-  scheduled: ScheduledTransaction[],
-  targetId: string,
-  sourceIds: string[],
-  iso: string,
-): MergePayeesResult | { error: string } => {
+export const planMerge = ({
+  payees,
+  transactions,
+  scheduled,
+  targetId,
+  sourceIds,
+  iso,
+}: {
+  payees: Payee[];
+  transactions: Transaction[];
+  scheduled: ScheduledTransaction[];
+  targetId: string;
+  sourceIds: string[];
+  iso: string;
+}): MergePayeesResult | { error: string } => {
   const live = new Map(payees.filter((p) => !p.deleted).map((p) => [p.id, p]));
   const target = live.get(targetId);
   if (!target) return { error: `No payee with id ${targetId} to merge into.` };
@@ -160,16 +159,7 @@ export const scheduledBody = (
   frequency: st.frequency,
 });
 
-// ---- Effectful
-
 const BULK_CHUNK = 100;
-
-const errorMessage = (e: unknown) =>
-  e instanceof YnabError
-    ? `YNAB ${e.status}: ${e.body}`
-    : e instanceof Error
-      ? e.message
-      : String(e);
 
 export const applyMerge = async (
   client: YnabClient,
@@ -197,20 +187,29 @@ export const applyMerge = async (
     }
   }
 
-  const stById = new Map(scheduled.map((st) => [st.id, st]));
-  for (const s of plan.sources) {
-    for (const item of s.scheduled) {
-      try {
-        await client.updateScheduledTransaction(
-          planId,
-          item.id,
-          scheduledBody(stById.get(item.id)!, targetId),
-        );
-      } catch (e) {
-        failed.set(item.id, errorMessage(e));
-      }
+  const planned = new Set(
+    plan.sources.flatMap((s) => s.scheduled.map((item) => item.id)),
+  );
+  for (const st of scheduled.filter((st) => planned.has(st.id))) {
+    try {
+      await client.updateScheduledTransaction(
+        planId,
+        st.id,
+        scheduledBody(st, targetId),
+      );
+    } catch (e) {
+      failed.set(st.id, errorMessage(e));
     }
   }
+
+  const failures = <K extends "transaction" | "scheduled">(
+    kind: K,
+    items: { id: string }[],
+  ) =>
+    items.flatMap((t) => {
+      const error = failed.get(t.id);
+      return error === undefined ? [] : [{ kind, id: t.id, error }];
+    });
 
   return {
     ...plan,
@@ -220,26 +219,12 @@ export const applyMerge = async (
       transactions: s.transactions.filter((t) => !failed.has(t.id)),
       scheduled: s.scheduled.filter((t) => !failed.has(t.id)),
       failed: [
-        ...s.transactions
-          .filter((t) => failed.has(t.id))
-          .map((t) => ({
-            kind: "transaction" as const,
-            id: t.id,
-            error: failed.get(t.id)!,
-          })),
-        ...s.scheduled
-          .filter((t) => failed.has(t.id))
-          .map((t) => ({
-            kind: "scheduled" as const,
-            id: t.id,
-            error: failed.get(t.id)!,
-          })),
+        ...failures("transaction", s.transactions),
+        ...failures("scheduled", s.scheduled),
       ],
     })),
   };
 };
-
-// ---- Render (pure)
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
@@ -300,8 +285,6 @@ export const renderMerge = (r: MergePayeesResult): string => {
   return out.join("\n");
 };
 
-// ---- MCP tool registration
-
 const DESCRIPTION =
   "Consolidate duplicate payees: move every transaction and scheduled " +
   "transaction from the source payees to the target payee. By default it " +
@@ -358,14 +341,14 @@ export const registerMergePayees = (
           c.listScheduledTransactions(plan_id),
         ]);
         const sts = scheduled.data.scheduled_transactions;
-        const plan = planMerge(
-          payees.data.payees,
-          transactions.data.transactions,
-          sts,
-          target_payee_id,
-          source_payee_ids,
+        const plan = planMerge({
+          payees: payees.data.payees,
+          transactions: transactions.data.transactions,
+          scheduled: sts,
+          targetId: target_payee_id,
+          sourceIds: source_payee_ids,
           iso,
-        );
+        });
         if ("error" in plan)
           return { ...text(plan.error), isError: true as const };
         const out = apply ? await applyMerge(c, plan_id, plan, sts) : plan;

@@ -1,8 +1,3 @@
-// A synthetic plan shaped like a six-month subscription scan (2026-05-22 to
-// 2026-11-22): slush categories that hide recurring charges, a payee renamed
-// mid-window, price changes, card payments recorded as spending, and one real
-// transfer. Names, amounts, and memos are made up.
-
 export interface FixtureTx {
   id: string;
   date: string;
@@ -77,7 +72,6 @@ export const TRANSACTIONS: FixtureTx[] = [
   t("2026-09-11", -4990, "Virtual Card", "Pocket Money"),
   t("2026-11-09", -12500, "Virtual Card", null),
 
-  // Virtual card charges.
   t("2026-06-08", -15490, "Virtual Card", "🎥 Netflix"),
   t("2026-06-08", -19990, "Virtual Card", "🎶 Spotify + Hulu"),
   t("2026-07-06", -15490, "Virtual Card", "🎥 Netflix"),
@@ -94,7 +88,6 @@ export const TRANSACTIONS: FixtureTx[] = [
   t("2026-10-07", -19990, "Virtual Card", "🎶 Spotify + Hulu"),
   t("2026-11-03", -2500, "Virtual Card", "Pocket Money"),
 
-  // Anthropic, renamed to "Anthropic Claude" after 9/2.
   t("2026-06-09", -21600, "Anthropic", "Pocket Money"),
   t("2026-07-02", -20000, "Anthropic", "Pocket Money"),
   t("2026-08-02", -100000, "Anthropic", "Pocket Money"),
@@ -102,14 +95,12 @@ export const TRANSACTIONS: FixtureTx[] = [
   t("2026-10-02", -100000, "Anthropic Claude", "Pocket Money"),
   t("2026-11-02", -100000, "Anthropic Claude", "Pocket Money"),
 
-  // Google One, with one charge under "Google".
   t("2026-06-28", -2990, "Google One", "🎉 Fun Money"),
   t("2026-07-28", -2990, "Google One", "🎉 Fun Money"),
   t("2026-08-28", -2990, "Google One", "🎉 Fun Money"),
   t("2026-09-28", -2990, "Google", "Pocket Money"),
   t("2026-10-28", -2990, "Google One", "🎉 Fun Money"),
 
-  // Apple: several stacked monthly charges; iCloud $0.99 → $2.99.
   t("2026-05-24", -9990, "Apple", "iCloud"),
   t("2026-06-09", -14990, "Apple", "iCloud"),
   t("2026-06-22", -990, "Apple", "iCloud"),
@@ -136,7 +127,6 @@ export const TRANSACTIONS: FixtureTx[] = [
   t("2026-11-04", -19990, "Apple", "🎉 Fun Money"),
   t("2026-11-06", -14990, "Apple", "🎉 Fun Money"),
 
-  // Prime Video $9.99 → $11.99, plus a separate $8.99 channel.
   t("2026-05-25", -8990, "Amazon Prime Video Channels", "🎉 Fun Money"),
   t("2026-06-04", -9990, "Amazon Prime Video Channels", "🎉 Fun Money"),
   t("2026-06-25", -8990, "Amazon Prime Video Channels", "🎉 Fun Money"),
@@ -153,8 +143,6 @@ export const TRANSACTIONS: FixtureTx[] = [
   t("2026-10-29", -6990, "Amazon Prime Video Channels", "HBO Max"),
   t("2026-11-04", -11990, "Amazon Prime Video Channels", "HBO Max"),
 
-  // Card payments: categorized outflows from Checking, not YNAB transfers
-  // (case 13).
   t("2026-06-01", -10000, "Apple Card Payment", "🎉 Fun Money", {
     account: "Checking",
   }),
@@ -176,7 +164,6 @@ export const TRANSACTIONS: FixtureTx[] = [
   t("2026-10-26", -750000, "Apple Card Payment", "🎉 Fun Money", {
     account: "Checking",
   }),
-  // A real YNAB transfer, which exclude_transfers already drops.
   t("2026-10-15", -250000, "Transfer : Savings", null, {
     account: "Checking",
     transfer: true,

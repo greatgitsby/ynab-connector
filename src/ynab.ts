@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type {
   Account,
   Category,
@@ -40,12 +41,14 @@ export class YnabError extends Error {
   }
 }
 
-export interface YnabTokenResponse {
-  access_token: string;
-  refresh_token: string;
-  token_type: string;
-  expires_in: number;
-}
+// Parsed, not cast: these tokens are stored in the grant, and a malformed
+// response must fail here rather than strand the grant with undefined tokens.
+const YnabTokenResponseSchema = z.looseObject({
+  access_token: z.string(),
+  refresh_token: z.string(),
+  expires_in: z.number(),
+});
+export type YnabTokenResponse = z.infer<typeof YnabTokenResponseSchema>;
 
 export const ynabAuthorizeUrl = (params: {
   client_id: string;
@@ -74,7 +77,7 @@ const postToken = async (body: URLSearchParams): Promise<YnabTokenResponse> => {
   });
   const text = await res.text();
   if (!res.ok) throw new YnabError(res.status, text);
-  return JSON.parse(text) as YnabTokenResponse;
+  return YnabTokenResponseSchema.parse(JSON.parse(text));
 };
 
 export const exchangeYnabCode = (params: {
@@ -168,6 +171,9 @@ export class YnabClient {
     });
     const text = await res.text();
     if (!res.ok) throw new YnabError(res.status, text);
+    // YNAB data is typed, not validated: a field YNAB changes should reach the
+    // tool as-is rather than fail every call.
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion
     return text ? (JSON.parse(text) as T) : ({} as T);
   }
 

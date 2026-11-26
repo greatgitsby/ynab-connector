@@ -5,7 +5,7 @@ import {
   type TokenExchangeCallbackResult,
 } from "@cloudflare/workers-oauth-provider";
 import { refreshYnabToken, YnabError } from "./ynab";
-import type { Props } from "./ynab-auth";
+import { PropsSchema, type Props } from "./ynab-auth";
 
 // YNAB access tokens last 2 hours and their refresh tokens rotate. The MCP
 // server is stateless (a fresh McpServer per request), so the only durable
@@ -42,7 +42,14 @@ export interface RefreshEnv {
 export const ynabTokenExchange = async (
   opts: TokenExchangeCallbackOptions<RefreshEnv>,
 ): Promise<TokenExchangeCallbackResult | undefined> => {
-  const props = opts.props as Props;
+  const parsed = PropsSchema.safeParse(opts.props);
+  if (!parsed.success) {
+    throw new OAuthError("invalid_grant", {
+      description:
+        "This connection is missing its YNAB tokens. Authorize again.",
+    });
+  }
+  const props = parsed.data;
   const now = nowSeconds();
 
   if (opts.grantType === GrantType.AUTHORIZATION_CODE) {

@@ -2,7 +2,7 @@ import { OAuthProvider } from "@cloudflare/workers-oauth-provider";
 import { localhostAllowedOrigins } from "@modelcontextprotocol/server";
 import { createMcpHandler } from "agents/mcp/server";
 import { buildServer } from "./server";
-import { ynabAuthHandler, type AuthEnv, type Props } from "./ynab-auth";
+import { PropsSchema, ynabAuthHandler, type AuthEnv } from "./ynab-auth";
 import {
   expiredTokenResponse,
   ynabTokenExchange,
@@ -45,10 +45,14 @@ const apiHandler = {
     env: Env,
     ctx: ExecutionContext & { props?: unknown },
   ): Promise<Response> {
-    const props = ctx.props as Props;
-    if (ynabTokenExpired(props)) {
+    // Props that don't parse get the expired-token answer: the client's
+    // refresh then fails ynabTokenExchange's parse, and the provider revokes
+    // the grant so the user authorizes again.
+    const parsed = PropsSchema.safeParse(ctx.props);
+    if (!parsed.success || ynabTokenExpired(parsed.data)) {
       return expiredTokenResponse(resourceMetadataUrl(env.MCP_RESOURCE));
     }
+    const props = parsed.data;
     const handler = createMcpHandler(() => buildServer(props), {
       route: MCP_ROUTE,
       allowedOriginHostnames: ALLOWED_ORIGIN_HOSTNAMES,

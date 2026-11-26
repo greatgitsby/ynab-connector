@@ -2,6 +2,7 @@ import type {
   AuthRequest,
   OAuthHelpers,
 } from "@cloudflare/workers-oauth-provider";
+import { z } from "zod";
 import {
   YnabClient,
   exchangeYnabCode,
@@ -19,17 +20,30 @@ export interface AuthEnv {
 
 // What gets encrypted into the bearer token issued back to the MCP client and
 // surfaces as `this.props` inside YnabMcp.
-export interface Props {
-  ynabUserId: string;
-  ynabAccessToken: string;
-  ynabRefreshToken: string;
+export const PropsSchema = z.looseObject({
+  ynabUserId: z.string(),
+  ynabAccessToken: z.string(),
+  ynabRefreshToken: z.string(),
   // unix seconds; tools refresh proactively or reactively on 401.
-  ynabExpiresAt: number;
+  ynabExpiresAt: z.number(),
   // True when the YNAB token was issued with write scope. Absent on tokens
   // issued before write support shipped — treated as false by write tools.
-  canWrite?: boolean;
-  [key: string]: unknown;
-}
+  canWrite: z.boolean().optional(),
+});
+export type Props = z.infer<typeof PropsSchema>;
+
+// Loose so a field a later provider version adds survives the KV round-trip.
+const AuthRequestSchema = z.looseObject({
+  responseType: z.string(),
+  clientId: z.string(),
+  redirectUri: z.string(),
+  scope: z.array(z.string()),
+  state: z.string(),
+  codeChallenge: z.string().optional(),
+  codeChallengeMethod: z.string().optional(),
+  resource: z.string().optional(),
+  issuer: z.string().optional(),
+}) satisfies z.ZodType<AuthRequest>;
 
 const STATE_TTL = 600; // 10 min — covers a slow user typing their YNAB password.
 const STATE_KEY = (token: string) => `oauth:state:${token}`;
@@ -93,7 +107,9 @@ const readState = async (
   if (cookieHash !== (await sha256Hex(state))) {
     throw new Error("State token does not match session");
   }
-  return JSON.parse(stored) as AuthRequest;
+  const parsed = AuthRequestSchema.safeParse(JSON.parse(stored));
+  if (!parsed.success) throw new Error("Invalid or expired state");
+  return parsed.data;
 };
 
 const consumeState = async (
@@ -187,14 +203,13 @@ const handleConsent = async (
   }
   const form = await request.formData();
   const state = form.get("state");
+  if (typeof state !== "string") {
+    return errorResponse("State validation failed: Missing state parameter");
+  }
 
   let oauthReq: AuthRequest;
   try {
-    oauthReq = await readState(
-      typeof state === "string" ? state : null,
-      request,
-      env.OAUTH_KV,
-    );
+    oauthReq = await readState(state, request, env.OAUTH_KV);
   } catch (e) {
     return errorResponse(
       `State validation failed: ${e instanceof Error ? e.message : String(e)}`,
@@ -202,7 +217,7 @@ const handleConsent = async (
   }
 
   if (form.get("action") !== "approve") {
-    await env.OAUTH_KV.delete(STATE_KEY(state as string));
+    await env.OAUTH_KV.delete(STATE_KEY(state));
     const denied = new URL(oauthReq.redirectUri);
     denied.searchParams.set("error", "access_denied");
     if (oauthReq.state) denied.searchParams.set("state", oauthReq.state);
@@ -216,7 +231,7 @@ const handleConsent = async (
   const location = ynabAuthorizeUrl({
     client_id: env.YNAB_CLIENT_ID,
     redirect_uri: new URL("/callback", request.url).href,
-    state: state as string,
+    state,
   });
   return new Response(null, { status: 302, headers: { Location: location } });
 };

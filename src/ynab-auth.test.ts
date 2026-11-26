@@ -116,6 +116,19 @@ describe("/authorize consent", () => {
     expect(res.headers.get("Location")).toBeNull();
   });
 
+  it("refuses a stored request that doesn't parse", async () => {
+    const { env, store } = makeEnv();
+    const { state, cookie } = await startFlow(env);
+    for (const k of store.keys()) store.set(k, "{}");
+    const res = await ynabAuthHandler.fetch(
+      post({ state, action: "approve" }, { Origin: ORIGIN, Cookie: cookie }),
+      env,
+      ctx,
+    );
+    expect(res.status).toBe(400);
+    expect(await res.text()).toContain("Invalid or expired state");
+  });
+
   it("refuses another flow's cookie", async () => {
     const { env } = makeEnv();
     const victim = await startFlow(env);

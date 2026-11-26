@@ -267,6 +267,7 @@ export const renderConsentPage = (
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Connect YNAB</title>
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
 <style>
   :root { color-scheme: light dark; }
   body { font: 16px/1.5 system-ui, sans-serif; max-width: 30rem; margin: 3rem auto; padding: 0 1rem; }

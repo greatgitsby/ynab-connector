@@ -42,6 +42,10 @@
 			"custom_domain": true
 		}
 	],
+	// Icons for MCP clients; served before the Worker runs.
+	"assets": {
+		"directory": "./public"
+	},
 	"observability": {
 		"enabled": true
 	}

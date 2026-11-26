@@ -15,6 +15,7 @@ export interface Env extends AuthEnv {
   // carry: the deployed value is set in wrangler.jsonc; `.dev.vars` overrides
   // it with http://localhost:8787/mcp for `wrangler dev`.
   MCP_RESOURCE: string;
+  AUTH_RATE_LIMITER: RateLimit;
 }
 
 const MCP_ROUTE = "/mcp";
@@ -78,12 +79,30 @@ export const createProvider = (env: Env) =>
     clientIdMetadataDocumentEnabled: true,
   });
 
+// Anyone can call these without a token, and each call writes KV: a client
+// registration that lives 90 days, or a pending authorization. /token is left
+// out because hosted clients refresh every user's token from shared IPs.
+const RATE_LIMITED_PATHS = new Set(["/register", "/authorize"]);
+
+const rateLimited = async (request: Request, env: Env): Promise<boolean> => {
+  if (!RATE_LIMITED_PATHS.has(new URL(request.url).pathname)) return false;
+  const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
+  const { success } = await env.AUTH_RATE_LIMITER.limit({ key: ip });
+  return !success;
+};
+
 // The provider's configuration depends on env (the canonical resource), so
 // build it once per isolate on first request.
 let provider: OAuthProvider<Env> | undefined;
 
 export default {
-  fetch(request, env, ctx) {
+  async fetch(request, env, ctx) {
+    if (await rateLimited(request, env)) {
+      return new Response("Too many requests. Try again in a minute.", {
+        status: 429,
+        headers: { "content-type": "text/plain", "Retry-After": "60" },
+      });
+    }
     provider ??= createProvider(env);
     return provider.fetch(request, env, ctx);
   },

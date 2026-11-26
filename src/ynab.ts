@@ -131,6 +131,14 @@ const txQuery = (opts?: TransactionQuery): string => {
   return `?${params.toString()}`;
 };
 
+// Ids come from tool arguments, which a prompt-injected model controls. Encode
+// each one so an id like "../payees/x" can't retarget a fixed-method request
+// at another endpoint. Encoding leaves dots alone, so "." and ".." are refused.
+const seg = (id: string): string => {
+  if (id === "." || id === "..") throw new Error(`Invalid id: ${id}`);
+  return encodeURIComponent(id);
+};
+
 // Token rotation is not this client's job: the OAuthProvider's
 // tokenExchangeCallback (src/token-refresh.ts) refreshes the YNAB token when
 // the MCP client refreshes its own, and persists the result in the grant. A 401 here
@@ -183,7 +191,7 @@ export class YnabClient {
   getPlan(planId: string) {
     return this.request<{ data: { plan: PlanDetail } }>(
       "GET",
-      `/plans/${planId}`,
+      `/plans/${seg(planId)}`,
     );
   }
   // Lightweight: just date/currency format. Use this instead of getPlan
@@ -197,7 +205,7 @@ export class YnabClient {
           currency_format: { iso_code: string; decimal_digits: number } | null;
         };
       };
-    }>("GET", `/plans/${planId}/settings`);
+    }>("GET", `/plans/${seg(planId)}/settings`);
   }
 
   // The plan's ISO currency code, for formatting milliunits.
@@ -210,53 +218,53 @@ export class YnabClient {
   listAccounts(planId: string) {
     return this.request<{ data: { accounts: Account[] } }>(
       "GET",
-      `/plans/${planId}/accounts`,
+      `/plans/${seg(planId)}/accounts`,
     );
   }
   getAccount(planId: string, accountId: string) {
     return this.request<{ data: { account: Account } }>(
       "GET",
-      `/plans/${planId}/accounts/${accountId}`,
+      `/plans/${seg(planId)}/accounts/${seg(accountId)}`,
     );
   }
   // Categories
   listCategories(planId: string) {
     return this.request<{ data: { category_groups: CategoryGroup[] } }>(
       "GET",
-      `/plans/${planId}/categories`,
+      `/plans/${seg(planId)}/categories`,
     );
   }
   createCategory(planId: string, body: NewCategory) {
     return this.request<{ data: { category: Category } }>(
       "POST",
-      `/plans/${planId}/categories`,
+      `/plans/${seg(planId)}/categories`,
       { category: body },
     );
   }
   updateCategory(planId: string, categoryId: string, body: SaveCategory) {
     return this.request<{ data: { category: Category } }>(
       "PATCH",
-      `/plans/${planId}/categories/${categoryId}`,
+      `/plans/${seg(planId)}/categories/${seg(categoryId)}`,
       { category: body },
     );
   }
   getMonthCategory(planId: string, month: string, categoryId: string) {
     return this.request<{ data: { category: Category } }>(
       "GET",
-      `/plans/${planId}/months/${month}/categories/${categoryId}`,
+      `/plans/${seg(planId)}/months/${seg(month)}/categories/${seg(categoryId)}`,
     );
   }
   // Months
   listMonths(planId: string) {
     return this.request<{ data: { months: MonthSummary[] } }>(
       "GET",
-      `/plans/${planId}/months`,
+      `/plans/${seg(planId)}/months`,
     );
   }
   getMonth(planId: string, month: string) {
     return this.request<{ data: { month: MonthDetail } }>(
       "GET",
-      `/plans/${planId}/months/${month}`,
+      `/plans/${seg(planId)}/months/${seg(month)}`,
     );
   }
 
@@ -268,7 +276,7 @@ export class YnabClient {
   ) {
     return this.request<{ data: { category: Category } }>(
       "PATCH",
-      `/plans/${planId}/months/${month}/categories/${categoryId}`,
+      `/plans/${seg(planId)}/months/${seg(month)}/categories/${seg(categoryId)}`,
       { category: body },
     );
   }
@@ -281,23 +289,23 @@ export class YnabClient {
   // split part. `sinceDate` defaults to ALL_TIME, not YNAB's one-year default.
   listTransactions(planId: string, opts: TransactionQuery = {}) {
     const scope = opts.accountId
-      ? `/accounts/${opts.accountId}`
+      ? `/accounts/${seg(opts.accountId)}`
       : opts.categoryId
-        ? `/categories/${opts.categoryId}`
+        ? `/categories/${seg(opts.categoryId)}`
         : opts.payeeId
-          ? `/payees/${opts.payeeId}`
+          ? `/payees/${seg(opts.payeeId)}`
           : opts.month
-            ? `/months/${opts.month}`
+            ? `/months/${seg(opts.month)}`
             : "";
     return this.request<{ data: { transactions: Transaction[] } }>(
       "GET",
-      `/plans/${planId}${scope}/transactions${txQuery(opts)}`,
+      `/plans/${seg(planId)}${scope}/transactions${txQuery(opts)}`,
     );
   }
   getTransaction(planId: string, transactionId: string) {
     return this.request<{ data: { transaction: Transaction } }>(
       "GET",
-      `/plans/${planId}/transactions/${transactionId}`,
+      `/plans/${seg(planId)}/transactions/${seg(transactionId)}`,
     );
   }
   updateTransactionsBulk(
@@ -309,20 +317,20 @@ export class YnabClient {
         transactions: Transaction[];
         transaction_ids: string[];
       };
-    }>("PATCH", `/plans/${planId}/transactions`, body);
+    }>("PATCH", `/plans/${seg(planId)}/transactions`, body);
   }
 
   // Payees
   listPayees(planId: string) {
     return this.request<{ data: { payees: Payee[] } }>(
       "GET",
-      `/plans/${planId}/payees`,
+      `/plans/${seg(planId)}/payees`,
     );
   }
   updatePayee(planId: string, payeeId: string, body: { name: string }) {
     return this.request<{ data: { payee: Payee } }>(
       "PATCH",
-      `/plans/${planId}/payees/${payeeId}`,
+      `/plans/${seg(planId)}/payees/${seg(payeeId)}`,
       { payee: body },
     );
   }
@@ -331,7 +339,7 @@ export class YnabClient {
   listScheduledTransactions(planId: string) {
     return this.request<{
       data: { scheduled_transactions: ScheduledTransaction[] };
-    }>("GET", `/plans/${planId}/scheduled_transactions`);
+    }>("GET", `/plans/${seg(planId)}/scheduled_transactions`);
   }
   // A full replace: fields left out are cleared, not kept.
   updateScheduledTransaction(
@@ -343,7 +351,7 @@ export class YnabClient {
       data: { scheduled_transaction: ScheduledTransaction };
     }>(
       "PUT",
-      `/plans/${planId}/scheduled_transactions/${scheduledTransactionId}`,
+      `/plans/${seg(planId)}/scheduled_transactions/${seg(scheduledTransactionId)}`,
       { scheduled_transaction: body },
     );
   }
@@ -353,7 +361,7 @@ export class YnabClient {
   listMoneyMovements(planId: string) {
     return this.request<{ data: { money_movements: MoneyMovement[] } }>(
       "GET",
-      `/plans/${planId}/money_movements`,
+      `/plans/${seg(planId)}/money_movements`,
     );
   }
 }

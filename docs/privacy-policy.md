@@ -1,6 +1,6 @@
 # Privacy policy: YNAB Connector
 
-Last updated: 2026-11-01
+Last updated: 2026-11-26
 
 This policy describes how the YNAB Connector (the "Connector") handles data
 it accesses through the YNAB API. The Connector is a personal-use OAuth
@@ -45,14 +45,18 @@ discards it. Nothing is cached on the server.
 
 ### OAuth tokens
 
-The Connector encrypts your YNAB access token and refresh token into the
-bearer token it issues to your MCP client. It does not store your YNAB
-tokens in plaintext at rest. They exist only inside the encrypted bearer,
-which the Connector decrypts in memory for each request from your MCP
-client. During authorization, the Connector keeps a short-lived OAuth state
-record (10 minutes at most) in Cloudflare Workers KV. That record contains
-no YNAB data and is deleted automatically when authorization completes or
-expires.
+The Connector never stores your YNAB access token or refresh token in
+plaintext. It encrypts them and keeps the encrypted copy in Cloudflare
+Workers KV, as part of the record for your connection. The key that decrypts
+that copy is itself encrypted with the bearer token the Connector issues to
+your MCP client, and the Connector keeps only a hash of that bearer token. So
+the stored copy can be decrypted only with a token your MCP client presents.
+The Connector decrypts your YNAB tokens in memory for each request and
+discards them afterwards.
+
+During authorization, the Connector keeps a short-lived OAuth state record
+(10 minutes at most) in Cloudflare Workers KV. That record contains no YNAB
+data and is deleted when authorization completes or expires.
 
 ### Logs
 
@@ -65,15 +69,15 @@ this data.
 ### Security
 
 The Connector accepts HTTPS traffic only. Your YNAB tokens are encrypted
-inside the OAuth bearer with the standard encryption scheme of the
+at rest with the standard encryption scheme of the
 `@cloudflare/workers-oauth-provider` library.
 
 ### Retention
 
 The Connector stores no YNAB data, so there is nothing to retain or delete on
-the data side. The encrypted OAuth bearer lives only with your MCP client.
-Revoking the Connector in YNAB or disconnecting it in your MCP client ends
-all access immediately.
+the data side. The encrypted record for your connection is deleted when the
+connection is revoked or expires, at most 30 days after you connect.
+Revoking the Connector in YNAB ends its access to your YNAB data immediately.
 
 ## Third parties
 

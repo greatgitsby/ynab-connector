@@ -72,14 +72,15 @@ Connecting runs two OAuth flows in one browser session.
    Metadata Document. It then starts an OAuth 2.1 authorization code flow
    with S256 PKCE. The connector is the authorization server, built on
    `@cloudflare/workers-oauth-provider`.
-2. Connector to YNAB. The connector's `/authorize` endpoint sends you to
-   `https://app.ynab.com/oauth/authorize`. Once you grant access, YNAB
+2. Connector to YNAB. The connector's `/authorize` endpoint first asks you
+   to approve the client, showing its name and the site that will receive
+   access, then sends you to `https://app.ynab.com/oauth/authorize`. Once you grant access, YNAB
    redirects to `/callback`. The connector exchanges the code for
    `{ access_token, refresh_token }` and reads your YNAB user id from
    `GET /v1/user`.
 
-`completeAuthorization` then encrypts the YNAB tokens into the client's
-bearer token through the OAuth provider's `props`. On each MCP request the
+`completeAuthorization` then stores the YNAB tokens in the OAuth provider's
+`props`, encrypted under a key that only the client's bearer token unlocks. On each MCP request the
 provider decrypts them and passes them to a new, stateless MCP server built
 for that request, so every tool call runs with the right user's YNAB
 credentials. The client's access token expires just before the YNAB token
@@ -178,6 +179,12 @@ broader scope.
 YNAB has no separate read and write grants; a connection has full access or
 none. To stay read-only, don't reconnect. Your existing read-only token keeps
 working.
+
+Payee names and memos come from your bank and from other people, such as a
+note on a payment someone sends you. The model reads them, and text written
+to trick it could ask for a write you didn't intend. Your MCP client's
+approval prompt for each tool call is the safeguard, so leave approval on
+for write tools rather than allowing them automatically.
 
 ## Disclaimer
 

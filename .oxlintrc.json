@@ -9,13 +9,15 @@
     "typescript/no-floating-promises": "error",
     "typescript/no-misused-promises": "error",
     "typescript/no-unnecessary-type-assertion": "error",
+    "typescript/no-unsafe-type-assertion": "error",
     "typescript/switch-exhaustiveness-check": "error"
   },
   "overrides": [
     {
-      "files": ["**/*.test.ts", "evals/**"],
+      "files": ["**/*.test.ts", "**/*.fixture.ts", "evals/**"],
       "rules": {
-        "typescript/no-unnecessary-type-assertion": "off"
+        "typescript/no-unnecessary-type-assertion": "off",
+        "typescript/no-unsafe-type-assertion": "off"
       }
     }
   ]

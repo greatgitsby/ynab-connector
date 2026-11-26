@@ -62,12 +62,18 @@ export const newCategoryBody = (
   if (goal.goal_target === undefined)
     return { error: "A goal needs goal_target." };
   // A new category has no goal, so the goal rules are those for a goalless one.
-  const goalless = {
+  const goalless: Category = {
+    id: "",
+    category_group_id,
     name,
-    deleted: false,
+    hidden: false,
     internal: false,
+    deleted: false,
+    budgeted: 0,
+    activity: 0,
+    balance: 0,
     goal_type: null,
-  } as Category;
+  };
   const planned = goalBody({ category_id: "", ...goal }, goalless, refMonth);
   if ("error" in planned) return planned;
   return { body: { ...body, ...planned.body } };

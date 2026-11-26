@@ -16,21 +16,20 @@ import {
 
 const cat = (
   over: Partial<Category> & { id: string; name: string },
-): Category =>
-  ({
-    category_group_id: "grp-1",
-    category_group_name: "Bills",
-    hidden: false,
-    internal: false,
-    deleted: false,
-    budgeted: 100000,
-    activity: 0,
-    balance: 100000,
-    goal_type: null,
-    goal_target: null,
-    goal_under_funded: null,
-    ...over,
-  }) as Category;
+): Category => ({
+  category_group_id: "grp-1",
+  category_group_name: "Bills",
+  hidden: false,
+  internal: false,
+  deleted: false,
+  budgeted: 100000,
+  activity: 0,
+  balance: 100000,
+  goal_type: null,
+  goal_target: null,
+  goal_under_funded: null,
+  ...over,
+});
 
 const need = (
   id: string,

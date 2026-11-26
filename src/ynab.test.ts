@@ -20,7 +20,12 @@ const stubFetch = (
   const original = globalThis.fetch;
   globalThis.fetch = vi.fn(
     async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = typeof input === "string" ? input : input.toString();
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url;
       const call: FetchCall = { url, init: init ?? {} };
       calls.push(call);
       return responder(call);

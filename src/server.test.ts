@@ -685,7 +685,7 @@ describe("tool calls", () => {
       fetchMock.mockImplementation(async (u: string, init?: RequestInit) => {
         const path = new URL(u).pathname;
         if (init?.method === "PATCH" && path.endsWith("/transactions")) {
-          const body = JSON.parse(String(init.body));
+          const body = JSON.parse(init.body as string);
           return json({
             data: {
               transaction_ids: ["t5"],
